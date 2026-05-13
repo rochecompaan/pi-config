@@ -13,22 +13,12 @@ let
   piModule =
     {
       config,
-      lib,
       pkgs,
       ...
     }:
     let
       cfg = config.programs."roche-pi";
-      settingsLib = import ../../nix/lib/settings.nix { inherit lib; };
       themeLib = import ../../nix/lib/theme.nix { };
-
-      intervalsPackagePath =
-        if !cfg.intervals.enable then
-          null
-        else if cfg.intervals.package != null then
-          toString cfg.intervals.package
-        else
-          cfg.intervals.path;
 
       settingsOverridesJson = builtins.toJSON cfg.settings;
 
@@ -38,7 +28,6 @@ let
             nativeBuildInputs = [ pkgs.python3 ];
             packageSettingsPath = "${cfg.package}/settings.json";
             inherit settingsOverridesJson;
-            intervalsPackagePath = if intervalsPackagePath == null then "" else intervalsPackagePath;
           }
           ''
             python - <<'PY' > "$out"
@@ -49,10 +38,6 @@ let
                 settings = json.load(f)
 
             overrides = json.loads(os.environ["settingsOverridesJson"])
-            intervals_package_path = os.environ["intervalsPackagePath"]
-
-            if intervals_package_path:
-                settings["packages"] = settings.get("packages", []) + [intervals_package_path]
 
             def recursive_update(base, override):
                 if isinstance(base, dict) and isinstance(override, dict):
@@ -74,20 +59,47 @@ let
 
       stylixJson = builtins.toJSON (themeLib.mkStylixTheme config.lib.stylix.colors);
 
-      intervalsFiles =
+      intervalsExtensionsTarget =
         if cfg.intervals.package != null then
-          {
-            ".pi/agent/extensions/pi-intervals".source = "${cfg.intervals.package}/extensions/pi-intervals";
-            ".pi/agent/skills/intervals-time-entries".source =
-              "${cfg.intervals.package}/skills/intervals-time-entries";
-          }
+          "${cfg.intervals.package}/extensions/pi-intervals"
         else
-          {
-            ".pi/agent/extensions/pi-intervals".source =
-              config.lib.file.mkOutOfStoreSymlink "${cfg.intervals.path}/extensions/pi-intervals";
-            ".pi/agent/skills/intervals-time-entries".source =
-              config.lib.file.mkOutOfStoreSymlink "${cfg.intervals.path}/skills/intervals-time-entries";
-          };
+          "${cfg.intervals.path}/extensions/pi-intervals";
+
+      intervalsSkillsTarget =
+        if cfg.intervals.package != null then
+          "${cfg.intervals.package}/skills/intervals-time-entries"
+        else
+          "${cfg.intervals.path}/skills/intervals-time-entries";
+
+      extensionsSource =
+        if cfg.intervals.enable then
+          pkgs.runCommand "roche-pi-extensions"
+            {
+              baseExtensions = "${cfg.package}/resources/extensions";
+              intervalsExtensionsTarget = intervalsExtensionsTarget;
+            }
+            ''
+              mkdir -p "$out"
+              cp -rT "$baseExtensions" "$out"
+              ln -s "$intervalsExtensionsTarget" "$out/pi-intervals"
+            ''
+        else
+          "${cfg.package}/extensions";
+
+      skillsSource =
+        if cfg.intervals.enable then
+          pkgs.runCommand "roche-pi-skills"
+            {
+              baseSkills = "${cfg.package}/resources/skills";
+              intervalsSkillsTarget = intervalsSkillsTarget;
+            }
+            ''
+              mkdir -p "$out"
+              cp -rT "$baseSkills" "$out"
+              ln -s "$intervalsSkillsTarget" "$out/intervals-time-entries"
+            ''
+        else
+          "${cfg.package}/skills";
     in
     {
       options.programs."roche-pi" = {
@@ -148,10 +160,10 @@ let
               force = true;
               source = settingsJsonSource;
             };
-            ".pi/agent/extensions".source = "${cfg.package}/extensions";
+            ".pi/agent/extensions".source = extensionsSource;
             ".pi/agent/agent-teams".source = "${cfg.package}/agent-teams";
             ".pi/agent/agents".source = "${cfg.package}/agents";
-            ".pi/agent/skills".source = "${cfg.package}/skills";
+            ".pi/agent/skills".source = skillsSource;
             ".pi/agent/node_modules".source = "${cfg.package}/node_modules";
             ".pi/dashboard/config.json".text = dashboardConfigJson;
           }
@@ -161,7 +173,6 @@ let
               text = stylixJson;
             };
           })
-          (optionalAttrs cfg.intervals.enable intervalsFiles)
         ];
       };
     };
