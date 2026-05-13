@@ -27,6 +27,9 @@ These usage examples are valid after the Home Manager module and project helper 
 shellHook = ''
   ${inputs.roche-pi.lib.${system}.projectPiShellHook {
     agentTeam = "openai-only";
+    # includePackage = true; # opt-in for self-contained project-local package loading
   }}
-'';
+''';
 ```
+
+`projectPiShellHook` defaults to `includePackage = false`, so it will not include the project Pi package by default and avoids duplicate global extension loading. Set `includePackage = true` when you need project-local package-based extensions to be loaded explicitly.

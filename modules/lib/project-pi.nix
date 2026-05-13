@@ -10,10 +10,12 @@
         {
           agentTeam ? null,
           extraSettings ? { },
+          includePackage ? false,
         }:
         let
           settings = pkgs.lib.recursiveUpdate (
-            {
+            { }
+            // pkgs.lib.optionalAttrs includePackage {
               packages = [ "${piConfigPackage}" ];
             }
             // pkgs.lib.optionalAttrs (agentTeam != null) {
@@ -23,8 +25,8 @@
         in
         ''
           mkdir -p .pi
-          ln -sfn ${piConfigPackage}/agents .pi/agents
-          ln -sfn ${piConfigPackage}/agent-teams .pi/agent-teams
+          ln -sfnT ${piConfigPackage}/agents .pi/agents
+          ln -sfnT ${piConfigPackage}/agent-teams .pi/agent-teams
           cat > .pi/settings.json <<'EOF'
           ${builtins.toJSON settings}
           EOF
