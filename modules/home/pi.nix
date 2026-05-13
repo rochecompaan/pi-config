@@ -1,12 +1,11 @@
 { self, lib, ... }:
 let
   inherit (lib)
+    hasPrefix
     mkEnableOption
-    mkMerge
     mkOption
     mkIf
     optional
-    optionalAttrs
     types
     ;
 
@@ -19,6 +18,7 @@ let
     let
       cfg = config.programs."roche-pi";
       themeLib = import ../../nix/lib/theme.nix { };
+      jsonFormat = pkgs.formats.json { };
 
       settingsOverridesJson = builtins.toJSON cfg.settings;
 
@@ -57,7 +57,25 @@ let
         tunnel.enabled = false;
       };
 
-      stylixJson = builtins.toJSON (themeLib.mkStylixTheme config.lib.stylix.colors);
+      stylixJsonSource = pkgs.writeText "stylix.json" (
+        builtins.toJSON (themeLib.mkStylixTheme config.lib.stylix.colors)
+      );
+
+      themesSource =
+        if cfg.stylix.enable then
+          pkgs.runCommand "roche-pi-themes"
+            {
+              baseThemes = "${cfg.package}/resources/themes";
+              inherit stylixJsonSource;
+            }
+            ''
+              mkdir -p "$out"
+              cp -rT "$baseThemes" "$out"
+              chmod -R u+w "$out"
+              cp -f "$stylixJsonSource" "$out/stylix.json"
+            ''
+        else
+          "${cfg.package}/themes";
 
       intervalsExtensionsTarget =
         if cfg.intervals.package != null then
@@ -116,7 +134,7 @@ let
         };
 
         settings = mkOption {
-          type = types.attrs;
+          type = jsonFormat.type;
           default = { };
         };
 
@@ -149,31 +167,28 @@ let
             assertion = !cfg.intervals.enable || cfg.intervals.path != null || cfg.intervals.package != null;
             message = "programs.roche-pi.intervals.enable requires either programs.roche-pi.intervals.path or programs.roche-pi.intervals.package.";
           }
+          {
+            assertion = cfg.intervals.path == null || hasPrefix "/" cfg.intervals.path;
+            message = "programs.roche-pi.intervals.path must be null or an absolute path.";
+          }
         ];
 
         home.packages = optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli;
 
-        home.file = mkMerge [
-          {
-            ".pi/agent/AGENTS.md".source = "${cfg.package}/AGENTS.md";
-            ".pi/agent/settings.json" = {
-              force = true;
-              source = settingsJsonSource;
-            };
-            ".pi/agent/extensions".source = extensionsSource;
-            ".pi/agent/agent-teams".source = "${cfg.package}/agent-teams";
-            ".pi/agent/agents".source = "${cfg.package}/agents";
-            ".pi/agent/skills".source = skillsSource;
-            ".pi/agent/node_modules".source = "${cfg.package}/node_modules";
-            ".pi/dashboard/config.json".text = dashboardConfigJson;
-          }
-          (optionalAttrs cfg.stylix.enable {
-            ".pi/agent/themes/stylix.json" = {
-              force = true;
-              text = stylixJson;
-            };
-          })
-        ];
+        home.file = {
+          ".pi/agent/AGENTS.md".source = "${cfg.package}/AGENTS.md";
+          ".pi/agent/settings.json" = {
+            force = true;
+            source = settingsJsonSource;
+          };
+          ".pi/agent/extensions".source = extensionsSource;
+          ".pi/agent/agent-teams".source = "${cfg.package}/agent-teams";
+          ".pi/agent/agents".source = "${cfg.package}/agents";
+          ".pi/agent/skills".source = skillsSource;
+          ".pi/agent/themes".source = themesSource;
+          ".pi/agent/node_modules".source = "${cfg.package}/node_modules";
+          ".pi/dashboard/config.json".text = dashboardConfigJson;
+        };
       };
     };
 in
