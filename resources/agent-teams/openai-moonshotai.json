@@ -1,0 +1,10 @@
+{
+  "name": "openai-moonshotai",
+  "agents": {
+    "scout": { "model": "openai-codex/gpt-5.4-mini", "thinking": "medium" },
+    "mechanical-worker": { "model": "openai-codex/gpt-5.4-mini", "thinking": "medium" },
+    "planner": { "model": "openai-codex/gpt-5.5", "thinking": "high" },
+    "reviewer": { "model": "openai-codex/gpt-5.5", "thinking": "high" },
+    "worker": { "model": "openrouter/moonshotai/kimi-k2.6", "thinking": "medium" }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "anthropic-only",
+  "agents": {
+    "scout": { "model": "anthropic/claude-haiku-4-5", "thinking": "medium" },
+    "mechanical-worker": { "model": "anthropic/claude-haiku-4-5", "thinking": "medium" },
+    "planner": { "model": "anthropic/claude-opus-4-6", "thinking": "high" },
+    "reviewer": { "model": "anthropic/claude-opus-4-6", "thinking": "high" },
+    "worker": { "model": "anthropic/claude-sonnet-4-6", "thinking": "medium" }
+  }
+}
