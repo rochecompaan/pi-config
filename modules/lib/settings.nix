@@ -19,8 +19,8 @@ in
   ];
 
   perSystem =
-    { pkgs, ... }:
+    { lib, ... }:
     {
-      lib.mkSettings = (import ../../nix/lib/settings.nix { lib = pkgs.lib; }).mkSettings;
+      lib.mkSettings = (import ../../nix/lib/settings.nix { inherit lib; }).mkSettings;
     };
 }

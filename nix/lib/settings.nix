@@ -9,11 +9,12 @@
       settingsOverrides ? { },
       intervalsPackagePath ? null,
     }:
-    baseSettings
-    // {
-      inherit theme;
-      packages =
-        packagePaths ++ lib.optional (intervalsPackagePath != null) intervalsPackagePath ++ extraPackages;
-    }
-    // settingsOverrides;
+    let
+      generatedSettings = baseSettings // {
+        inherit theme;
+        packages =
+          packagePaths ++ lib.optional (intervalsPackagePath != null) intervalsPackagePath ++ extraPackages;
+      };
+    in
+    lib.recursiveUpdate generatedSettings settingsOverrides;
 }
