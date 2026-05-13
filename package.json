@@ -5,8 +5,8 @@
   "description": "Roché Compaan's personal Pi extensions, skills, agents, themes, and Nix packaging",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
-    "themes": ["./themes"]
+    "extensions": ["./resources/extensions"],
+    "skills": ["./resources/skills"],
+    "themes": ["./resources/themes"]
   }
 }
