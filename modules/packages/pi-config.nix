@@ -4,7 +4,6 @@
     { pkgs, self', ... }:
     let
       piRemote = self'.packages."pi-remote";
-      notionCli = self'.packages."notion-cli";
 
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs piRemote;
@@ -40,7 +39,6 @@
       settings = settingsLib.mkSettings {
         inherit baseSettings;
         inherit (piDeps) packagePaths;
-        extraPackages = [ "${notionCli}" ];
         theme = "stylix";
       };
 
@@ -67,11 +65,11 @@
         chmod u+w "$out/resources/themes"
         cp ${stylixJson} "$out/resources/themes/stylix.json"
 
-        ln -s "$out/resources/extensions" "$out/extensions"
-        ln -s "$out/resources/skills" "$out/skills"
-        ln -s "$out/resources/themes" "$out/themes"
-        ln -s "$out/resources/agents" "$out/agents"
-        ln -s "$out/resources/agent-teams" "$out/agent-teams"
+        ln -s resources/extensions "$out/extensions"
+        ln -s resources/skills "$out/skills"
+        ln -s resources/themes "$out/themes"
+        ln -s resources/agents "$out/agents"
+        ln -s resources/agent-teams "$out/agent-teams"
 
         ln -s ${piDeps.nodeModulePaths.diff} "$out/node_modules/diff"
       '';
