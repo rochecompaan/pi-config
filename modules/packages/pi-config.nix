@@ -46,14 +46,13 @@
 
       settingsJson = pkgs.writeText "settings.json" (builtins.toJSON settings);
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
-      agentsMd = pkgs.writeText "AGENTS.md" "# Pi Config\n\nThis package bundles Pi resources under ./resources and exposes root-level symlinks for convenience.\n";
 
       piConfig = pkgs.runCommand "pi-config" { } ''
         mkdir -p "$out/resources" "$out/node_modules"
 
         cp ${../../package.json} "$out/package.json"
         cp ${../../.npmignore} "$out/.npmignore"
-        cp ${agentsMd} "$out/AGENTS.md"
+        cp ${../../resources/AGENTS.md} "$out/AGENTS.md"
         cp ${settingsJson} "$out/settings.json"
 
         cp -r ${../../resources/extensions} "$out/resources/extensions"
