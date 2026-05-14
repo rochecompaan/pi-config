@@ -29,7 +29,7 @@ This repository already owns the Pi config package and Home Manager module:
 
 ### Shared effective Pi config
 
-Extract the effective Pi resource generation from `modules/home/pi.nix` into `nix/lib/effective-pi-config.nix`.
+Extract the effective Pi resource generation from `modules/home/pi.nix` into `nix/lib/pi-resources.nix`.
 
 The helper should accept the same inputs currently used by the Home Manager module to produce the effective runtime resources:
 
