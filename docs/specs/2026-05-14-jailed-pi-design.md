@@ -6,7 +6,7 @@ Move the jailed Pi configuration out of `nixdots` and into this `roche-pi` flake
 
 ## Background
 
-The current jailed Pi implementation lives in `/home/roche/nixdots/modules/home/desktop/utils/jailed-agents/default.nix`. It directly wraps `inputs.llm-agents.packages.${system}.pi` with `jail-nix`, creates `~/.pi/agent-jailed` during Home Manager activation, reads the OpenRouter key from a sops secret path, and duplicates the Pi resource wiring from the normal Pi configuration.
+The current jailed Pi implementation lives in `/home/roche/nixdots/modules/home/desktop/utils/jailed-agents/default.nix`. It directly wraps `inputs.llm-agents.packages.${system}.pi` with `jail-nix`, creates `~/.pi/agent-jailed` during Home Manager activation, reads an OpenRouter key from a sops secret path, and duplicates the Pi resource wiring from the normal Pi configuration.
 
 This repository already owns the Pi config package and Home Manager module:
 
@@ -23,7 +23,7 @@ This repository already owns the Pi config package and Home Manager module:
 - Provide a low-level `mkJailedPi` builder so Home Manager and development shells share the same jail logic.
 - Keep development shell jailed Pi opt-in.
 - Allow development shells to add extra Nix packages inside the jailed runtime.
-- Support OpenRouter credentials from either a key file or a forwarded `OPENROUTER_API_KEY` environment variable.
+- Support arbitrary AI provider API keys from either key files or forwarded environment variables.
 
 ## Architecture
 
@@ -65,7 +65,7 @@ mkJailedPi {
   piPackage ? inputs.llm-agents.packages.${system}.pi;
   agentConfigPackage;
   defaultAgentDir ? "$HOME/.pi/agent-jailed";
-  openrouterApiKeyFile ? null;
+  apiKeys ? { };
   editor ? "vi";
   gitUserName ? null;
   gitUserEmail ? null;
@@ -75,14 +75,32 @@ mkJailedPi {
 }
 ```
 
+`apiKeys` is an attribute set keyed by the environment variable that Pi/provider SDKs expect. Each entry has this shape:
+
+```nix
+{
+  OPENROUTER_API_KEY = {
+    file = config.sops.secrets."openrouter-api-key".path;
+    fromEnv = false;
+  };
+  ANTHROPIC_API_KEY = {
+    file = null;
+    fromEnv = true;
+  };
+}
+```
+
+`file` defaults to `null`. `fromEnv` defaults to `true` when `file = null`, and `false` when `file` is set, so common cases stay concise. If both are enabled for the same variable, the file value takes precedence over the forwarded environment value.
+
 The builder should:
 
 - wrap the Pi executable so `EDITOR`, `GIT_EDITOR`, `VISUAL`, and `PI_CODING_AGENT_DIR` are set before Pi starts;
-- set `OPENROUTER_API_KEY` by reading `openrouterApiKeyFile` when provided;
-- otherwise preserve a caller-provided `OPENROUTER_API_KEY` by forwarding it into the jail;
+- support arbitrary provider API key environment variables through `apiKeys`;
+- for each `apiKeys.<ENV_NAME>.file`, read the file before entering Pi and export its content as `<ENV_NAME>`;
+- for each `apiKeys.<ENV_NAME>.fromEnv = true`, preserve a caller-provided `<ENV_NAME>` by forwarding it into the jail;
 - use `jail-nix` with the common permissions from the current nixdots implementation: network, time zone, no new session, and mounted current working directory;
 - allow read-write access to the configured agent directory, auth file, and sessions directory;
-- allow read-only access to the effective Pi config package and optional key file;
+- allow read-only access to the effective Pi config package and configured key files;
 - include common command-line dependencies such as `bashInteractive`, `coreutils`, `curl`, `diffutils`, `findutils`, `gawkInteractive`, `gnugrep`, `gnused`, `gnutar`, `gzip`, `jq`, `pre-commit`, `procps`, `ripgrep`, `unzip`, `wget`, `which`, and `git`;
 - include caller-provided `extraPkgs` inside the jail;
 - add runtime closure bindings for `runtimeClosurePkgs` so store-backed Pi resources remain accessible inside the jail;
@@ -97,7 +115,7 @@ programs.roche-pi.jailed = {
   enable = true;
   packageName = "jailed-pi";
   agentDir = "${config.home.homeDirectory}/.pi/agent-jailed";
-  openrouterApiKeyFile = null;
+  apiKeys = { };
   editor = config.home.sessionVariables.EDITOR or "vi";
   extraPkgs = [ ];
   extraPermissions = [ ];
@@ -115,7 +133,7 @@ When enabled, the module should:
    - `~/.pi/agent/sessions`
 6. Add the `mkJailedPi` result to `home.packages`.
 
-The module should not declare sops secrets. A nixdots consumer will continue to own secret declaration and pass the resulting path through `programs.roche-pi.jailed.openrouterApiKeyFile`.
+The module should not declare sops secrets. A nixdots consumer will continue to own secret declaration and pass resulting paths through `programs.roche-pi.jailed.apiKeys`.
 
 ### Project development shell integration
 
@@ -130,6 +148,10 @@ pkgs.mkShell {
       agentConfigPackage = inputs.roche-pi.packages.${system}.pi-config;
       defaultAgentDir = "$PWD/.pi/agent-jailed";
       extraPkgs = [ pkgs.kubectl pkgs.gh ];
+      apiKeys = {
+        OPENROUTER_API_KEY.fromEnv = true;
+        ANTHROPIC_API_KEY.fromEnv = true;
+      };
     })
   ];
 
@@ -144,18 +166,19 @@ pkgs.mkShell {
 
 Extend `projectPiShellHook` with an optional `jailedPi` argument. When enabled, the hook should create project-local jailed resources under `.pi/agent-jailed`, link them to the flake-provided config package, and export `PI_CODING_AGENT_DIR="$PWD/.pi/agent-jailed"` for the shell session. The hook should not force `includePackage = true`; package loading remains an explicit existing option.
 
-Development shells can provide OpenRouter either by exporting `OPENROUTER_API_KEY` before entering the shell or by constructing `mkJailedPi` with `openrouterApiKeyFile`.
+Development shells can provide AI provider credentials either by exporting configured environment variables before entering the shell or by constructing `mkJailedPi` with `apiKeys.<ENV_NAME>.file`.
 
 ## Error handling and validation
 
 The Home Manager module should assert that:
 
-- `programs.roche-pi.jailed.openrouterApiKeyFile`, when non-null, is an absolute path;
+- each `programs.roche-pi.jailed.apiKeys.<ENV_NAME>.file`, when non-null, is an absolute path;
+- each `programs.roche-pi.jailed.apiKeys` attribute name is a valid POSIX environment variable name;
 - `programs.roche-pi.jailed.agentDir` is an absolute path;
 - git identity injection only occurs when both git name and email are available;
 - jailed Pi is not enabled without an effective config package.
 
-The builder should avoid requiring an OpenRouter key at Nix evaluation time. Missing credentials should fail at Pi runtime in the same way normal Pi authentication failures do.
+The builder should avoid requiring provider API keys at Nix evaluation time. Missing credentials should fail at Pi runtime in the same way normal Pi authentication failures do.
 
 ## Testing
 
@@ -191,7 +214,10 @@ After this repository exposes the jailed module and builder, nixdots should remo
     enable = true;
     jailed = {
       enable = true;
-      openrouterApiKeyFile = config.sops.secrets."openrouter-api-key".path;
+      apiKeys = {
+        OPENROUTER_API_KEY.file = config.sops.secrets."openrouter-api-key".path;
+        ANTHROPIC_API_KEY.fromEnv = true;
+      };
       extraPkgs = [ pkgs.neovim ];
     };
   };
