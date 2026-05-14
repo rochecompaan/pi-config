@@ -95,6 +95,9 @@ mkJailedPi {
 The builder should:
 
 - wrap the Pi executable so `EDITOR`, `GIT_EDITOR`, `VISUAL`, and `PI_CODING_AGENT_DIR` are set before Pi starts;
+- treat `editor` and `defaultAgentDir` as defaults, not forced values: the wrapper should use `${EDITOR:-<editor>}`, `${GIT_EDITOR:-$EDITOR}`, `${VISUAL:-$EDITOR}`, and `${PI_CODING_AGENT_DIR:-<defaultAgentDir>}` so direct consumers and development shells can override them at runtime;
+- forward the resolved editor and agent-directory environment variables into the jail;
+- bind the resolved runtime `PI_CODING_AGENT_DIR` read-write, not only the build-time `defaultAgentDir`, so project-local overrides such as `$PWD/.pi/agent-jailed` work;
 - support arbitrary provider API key environment variables through `apiKeys`;
 - for each `apiKeys.<ENV_NAME>.file`, read the file before entering Pi and export its content as `<ENV_NAME>`;
 - for each `apiKeys.<ENV_NAME>.fromEnv = true`, preserve a caller-provided `<ENV_NAME>` by forwarding it into the jail;
