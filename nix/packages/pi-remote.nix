@@ -1,6 +1,6 @@
 { pkgs }:
 let
-  packageLock = ../../resources/pi-remote-package-lock.json;
+  packageLock = ../../pi-remote-package-lock.json;
 
   src = pkgs.fetchzip {
     url = "https://registry.npmjs.org/@noahsaso/pi-remote/-/pi-remote-0.3.1.tgz";

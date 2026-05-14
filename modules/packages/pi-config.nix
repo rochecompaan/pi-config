@@ -15,7 +15,7 @@
 
       themeLib = import ../../nix/lib/theme.nix { };
 
-      baseSettings = builtins.fromJSON (builtins.readFile ../../resources/settings.json);
+      baseSettings = builtins.fromJSON (builtins.readFile ../../settings.json);
 
       fallbackPalette = {
         base00 = "282828";
@@ -48,27 +48,21 @@
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
 
       piConfig = pkgs.runCommand "pi-config" { } ''
-        mkdir -p "$out/resources" "$out/node_modules"
+        mkdir -p "$out" "$out/node_modules"
 
         cp ${../../package.json} "$out/package.json"
         cp ${../../.npmignore} "$out/.npmignore"
-        cp ${../../resources/AGENTS.md} "$out/AGENTS.md"
+        cp ${../../AGENTS.md} "$out/AGENTS.md"
         cp ${settingsJson} "$out/settings.json"
 
-        cp -r ${../../resources/extensions} "$out/resources/extensions"
-        cp -r ${../../resources/skills} "$out/resources/skills"
-        cp -r ${../../resources/themes} "$out/resources/themes"
-        cp -r ${../../resources/agents} "$out/resources/agents"
-        cp -r ${../../resources/agent-teams} "$out/resources/agent-teams"
+        cp -r ${../../extensions} "$out/extensions"
+        cp -r ${../../skills} "$out/skills"
+        cp -r ${../../themes} "$out/themes"
+        cp -r ${../../agents} "$out/agents"
+        cp -r ${../../agent-teams} "$out/agent-teams"
 
-        chmod u+w "$out/resources/themes"
-        cp ${stylixJson} "$out/resources/themes/stylix.json"
-
-        ln -s resources/extensions "$out/extensions"
-        ln -s resources/skills "$out/skills"
-        ln -s resources/themes "$out/themes"
-        ln -s resources/agents "$out/agents"
-        ln -s resources/agent-teams "$out/agent-teams"
+        chmod u+w "$out/themes"
+        cp ${stylixJson} "$out/themes/stylix.json"
 
         ln -s ${piDeps.nodeModulePaths.diff} "$out/node_modules/diff"
       '';

@@ -1,2 +1,1 @@
-resources/extensions/**/*.test.ts
 extensions/**/*.test.ts

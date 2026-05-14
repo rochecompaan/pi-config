@@ -65,7 +65,7 @@ let
         if cfg.stylix.enable then
           pkgs.runCommand "roche-pi-themes"
             {
-              baseThemes = "${cfg.package}/resources/themes";
+              baseThemes = "${cfg.package}/themes";
               inherit stylixJsonSource;
             }
             ''
@@ -93,7 +93,7 @@ let
         if cfg.intervals.enable then
           pkgs.runCommand "roche-pi-extensions"
             {
-              baseExtensions = "${cfg.package}/resources/extensions";
+              baseExtensions = "${cfg.package}/extensions";
               intervalsExtensionsTarget = intervalsExtensionsTarget;
             }
             ''
@@ -108,7 +108,7 @@ let
         if cfg.intervals.enable then
           pkgs.runCommand "roche-pi-skills"
             {
-              baseSkills = "${cfg.package}/resources/skills";
+              baseSkills = "${cfg.package}/skills";
               intervalsSkillsTarget = intervalsSkillsTarget;
             }
             ''
