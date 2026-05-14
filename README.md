@@ -4,8 +4,6 @@ My Pi configuration packaged as a dendritic Nix flake.
 
 Initial platform support is `x86_64-linux` only.
 
-These usage examples are valid after the Home Manager module and project helper modules are implemented in later tasks.
-
 ## Home Manager usage
 
 ```nix
