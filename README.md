@@ -1,6 +1,6 @@
-# roche-pi
+# Roché's Pi Config
 
-Personal-first Pi configuration packaged as a dendritic Nix flake.
+My Pi configuration packaged as a dendritic Nix flake.
 
 Initial platform support is `x86_64-linux` only.
 
@@ -10,7 +10,7 @@ These usage examples are valid after the Home Manager module and project helper 
 
 ```nix
 {
-  inputs.roche-pi.url = "github:rochecompaan/roche-pi";
+  inputs.roche-pi.url = "github:rochecompaan/pi-config";
 
   imports = [ inputs.roche-pi.homeModules.default ];
 
