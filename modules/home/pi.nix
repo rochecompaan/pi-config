@@ -81,7 +81,7 @@ let
         if cfg.intervals.package != null then
           "${cfg.intervals.package}/extensions/pi-intervals"
         else
-          "${cfg.intervals.path}/extensions/pi-intervals";
+          cfg.intervals.path;
 
       intervalsSkillsTarget =
         if cfg.intervals.package != null then
@@ -152,6 +152,7 @@ let
           path = mkOption {
             type = types.nullOr types.str;
             default = null;
+            description = "Absolute path to the local pi-intervals extension checkout (extension root).";
           };
 
           package = mkOption {
