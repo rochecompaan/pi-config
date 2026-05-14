@@ -14,6 +14,7 @@
         "pi-listen" = piDeps.piListen;
         "pi-messenger-bridge" = piDeps.piMessengerBridge;
         "pi-subagents" = piDeps.piSubagents;
+        "pi-unipi-notify" = piDeps.piUnipiNotify;
       };
     };
 }
