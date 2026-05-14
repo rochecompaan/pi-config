@@ -11,8 +11,18 @@
           agentTeam ? null,
           extraSettings ? { },
           includePackage ? false,
+          jailedPi ? {
+            enable = false;
+            agentDir = ".pi/agent-jailed";
+          },
         }:
         let
+          jailedPiCfg = {
+            enable = false;
+            agentDir = ".pi/agent-jailed";
+          }
+          // jailedPi;
+
           settings = pkgs.lib.recursiveUpdate (
             { }
             // pkgs.lib.optionalAttrs includePackage {
@@ -30,6 +40,28 @@
           cat > .pi/settings.json <<'EOF'
           ${builtins.toJSON settings}
           EOF
+          ${pkgs.lib.optionalString jailedPiCfg.enable ''
+            agent_dir=${pkgs.lib.escapeShellArg jailedPiCfg.agentDir}
+            mkdir -p "$agent_dir"
+            mkdir -p "$HOME/.pi/agent/sessions"
+            touch "$HOME/.pi/agent/auth.json"
+
+            ln -sfnT ${piConfigPackage}/AGENTS.md "$agent_dir/AGENTS.md"
+            ln -sfnT ${piConfigPackage}/settings.json "$agent_dir/settings.json"
+            ln -sfnT ${piConfigPackage}/agent-teams "$agent_dir/agent-teams"
+            ln -sfnT ${piConfigPackage}/agents "$agent_dir/agents"
+            ln -sfnT ${piConfigPackage}/extensions "$agent_dir/extensions"
+            ln -sfnT ${piConfigPackage}/node_modules "$agent_dir/node_modules"
+            ln -sfnT ${piConfigPackage}/skills "$agent_dir/skills"
+            ln -sfnT ${piConfigPackage}/themes "$agent_dir/themes"
+            ln -sfn "$HOME/.pi/agent/auth.json" "$agent_dir/auth.json"
+            ln -sfn "$HOME/.pi/agent/sessions" "$agent_dir/sessions"
+
+            case "$agent_dir" in
+              /*) export PI_CODING_AGENT_DIR="$agent_dir" ;;
+              *) export PI_CODING_AGENT_DIR="$PWD/$agent_dir" ;;
+            esac
+          ''}
         '';
     };
 }
