@@ -78,39 +78,6 @@ else
       dontNpmBuild = true;
     };
 
-    piUnipiNotifySrc = pkgs.fetchgit {
-      url = "https://github.com/Neuron-Mr-White/UniPi.git";
-      rev = "7c5e49993ab49ad454f5da0c43ede4c027bd1d8a";
-      sha256 = "sha256-MTHgZgU5SpNaZ+ag2+VVkMQIMjJja837V8hZM23fNtw=";
-    };
-
-    piUnipiNotify = pkgs.buildNpmPackage {
-      pname = "pi-unipi-notify";
-      version = "2.0.0";
-      src = piUnipiNotifySrc;
-      sourceRoot = "${piUnipiNotifySrc.name}/packages/notify";
-
-      npmDepsHash = "sha256-ApOMxQTq2C0NOOPwMLBQpjX69ZaRb7aRmkRaMvJwo1Y=";
-      dontNpmBuild = true;
-      makeCacheWritable = true;
-
-      postPatch = ''
-        chmod u+w ../..
-        rm -f ../../package.json ../../package-lock.json
-        cp ${./pi-unipi-notify-package-lock.json} package-lock.json
-        grep -v '"@pi-unipi/core"' package.json > package.json.tmp
-        mv package.json.tmp package.json
-      '';
-
-      postInstall = ''
-        packageRoot="$out/lib/node_modules/@pi-unipi/notify"
-        cp ${piUnipiNotifySrc}/packages/notify/package.json "$packageRoot/package.json"
-
-        mkdir -p "$packageRoot/node_modules/@pi-unipi/core"
-        cp -r ${piUnipiNotifySrc}/packages/core/. "$packageRoot/node_modules/@pi-unipi/core/"
-      '';
-    };
-
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
       rev = "e7a2d16476bf042e9add4699c9d018a90f86e4a6";
@@ -135,7 +102,6 @@ else
       piMessengerBridge
       piRemote
       piSubagents
-      piUnipiNotify
       superpowersSrc
       ;
 
@@ -144,7 +110,6 @@ else
       "${piMessengerBridge}/lib/node_modules/pi-messenger-bridge"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
-      "${piUnipiNotify}/lib/node_modules/@pi-unipi/notify"
       "${superpowersSrc}"
     ];
 
