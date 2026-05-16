@@ -1,4 +1,9 @@
-{ self, lib, ... }:
+{
+  self,
+  lib,
+  inputs,
+  ...
+}:
 let
   inherit (lib)
     hasPrefix
@@ -87,7 +92,10 @@ let
           }
         ];
 
-        home.packages = optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli;
+        home.packages = [
+          inputs.llm-agents.packages.${pkgs.system}.pi
+        ]
+        ++ optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli;
 
         home.file = {
           ".pi/agent/AGENTS.md".source = piResources.agentsMd;
