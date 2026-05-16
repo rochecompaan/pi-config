@@ -1,9 +1,15 @@
-{ ... }:
+{ inputs, ... }:
 {
   perSystem =
-    { pkgs, self', ... }:
+    {
+      pkgs,
+      self',
+      system,
+      ...
+    }:
     let
       piRemote = self'.packages."pi-remote";
+      piPackage = inputs.llm-agents.packages.${system}.pi;
 
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs piRemote;
@@ -40,6 +46,9 @@
         inherit baseSettings;
         inherit (piDeps) packagePaths;
         theme = "stylix";
+        settingsOverrides = {
+          lastChangelogVersion = piPackage.version;
+        };
       };
 
       stylixTheme = themeLib.mkStylixTheme fallbackPalette;
