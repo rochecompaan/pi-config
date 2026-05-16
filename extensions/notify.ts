@@ -6,6 +6,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { basename } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
 
@@ -70,11 +71,13 @@ const simpleMarkdown = (text: string, width = 80): string => {
 	return markdown.render(width).join("\n");
 };
 
+const getProjectName = (cwd: string): string => basename(cwd) || cwd;
+
 const formatNotification = (text: string | null): { title: string; body: string } => {
 	const simplified = text ? simpleMarkdown(text) : "";
 	const normalized = simplified.replace(/\s+/g, " ").trim();
 	if (!normalized) {
-		return { title: "Ready for input", body: "" };
+		return { title: "π", body: "Ready for input" };
 	}
 
 	const maxBody = 200;
@@ -83,9 +86,9 @@ const formatNotification = (text: string | null): { title: string; body: string 
 };
 
 export default function (pi: ExtensionAPI) {
-	pi.on("agent_end", async (event) => {
+	pi.on("agent_end", async (event, ctx) => {
 		const lastText = extractLastAssistantText(event.messages ?? []);
 		const { title, body } = formatNotification(lastText);
-		notify(title, body);
+		notify(`${title} - ${getProjectName(ctx.cwd)}`, body);
 	});
 }
