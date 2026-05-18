@@ -1,4 +1,9 @@
-{ self, lib, ... }:
+{
+  self,
+  lib,
+  inputs ? self.inputs,
+  ...
+}:
 let
   inherit (lib)
     all
@@ -32,6 +37,7 @@ let
     let
       cfg = config.programs."roche-pi".jailed;
       piCfg = config.programs."roche-pi";
+      piPackage = inputs.llm-agents.packages.${pkgs.system}.pi;
       homeDir = config.home.homeDirectory;
       gitUserName = config.programs.git.settings.user.name or null;
       gitUserEmail = config.programs.git.settings.user.email or null;
@@ -42,7 +48,9 @@ let
       piResources = import ../../nix/lib/pi-resources.nix {
         inherit pkgs;
         package = piCfg.package;
-        settings = piCfg.settings;
+        settings = lib.recursiveUpdate piCfg.settings {
+          lastChangelogVersion = piPackage.version;
+        };
         stylix = {
           enable = piCfg.stylix.enable;
           colors = config.lib.stylix.colors;
@@ -149,6 +157,7 @@ let
             agentConfigPackage = piResources.package;
             defaultAgentDir = cfg.agentDir;
             apiKeys = cfg.apiKeys;
+            inherit piPackage;
             editor = cfg.editor;
             inherit gitUserName gitUserEmail;
             extraPkgs = cfg.extraPkgs ++ optional (editorPackage != null) editorPackage;
