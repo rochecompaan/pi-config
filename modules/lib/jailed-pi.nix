@@ -77,15 +77,22 @@
           dockerCfg = {
             enable = false;
             package = pkgs.docker-client;
+            composePackage = pkgs.docker-compose;
           }
           // docker;
           podmanCfg = {
             enable = false;
-            packages = [ pkgs.podman ];
+            packages = [
+              pkgs.podman
+              pkgs.podman-compose
+            ];
           }
           // podman;
           containerPkgs =
-            lib.optionals dockerCfg.enable [ dockerCfg.package ]
+            lib.optionals dockerCfg.enable [
+              dockerCfg.package
+              dockerCfg.composePackage
+            ]
             ++ lib.optionals podmanCfg.enable podmanCfg.packages;
 
           jail = inputs.jail-nix.lib.extend {

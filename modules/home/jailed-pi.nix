@@ -100,6 +100,12 @@ let
             default = pkgs.docker-client;
             description = "Docker client package to include when Docker support is enabled.";
           };
+
+          composePackage = mkOption {
+            type = types.package;
+            default = pkgs.docker-compose;
+            description = "Docker Compose package to include when Docker support is enabled.";
+          };
         };
 
         podman = {
@@ -107,7 +113,10 @@ let
 
           packages = mkOption {
             type = types.listOf types.package;
-            default = [ pkgs.podman ];
+            default = [
+              pkgs.podman
+              pkgs.podman-compose
+            ];
             description = "Podman client packages to include when Podman support is enabled.";
           };
         };

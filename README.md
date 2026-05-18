@@ -46,7 +46,7 @@ Initial platform support is `x86_64-linux` only.
 }
 ```
 
-`docker.enable` binds the host Docker socket into the jail and should be enabled only for trusted project or host profiles. `podman.enable` adds Podman client tooling and binds the rootless host Podman socket path when available; it expects a host Podman service rather than launching nested local containers inside the jail.
+`docker.enable` binds the host Docker socket into the jail and should be enabled only for trusted project or host profiles. It includes `docker` and `docker-compose`. `podman.enable` adds Podman client tooling (`podman` and `podman-compose`) and binds the rootless host Podman socket path when available; it expects a host Podman service rather than launching nested local containers inside the jail.
 
 ## Project shell usage
 
