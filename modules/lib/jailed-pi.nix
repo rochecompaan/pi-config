@@ -60,6 +60,8 @@
           editor ? "vi",
           gitUserName ? null,
           gitUserEmail ? null,
+          docker ? { },
+          podman ? { },
           extraPkgs ? [ ],
           runtimeClosurePkgs ? [ agentConfigPackage ],
           extraPermissions ? [ ],
@@ -72,6 +74,19 @@
             map (apiKeyName: normalizedApiKeys.${apiKeyName}.file) apiKeyNames
           );
           forwardedApiKeyNames = lib.filter (apiKeyName: normalizedApiKeys.${apiKeyName}.fromEnv) apiKeyNames;
+          dockerCfg = {
+            enable = false;
+            package = pkgs.docker-client;
+          }
+          // docker;
+          podmanCfg = {
+            enable = false;
+            packages = [ pkgs.podman ];
+          }
+          // podman;
+          containerPkgs =
+            lib.optionals dockerCfg.enable [ dockerCfg.package ]
+            ++ lib.optionals podmanCfg.enable podmanCfg.packages;
 
           jail = inputs.jail-nix.lib.extend {
             inherit pkgs;
@@ -122,12 +137,35 @@
               (try-fwd-env "VISUAL")
               (try-fwd-env "PI_CODING_AGENT_DIR")
             ]
+            ++ lib.optionals dockerCfg.enable [
+              (unsafe-add-raw-args "--dir /run")
+              (unsafe-add-raw-args "--dir /var")
+              (unsafe-add-raw-args "--symlink /run /var/run")
+              (try-rw-bind "/run/docker.sock" "/run/docker.sock")
+              (try-rw-bind "/var/run/docker.sock" "/run/docker.sock")
+              (try-fwd-env "DOCKER_HOST")
+              (try-fwd-env "DOCKER_CONFIG")
+              (try-readonly (noescape ''"$DOCKER_CONFIG"''))
+            ]
+            ++ lib.optionals podmanCfg.enable [
+              (unsafe-add-raw-args "--dir /etc")
+              (unsafe-add-raw-args "--dir /run")
+              (unsafe-add-raw-args "--dir /run/user")
+              (unsafe-add-raw-args ''--dir "$XDG_RUNTIME_DIR"'')
+              (try-fwd-env "XDG_RUNTIME_DIR")
+              (try-fwd-env "CONTAINER_HOST")
+              (try-fwd-env "CONTAINERS_CONF")
+              (try-fwd-env "REGISTRIES_CONFIG_PATH")
+              (try-readwrite (noescape ''"$XDG_RUNTIME_DIR/podman"''))
+              (try-readonly (noescape ''"$HOME/.config/containers"''))
+              (try-readonly "/etc/containers")
+            ]
             ++ map (file: readonly file) apiKeyFiles
             ++ map try-fwd-env forwardedApiKeyNames
             ++ lib.optionals (gitUserName != null) [ git-identity-env ]
             ++ lib.optionals (runtimeClosurePkgs != [ ]) [ (runtime-closures runtimeClosurePkgs) ]
             ++ extraPermissions
-            ++ [ (add-pkg-deps (commonPkgsBase ++ [ pkgs.git ] ++ extraPkgs)) ]
+            ++ [ (add-pkg-deps (commonPkgsBase ++ [ pkgs.git ] ++ containerPkgs ++ extraPkgs)) ]
           );
         in
         pkgs.writeShellApplication {
@@ -138,6 +176,15 @@
             export GIT_EDITOR="''${GIT_EDITOR:-$EDITOR}"
             export VISUAL="''${VISUAL:-$EDITOR}"
             export PI_CODING_AGENT_DIR="''${PI_CODING_AGENT_DIR:-${defaultAgentDir}}"
+            ${lib.optionalString dockerCfg.enable ''
+              export DOCKER_CONFIG="''${DOCKER_CONFIG:-$HOME/.docker}"
+            ''}
+            ${lib.optionalString podmanCfg.enable ''
+              export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+              if [ -z "''${CONTAINER_HOST:-}" ] && [ -S "$XDG_RUNTIME_DIR/podman/podman.sock" ]; then
+                export CONTAINER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+              fi
+            ''}
             exec ${lib.getExe sandbox} "$@"
           '';
         };

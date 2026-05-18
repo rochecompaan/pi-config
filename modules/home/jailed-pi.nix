@@ -92,6 +92,26 @@ let
           default = editorCommand;
         };
 
+        docker = {
+          enable = mkEnableOption "Docker client access from jailed Pi, including host Docker socket access";
+
+          package = mkOption {
+            type = types.package;
+            default = pkgs.docker-client;
+            description = "Docker client package to include when Docker support is enabled.";
+          };
+        };
+
+        podman = {
+          enable = mkEnableOption "Podman client access from jailed Pi via the rootless host Podman socket path";
+
+          packages = mkOption {
+            type = types.listOf types.package;
+            default = [ pkgs.podman ];
+            description = "Podman client packages to include when Podman support is enabled.";
+          };
+        };
+
         extraPkgs = mkOption {
           type = types.listOf types.package;
           default = [ ];
@@ -160,6 +180,8 @@ let
             inherit piPackage;
             editor = cfg.editor;
             inherit gitUserName gitUserEmail;
+            docker = cfg.docker;
+            podman = cfg.podman;
             extraPkgs = cfg.extraPkgs ++ optional (editorPackage != null) editorPackage;
             runtimeClosurePkgs = [ piResources.package ];
             extraPermissions = cfg.extraPermissions;

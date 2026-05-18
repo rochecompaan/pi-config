@@ -38,11 +38,15 @@ Initial platform support is `x86_64-linux` only.
         OPENROUTER_API_KEY.file = config.sops.secrets."openrouter-api-key".path;
         ANTHROPIC_API_KEY.fromEnv = true;
       };
+      # docker.enable = true; # optional; grants access to the host Docker socket
+      # podman.enable = true; # optional; uses a rootless host Podman socket when available
       extraPkgs = [ pkgs.neovim ];
     };
   };
 }
 ```
+
+`docker.enable` binds the host Docker socket into the jail and should be enabled only for trusted project or host profiles. `podman.enable` adds Podman client tooling and binds the rootless host Podman socket path when available; it expects a host Podman service rather than launching nested local containers inside the jail.
 
 ## Project shell usage
 
@@ -71,6 +75,8 @@ pkgs.mkShell {
         OPENROUTER_API_KEY.fromEnv = true;
         ANTHROPIC_API_KEY.fromEnv = true;
       };
+      # docker.enable = true; # optional; grants access to the host Docker socket
+      # podman.enable = true; # optional; uses a rootless host Podman socket when available
       extraPkgs = [ pkgs.kubectl pkgs.gh ];
     })
   ];
