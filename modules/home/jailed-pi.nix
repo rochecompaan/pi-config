@@ -55,9 +55,6 @@ let
           enable = piCfg.stylix.enable;
           colors = config.lib.stylix.colors;
         };
-        intervals = {
-          inherit (piCfg.intervals) enable path package;
-        };
       };
 
       apiKeyFiles = lib.filter (file: file != null) (

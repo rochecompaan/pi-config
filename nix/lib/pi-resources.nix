@@ -6,11 +6,6 @@
     enable = false;
     colors = null;
   },
-  intervals ? {
-    enable = false;
-    path = null;
-    package = null;
-  },
 }:
 let
   themeLib = import ./theme.nix { };
@@ -70,47 +65,9 @@ let
     else
       "${package}/themes";
 
-  intervalsExtensionsTarget =
-    if intervals.package != null then
-      "${intervals.package}/extensions/pi-intervals"
-    else
-      intervals.path;
+  extensions = "${package}/extensions";
 
-  intervalsSkillsTarget =
-    if intervals.package != null then
-      "${intervals.package}/skills/intervals-time-entries"
-    else
-      "${intervals.path}/skills/intervals-time-entries";
-
-  extensions =
-    if intervals.enable then
-      pkgs.runCommand "roche-pi-extensions"
-        {
-          baseExtensions = "${package}/extensions";
-          inherit intervalsExtensionsTarget;
-        }
-        ''
-          mkdir -p "$out"
-          cp -rT "$baseExtensions" "$out"
-          ln -s "$intervalsExtensionsTarget" "$out/pi-intervals"
-        ''
-    else
-      "${package}/extensions";
-
-  skills =
-    if intervals.enable then
-      pkgs.runCommand "roche-pi-skills"
-        {
-          baseSkills = "${package}/skills";
-          inherit intervalsSkillsTarget;
-        }
-        ''
-          mkdir -p "$out"
-          cp -rT "$baseSkills" "$out"
-          ln -s "$intervalsSkillsTarget" "$out/intervals-time-entries"
-        ''
-    else
-      "${package}/skills";
+  skills = "${package}/skills";
 
   resourcesPackage = pkgs.runCommand "roche-pi-resources" { } ''
     mkdir -p "$out"

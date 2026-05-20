@@ -6,7 +6,6 @@
 }:
 let
   inherit (lib)
-    hasPrefix
     mkEnableOption
     mkOption
     mkIf
@@ -31,9 +30,6 @@ let
         stylix = {
           enable = cfg.stylix.enable;
           colors = config.lib.stylix.colors;
-        };
-        intervals = {
-          inherit (cfg.intervals) enable path package;
         };
       };
     in
@@ -60,38 +56,9 @@ let
           type = types.bool;
           default = false;
         };
-
-        intervals = {
-          enable = mkOption {
-            type = types.bool;
-            default = false;
-          };
-
-          path = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Absolute path to the local pi-intervals extension checkout (extension root).";
-          };
-
-          package = mkOption {
-            type = types.nullOr types.package;
-            default = null;
-          };
-        };
       };
 
       config = mkIf cfg.enable {
-        assertions = [
-          {
-            assertion = !cfg.intervals.enable || cfg.intervals.path != null || cfg.intervals.package != null;
-            message = "programs.roche-pi.intervals.enable requires either programs.roche-pi.intervals.path or programs.roche-pi.intervals.package.";
-          }
-          {
-            assertion = cfg.intervals.path == null || hasPrefix "/" cfg.intervals.path;
-            message = "programs.roche-pi.intervals.path must be null or an absolute path.";
-          }
-        ];
-
         home.packages = [
           inputs.llm-agents.packages.${pkgs.system}.pi
         ]
