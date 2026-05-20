@@ -10,6 +10,7 @@
     let
       piRemote = self'.packages."pi-remote";
       piPackage = inputs.llm-agents.packages.${system}.pi;
+      piIntervals = self'.packages."pi-intervals";
 
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs piRemote;
@@ -69,6 +70,10 @@
         cp -r ${../../themes} "$out/themes"
         cp -r ${../../agents} "$out/agents"
         cp -r ${../../agent-teams} "$out/agent-teams"
+
+        chmod u+w "$out/extensions" "$out/skills"
+        ln -s ${piIntervals} "$out/extensions/pi-intervals"
+        ln -s ${piIntervals}/skills/intervals-time-entries "$out/skills/intervals-time-entries"
 
         chmod u+w "$out/themes"
         cp ${stylixJson} "$out/themes/stylix.json"
