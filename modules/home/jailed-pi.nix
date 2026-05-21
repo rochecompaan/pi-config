@@ -123,6 +123,16 @@ let
           default = [ ];
         };
 
+        runtimeStoreClosurePaths = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          description = "Project-relative or absolute runtime paths whose resolved /nix/store closure should be exposed inside jailed Pi.";
+          example = [
+            ''"$PWD/.pre-commit-config.yaml"''
+            ''"$PWD/.pre-commit-config.yml"''
+          ];
+        };
+
         extraPermissions = mkOption {
           type = types.listOf types.anything;
           default = [ ];
@@ -189,6 +199,7 @@ let
             docker = cfg.docker;
             podman = cfg.podman;
             extraPkgs = cfg.extraPkgs ++ optional (editorPackage != null) editorPackage;
+            runtimeStoreClosurePaths = cfg.runtimeStoreClosurePaths;
             runtimeClosurePkgs = [ piResources.package ];
             extraPermissions = cfg.extraPermissions;
           })

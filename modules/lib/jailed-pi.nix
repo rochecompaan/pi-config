@@ -63,6 +63,7 @@
           docker ? { },
           podman ? { },
           extraPkgs ? [ ],
+          runtimeStoreClosurePaths ? [ ],
           runtimeClosurePkgs ? [ agentConfigPackage ],
           extraPermissions ? [ ],
         }:
@@ -113,6 +114,34 @@
                   // {
                     additionalRuntimeClosures = state.additionalRuntimeClosures ++ map toString packages;
                   };
+
+                runtime-store-closure-for-path =
+                  path:
+                  compose [
+                    (include-once "runtimeStoreClosureForPath" (add-runtime ''
+                      function bindNixStoreClosureForPath {
+                        local PATH_TO_BIND
+                        local TARGET
+
+                        PATH_TO_BIND="$1"
+
+                        if ! [ -e "$PATH_TO_BIND" ]; then
+                          return
+                        fi
+
+                        TARGET="$(${pkgs.coreutils}/bin/realpath "$PATH_TO_BIND")"
+
+                        case "$TARGET" in
+                          /nix/store/*)
+                            while IFS= read -r DEP; do
+                              RUNTIME_ARGS+=(--ro-bind "$DEP" "$DEP")
+                            done < <(${pkgs.nix}/bin/nix-store --query --requisites "$TARGET")
+                          ;;
+                        esac
+                      }
+                    ''))
+                    (add-runtime "bindNixStoreClosureForPath ${escape path}")
+                  ];
               };
           };
 
@@ -144,6 +173,7 @@
               (try-fwd-env "VISUAL")
               (try-fwd-env "PI_CODING_AGENT_DIR")
             ]
+            ++ map (path: runtime-store-closure-for-path (noescape path)) runtimeStoreClosurePaths
             ++ lib.optionals dockerCfg.enable [
               (unsafe-add-raw-args "--dir /run")
               (unsafe-add-raw-args "--dir /var")
