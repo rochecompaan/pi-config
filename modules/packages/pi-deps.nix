@@ -10,6 +10,7 @@
     in
     {
       packages = {
+        "context-mode" = piDeps.contextMode;
         "diff-package" = piDeps.diffPackage;
         "pi-listen" = piDeps.piListen;
         "pi-messenger-bridge" = piDeps.piMessengerBridge;

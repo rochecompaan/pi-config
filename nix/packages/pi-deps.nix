@@ -94,9 +94,31 @@ else
       cd $out/lib/node_modules/diff
       ${pkgs.gnutar}/bin/tar -xzf ${diffPackageSrc} --strip-components=1
     '';
+
+    contextModeSrc = pkgs.fetchurl {
+      url = "https://registry.npmjs.org/context-mode/-/context-mode-1.0.151.tgz";
+      hash = "sha256-FR7IGkiVzJCCLhH7OsoMHsCFMYqSeEK6cdSD2+3i3SQ=";
+    };
+
+    contextMode = pkgs.buildNpmPackage {
+      pname = "context-mode";
+      version = "1.0.151";
+      src = contextModeSrc;
+
+      npmDepsHash = "sha256-zm+2PP37WZzMOfqVcx6UQhydLU+TLh3JfqANfJWQrG8=";
+
+      dontNpmBuild = true;
+      makeCacheWritable = true;
+      npmInstallFlags = [ "--omit=dev" ];
+
+      postPatch = ''
+        cp ${../../context-mode-package-lock.json} package-lock.json
+      '';
+    };
   in
   {
     inherit
+      contextMode
       diffPackage
       piListen
       piMessengerBridge
@@ -106,6 +128,7 @@ else
       ;
 
     packagePaths = [
+      "${contextMode}/lib/node_modules/context-mode"
       "${piListen}"
       "${piMessengerBridge}/lib/node_modules/pi-messenger-bridge"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"

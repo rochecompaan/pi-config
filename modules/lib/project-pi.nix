@@ -37,6 +37,7 @@
           mkdir -p .pi
           ln -sfnT ${piConfigPackage}/agents .pi/agents
           ln -sfnT ${piConfigPackage}/agent-teams .pi/agent-teams
+          ln -sfnT ${piConfigPackage}/mcp.json .pi/mcp.json
           cat > .pi/settings.json <<'EOF'
           ${builtins.toJSON settings}
           EOF
@@ -48,6 +49,7 @@
 
             ln -sfnT ${piConfigPackage}/AGENTS.md "$agent_dir/AGENTS.md"
             ln -sfnT ${piConfigPackage}/settings.json "$agent_dir/settings.json"
+            ln -sfnT ${piConfigPackage}/mcp.json "$agent_dir/mcp.json"
             ln -sfnT ${piConfigPackage}/agent-teams "$agent_dir/agent-teams"
             ln -sfnT ${piConfigPackage}/agents "$agent_dir/agents"
             ln -sfnT ${piConfigPackage}/extensions "$agent_dir/extensions"

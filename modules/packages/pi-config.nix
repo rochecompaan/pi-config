@@ -55,6 +55,15 @@
       stylixTheme = themeLib.mkStylixTheme fallbackPalette;
 
       settingsJson = pkgs.writeText "settings.json" (builtins.toJSON settings);
+      mcpJson = pkgs.writeText "mcp.json" (
+        builtins.toJSON {
+          mcpServers = {
+            context-mode = {
+              command = "${piDeps.contextMode}/bin/context-mode";
+            };
+          };
+        }
+      );
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
 
       piConfig = pkgs.runCommand "pi-config" { } ''
@@ -64,6 +73,7 @@
         cp ${../../.npmignore} "$out/.npmignore"
         cp ${../../AGENTS.md} "$out/AGENTS.md"
         cp ${settingsJson} "$out/settings.json"
+        cp ${mcpJson} "$out/mcp.json"
 
         cp -r ${../../extensions} "$out/extensions"
         cp -r ${../../skills} "$out/skills"

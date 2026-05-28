@@ -69,10 +69,13 @@ let
 
   skills = "${package}/skills";
 
+  mcpJson = "${package}/mcp.json";
+
   resourcesPackage = pkgs.runCommand "roche-pi-resources" { } ''
     mkdir -p "$out"
     ln -s ${package}/AGENTS.md "$out/AGENTS.md"
     ln -s ${settingsJson} "$out/settings.json"
+    ln -s ${mcpJson} "$out/mcp.json"
     ln -s ${extensions} "$out/extensions"
     ln -s ${package}/agent-teams "$out/agent-teams"
     ln -s ${package}/agents "$out/agents"
@@ -85,6 +88,7 @@ in
   inherit
     dashboardConfigJson
     extensions
+    mcpJson
     resourcesPackage
     settingsJson
     skills

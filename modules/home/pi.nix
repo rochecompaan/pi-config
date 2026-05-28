@@ -70,6 +70,10 @@ let
             force = true;
             source = piResources.settingsJson;
           };
+          ".pi/agent/mcp.json" = {
+            force = true;
+            source = piResources.mcpJson;
+          };
           ".pi/agent/extensions".source = piResources.extensions;
           ".pi/agent/agent-teams".source = piResources.agentTeams;
           ".pi/agent/agents".source = piResources.agents;
