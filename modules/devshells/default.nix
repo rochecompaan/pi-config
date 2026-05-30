@@ -12,6 +12,7 @@
       devShells.default = pkgs.mkShell {
         packages = [
           inputs.llm-agents.packages.${system}.pi
+          self'.packages.pi-local-auth
           pkgs.git
           pkgs.jq
           pkgs.nixfmt-rfc-style
