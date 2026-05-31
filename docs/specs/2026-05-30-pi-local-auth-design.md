@@ -49,7 +49,7 @@ Expose `pi-local-auth` as a package/app or dev-shell executable using `pkgs.writ
 
 ## Testing
 
-Add lightweight verification for the generated executable by running it in temporary directories and checking:
+Keep the check implementation in `scripts/pi-local-auth-check.sh` and source it from the Nix check. Add lightweight verification for the generated executable by running it in temporary directories and checking:
 
 - it creates `.pi/local-agent/settings.json` with the expected JSON;
 - it creates `.envrc` when absent;
