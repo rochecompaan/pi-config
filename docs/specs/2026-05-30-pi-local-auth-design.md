@@ -45,7 +45,7 @@ Do not include project-local `.pi/skills`, `.pi/extensions`, or `.agents/skills`
 
 ## Nix Integration
 
-Expose `pi-local-auth` as a package/app or dev-shell executable using `pkgs.writeShellApplication` or the existing flake module pattern. Add it to the default dev shell packages so it is available in normal `nix develop` sessions.
+Expose `pi-local-auth` as a package/app or dev-shell executable using `pkgs.writeShellApplication` or the existing flake module pattern. Keep the shell implementation in `scripts/pi-local-auth.sh` and source it from `modules/packages/pi-local-auth.nix`. Add it to the default dev shell packages so it is available in normal `nix develop` sessions.
 
 ## Testing
 
