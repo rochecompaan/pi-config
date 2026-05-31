@@ -20,10 +20,12 @@ When run from a repository root or project directory, `pi-local-auth` will:
 
 ## Bootstrap Settings
 
-The generated `.pi/local-agent/settings.json` should restore global resource discovery that would otherwise be lost when `PI_CODING_AGENT_DIR` points at `.pi/local-agent`:
+The generated `.pi/local-agent/settings.json` should start from the Nix-provided Pi config settings template when available, preserving settings such as `packages` and `voice`, then restore global resource discovery that would otherwise be lost when `PI_CODING_AGENT_DIR` points at `.pi/local-agent`:
 
 ```json
 {
+  "packages": ["<preserved from Pi config template>"],
+  "voice": { "<preserved from Pi config template>": true },
   "sessionDir": "~/.pi/agent/sessions",
   "extensions": ["~/.pi/agent/extensions"],
   "skills": ["~/.pi/agent/skills"],
@@ -39,6 +41,7 @@ Do not include project-local `.pi/skills`, `.pi/extensions`, or `.agents/skills`
 ## Existing File Handling
 
 - If `.pi/local-agent/settings.json` already exists, leave it unchanged. This avoids overwriting user edits or tokens-adjacent configuration.
+- If the Nix-provided settings template is unavailable, fall back to the minimal resource/session settings.
 - If `.envrc` exists, append only missing exports.
 - If `.envrc` does not exist, create it with the two exports.
 - If either variable name already appears in `.envrc`, leave that variable as-is.

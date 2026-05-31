@@ -7,8 +7,8 @@ envrc_file=".envrc"
 
 mkdir -p "$local_agent_dir"
 
-if [ ! -e "$settings_file" ]; then
-  cat > "$settings_file" <<'EOF'
+write_fallback_settings() {
+  cat <<'EOF'
 {
   "sessionDir": "~/.pi/agent/sessions",
   "extensions": ["~/.pi/agent/extensions"],
@@ -17,6 +17,22 @@ if [ ! -e "$settings_file" ]; then
   "themes": ["~/.pi/agent/themes"]
 }
 EOF
+}
+
+if [ ! -e "$settings_file" ]; then
+  settings_template="${PI_LOCAL_AUTH_SETTINGS_TEMPLATE:-$HOME/.pi/agent/settings.json}"
+
+  if [ -f "$settings_template" ]; then
+    jq '. + {
+      sessionDir: "~/.pi/agent/sessions",
+      extensions: ["~/.pi/agent/extensions"],
+      skills: ["~/.pi/agent/skills"],
+      prompts: ["~/.pi/agent/prompts"],
+      themes: ["~/.pi/agent/themes"]
+    }' "$settings_template" > "$settings_file"
+  else
+    write_fallback_settings > "$settings_file"
+  fi
 fi
 
 touch "$envrc_file"

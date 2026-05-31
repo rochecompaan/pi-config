@@ -14,6 +14,8 @@ jq -e '.extensions == ["~/.pi/agent/extensions"]' .pi/local-agent/settings.json
 jq -e '.skills == ["~/.pi/agent/skills"]' .pi/local-agent/settings.json
 jq -e '.prompts == ["~/.pi/agent/prompts"]' .pi/local-agent/settings.json
 jq -e '.themes == ["~/.pi/agent/themes"]' .pi/local-agent/settings.json
+jq -e '(.packages | type) == "array" and (.packages | length) > 0' .pi/local-agent/settings.json
+jq -e '.voice.enabled == true' .pi/local-agent/settings.json
 
 grep -Fx 'export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"' .envrc
 grep -Fx 'export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"' .envrc
