@@ -4,7 +4,7 @@
 
 **Goal:** Add a `/review` preset and direct command syntax for reviewing a target branch/ref against a selectable base branch/ref without checking out the target.
 
-**Architecture:** Add a narrow pure helper module for compare-target parsing and prompt construction, then wire it into the existing `extensions/review.ts` command selector and parser. The extension remains responsible for TUI flows and git execution; the helper keeps new parsing/prompt behavior testable without loading the full extension.
+**Architecture:** Add a narrow pure helper module for compare-target parsing and prompt construction, then wire it into the existing `extensions/review/index.ts` command selector and parser. The extension remains responsible for TUI flows and git execution; the helper keeps new parsing/prompt behavior testable without loading the full extension.
 
 **Tech Stack:** TypeScript, Node `node:test`, Git CLI via existing `pi.exec` wrapper.
 
@@ -14,7 +14,7 @@
 
 - Create `extensions/review-compare.ts`: pure compare-branch target types, direct-arg parser helper, and prompt builder helper.
 - Create `extensions/review-compare.test.ts`: focused Node tests for parser and prompt text.
-- Modify `extensions/review.ts`: add `compareBranches` target handling, selector preset, target/base branch selectors, direct `/review compare` parsing, prompt delegation, and user-facing hint.
+- Modify `extensions/review/index.ts`: add `compareBranches` target handling, selector preset, target/base branch selectors, direct `/review compare` parsing, prompt delegation, and user-facing hint.
 
 ---
 
@@ -22,7 +22,7 @@
 
 **Files:**
 - Create: `extensions/review-compare.test.ts`
-- Create later: `extensions/review-compare.ts`
+- Create later: `extensions/review/review-compare.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -86,7 +86,7 @@ Run:
 node --test --experimental-strip-types extensions/review-compare.test.ts
 ```
 
-Expected: FAIL because `extensions/review-compare.ts` does not exist yet.
+Expected: FAIL because `extensions/review/review-compare.ts` does not exist yet.
 
 ---
 
@@ -94,7 +94,7 @@ Expected: FAIL because `extensions/review-compare.ts` does not exist yet.
 
 **Files:**
 - Create: `extensions/review-compare.ts`
-- Test: `extensions/review-compare.test.ts`
+- Test: `extensions/review/review-compare.test.ts`
 
 - [ ] **Step 1: Add minimal implementation**
 
@@ -135,7 +135,7 @@ export function buildCompareBranchesPrompt(input: CompareBranchesPromptInput): s
 Run:
 
 ```bash
-node --test --experimental-strip-types extensions/review-compare.test.ts
+node --test --experimental-strip-types extensions/review/review-compare.test.ts
 ```
 
 Expected: PASS.

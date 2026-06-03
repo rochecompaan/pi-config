@@ -51,4 +51,4 @@ If existing `review.ts` internals are not exported, extract narrow pure helpers 
 
 ## Module Structure
 
-`extensions/review.ts` is already large, so keep the behavior change small inside that file and extract only pure, testable compare parsing/prompt helper code if needed. Avoid broad refactoring unrelated to the new preset.
+`extensions/review/index.ts` is already large, so keep the behavior change small inside that file and extract only pure, testable compare parsing/prompt helper code if needed. Avoid broad refactoring unrelated to the new preset.
