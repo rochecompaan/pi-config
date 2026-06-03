@@ -1,0 +1,20 @@
+name: Review Team
+description: Multi-model review team using reusable review role agents
+
+agents:
+  - name: reviewer
+    model: openrouter/anthropic/claude-opus-4.7
+  - name: reviewer
+    model: openai-codex/gpt-5.5
+  - name: reviewer
+    model: openrouter/google/gemini-3.1-pro-preview
+  - name: reviewer
+    model: openrouter/z-ai/glm-5.1
+
+thinking:
+  draft: high
+  discussion: high
+  synthesis: high
+
+consensus:
+  model: openai-codex/gpt-5.5

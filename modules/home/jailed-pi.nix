@@ -181,6 +181,7 @@ let
           ln -sfnT ${piResources.package}/agent-teams "$agent_dir/agent-teams"
           ln -sfnT ${piResources.package}/agents "$agent_dir/agents"
           ln -sfnT ${piResources.package}/extensions "$agent_dir/extensions"
+          ln -sfnT ${piResources.package}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"
           ln -sfnT ${piResources.package}/node_modules "$agent_dir/node_modules"
           ln -sfnT ${piResources.package}/skills "$agent_dir/skills"
           ln -sfnT ${piResources.package}/themes "$agent_dir/themes"

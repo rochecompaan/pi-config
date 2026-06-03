@@ -1,0 +1,20 @@
+name: Planning Team
+description: Multi-model planning team using reusable planner role agents
+
+agents:
+  - name: planner
+    model: openrouter/anthropic/claude-opus-4.7
+  - name: planner
+    model: openai-codex/gpt-5.5
+  - name: planner
+    model: openrouter/google/gemini-3.1-pro-preview
+  - name: planner
+    model: openrouter/z-ai/glm-5.1
+
+thinking:
+  draft: highest
+  discussion: high
+  synthesis: high
+
+consensus:
+  model: openai-codex/gpt-5.5

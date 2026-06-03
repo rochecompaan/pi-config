@@ -37,6 +37,7 @@
           mkdir -p .pi
           ln -sfnT ${piConfigPackage}/agents .pi/agents
           ln -sfnT ${piConfigPackage}/agent-teams .pi/agent-teams
+          ln -sfnT ${piConfigPackage}/multi-model-planning-teams .pi/multi-model-planning-teams
           ln -sfnT ${piConfigPackage}/mcp.json .pi/mcp.json
           cat > .pi/settings.json <<'EOF'
           ${builtins.toJSON settings}
@@ -53,6 +54,7 @@
             ln -sfnT ${piConfigPackage}/agent-teams "$agent_dir/agent-teams"
             ln -sfnT ${piConfigPackage}/agents "$agent_dir/agents"
             ln -sfnT ${piConfigPackage}/extensions "$agent_dir/extensions"
+            ln -sfnT ${piConfigPackage}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"
             ln -sfnT ${piConfigPackage}/node_modules "$agent_dir/node_modules"
             ln -sfnT ${piConfigPackage}/skills "$agent_dir/skills"
             ln -sfnT ${piConfigPackage}/themes "$agent_dir/themes"

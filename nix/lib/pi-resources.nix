@@ -67,6 +67,8 @@ let
 
   extensions = "${package}/extensions";
 
+  multiModelPlanningTeams = "${package}/multi-model-planning-teams";
+
   skills = "${package}/skills";
 
   mcpJson = "${package}/mcp.json";
@@ -79,6 +81,7 @@ let
     ln -s ${extensions} "$out/extensions"
     ln -s ${package}/agent-teams "$out/agent-teams"
     ln -s ${package}/agents "$out/agents"
+    ln -s ${multiModelPlanningTeams} "$out/multi-model-planning-teams"
     ln -s ${skills} "$out/skills"
     ln -s ${themes} "$out/themes"
     ln -s ${package}/node_modules "$out/node_modules"
@@ -89,6 +92,7 @@ in
     dashboardConfigJson
     extensions
     mcpJson
+    multiModelPlanningTeams
     resourcesPackage
     settingsJson
     skills

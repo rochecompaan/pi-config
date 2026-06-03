@@ -77,6 +77,7 @@ let
           ".pi/agent/extensions".source = piResources.extensions;
           ".pi/agent/agent-teams".source = piResources.agentTeams;
           ".pi/agent/agents".source = piResources.agents;
+          ".pi/agent/multi-model-planning-teams".source = piResources.multiModelPlanningTeams;
           ".pi/agent/skills".source = piResources.skills;
           ".pi/agent/themes".source = piResources.themes;
           ".pi/agent/node_modules".source = piResources.nodeModules;
