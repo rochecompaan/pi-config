@@ -10,7 +10,7 @@
     "language": "en",
     "scope": "global",
     "backend": "local",
-    "localModel": "parakeet-v2",
+    "localModel": "parakeet-v3",
     "toggleShortcut": "ctrl+alt+p",
     "ttsEnabled": false,
     "ttsBackend": "local",
