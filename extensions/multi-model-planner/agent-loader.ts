@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	TEAM_THINKING_LEVELS,
 	type ResolvedAgentDef,
@@ -8,6 +9,12 @@ import {
 } from "./types.ts";
 
 export const PROJECT_AGENTS_DIR = path.join(".pi", "agents");
+const PACKAGED_AGENTS_DIR = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"agents",
+);
 
 export interface LoadAgentDefinitionsOptions {
 	cwd: string;
@@ -55,7 +62,7 @@ export async function findNearestProjectAgentsDir(cwd: string): Promise<string |
 }
 
 export async function discoverAgentDefinitionFiles(cwd: string): Promise<string[]> {
-	const agentsDir = await findNearestProjectAgentsDir(cwd);
+	const agentsDir = (await findNearestProjectAgentsDir(cwd)) ?? (await findPackagedAgentsDir());
 	if (!agentsDir) {
 		return [];
 	}
@@ -69,6 +76,10 @@ export async function discoverAgentDefinitionFiles(cwd: string): Promise<string[
 		.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
 }
 
+async function findPackagedAgentsDir(): Promise<string | null> {
+	return (await isDirectory(PACKAGED_AGENTS_DIR)) ? PACKAGED_AGENTS_DIR : null;
+}
+
 export async function loadAgentDefinitions(options: LoadAgentDefinitionsOptions): Promise<Map<string, ResolvedAgentDef>> {
 	const allowedToolNames = new Set(Array.from(options.allowedToolNames, (name) => normalizeLookupName(name)));
 	const files = await discoverAgentDefinitionFiles(options.cwd);
@@ -76,7 +87,13 @@ export async function loadAgentDefinitions(options: LoadAgentDefinitionsOptions)
 
 	for (const file of files) {
 		const content = await readFile(file, "utf8");
-		const agent = parseAgentDefinition(content, file, allowedToolNames);
+		let agent: ResolvedAgentDef;
+		try {
+			agent = parseAgentDefinition(content, file, allowedToolNames);
+		} catch (error) {
+			if (isIgnorableAgentDefinitionError(error)) continue;
+			throw error;
+		}
 		const normalizedName = normalizeLookupName(agent.name);
 		const existing = agents.get(normalizedName);
 		if (existing) {
@@ -88,6 +105,11 @@ export async function loadAgentDefinitions(options: LoadAgentDefinitionsOptions)
 	}
 
 	return agents;
+}
+
+function isIgnorableAgentDefinitionError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	return /missing required frontmatter field|references unknown tools/i.test(error.message);
 }
 
 export function parseAgentDefinition(

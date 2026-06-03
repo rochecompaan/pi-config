@@ -105,10 +105,53 @@ test("discoverAgentDefinitionFiles returns sorted markdown files only", async ()
 	await mkdir(agentsDir, { recursive: true });
 	await writeFile(path.join(agentsDir, "zeta.md"), "", "utf8");
 	await writeFile(path.join(agentsDir, "alpha.md"), "", "utf8");
+	await writeFile(path.join(agentsDir, "README.md"), "", "utf8");
 	await writeFile(path.join(agentsDir, "ignore.txt"), "", "utf8");
 
 	const files = await discoverAgentDefinitionFiles(root);
 	assert.deepEqual(files, [path.join(agentsDir, "alpha.md"), path.join(agentsDir, "zeta.md")]);
+});
+
+test("discoverAgentDefinitionFiles falls back to packaged agents", async () => {
+	const root = await makeTempDir();
+
+	const files = await discoverAgentDefinitionFiles(root);
+
+	assert.ok(files.some((file) => file.endsWith(path.join("agents", "planner.md"))));
+	assert.ok(files.some((file) => file.endsWith(path.join("agents", "reviewer.md"))));
+});
+
+test("loadAgentDefinitions skips incompatible unrelated agent files", async () => {
+	const root = await makeTempDir();
+	const agentsDir = path.join(root, ".pi", "agents");
+	await mkdir(agentsDir, { recursive: true });
+	await writeFile(
+		path.join(agentsDir, "planner.md"),
+		`---
+name: planner
+description: Planner
+tools: read
+---
+
+Plan.
+`,
+		"utf8",
+	);
+	await writeFile(
+		path.join(agentsDir, "worker.md"),
+		`---
+name: worker
+description: Worker
+tools: contact_supervisor
+---
+
+Work.
+`,
+		"utf8",
+	);
+
+	const agents = await loadAgentDefinitions({ cwd: root, allowedToolNames: ALLOWED_TOOLS });
+	assert.deepEqual([...agents.keys()], ["planner"]);
 });
 
 test("loadAgentDefinitions returns a map keyed by normalized agent name", async () => {
