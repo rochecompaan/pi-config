@@ -5,6 +5,7 @@
  * Supports multiple review modes:
  * - Review a GitHub pull request (checks out the PR locally)
  * - Review against a base branch (PR style)
+ * - Review another branch/ref against a base branch without checkout
  * - Review uncommitted changes
  * - Review a specific commit
  * - Shared custom review instructions (applied to all review modes when configured)
@@ -15,6 +16,7 @@
  * - `/review pr https://github.com/owner/repo/pull/123` - review PR from URL
  * - `/review uncommitted` - review uncommitted changes directly
  * - `/review branch main` - review against main branch
+ * - `/review compare feature/my-branch main` - review another branch/ref against a base branch without checkout
  * - `/review commit abc123` - review specific commit
  * - `/review folder src docs` - review specific folders/files (snapshot, not diff)
  * - `/review` selector includes Add/Remove custom review instructions (applies to all modes)
@@ -40,6 +42,11 @@ import {
 } from "@mariozechner/pi-tui";
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import {
+	buildCompareBranchesPrompt,
+	parseCompareBranchArgs,
+	type CompareBranchesTarget,
+} from "./review-compare.ts";
 
 // State to track fresh session review (where we branched from).
 // Module-level state means only one review can be active at a time.
@@ -354,6 +361,7 @@ function hasBlockingReviewFindings(messageText: string): boolean {
 type ReviewTarget =
 	| { type: "uncommitted" }
 	| { type: "baseBranch"; branch: string }
+	| { type: "compareBranches"; targetBranch: string; baseBranch: string }
 	| { type: "commit"; sha: string; title?: string }
 	| { type: "pullRequest"; prNumber: number; baseBranch: string; title: string }
 	| { type: "folder"; paths: string[] };
@@ -553,6 +561,23 @@ async function getMergeBase(
 	}
 }
 
+async function getMergeBaseBetweenRefs(
+	pi: ExtensionAPI,
+	leftRef: string,
+	rightRef: string,
+): Promise<string | null> {
+	try {
+		const { stdout, code } = await pi.exec("git", ["merge-base", leftRef, rightRef]);
+		if (code === 0 && stdout.trim()) {
+			return stdout.trim();
+		}
+
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Get list of local branches
  */
@@ -715,6 +740,16 @@ async function buildReviewPrompt(
 			return includeLocalChanges ? `${basePrompt} ${LOCAL_CHANGES_REVIEW_INSTRUCTIONS}` : basePrompt;
 		}
 
+		case "compareBranches": {
+			const mergeBase = await getMergeBaseBetweenRefs(pi, target.targetBranch, target.baseBranch);
+			const basePrompt = buildCompareBranchesPrompt({
+				targetBranch: target.targetBranch,
+				baseBranch: target.baseBranch,
+				mergeBaseSha: mergeBase,
+			});
+			return includeLocalChanges ? `${basePrompt} ${LOCAL_CHANGES_REVIEW_INSTRUCTIONS}` : basePrompt;
+		}
+
 		case "commit":
 			if (target.title) {
 				return COMMIT_PROMPT_WITH_TITLE.replace("{sha}", target.sha).replace("{title}", target.title);
@@ -750,6 +785,8 @@ function getUserFacingHint(target: ReviewTarget): string {
 			return "current changes";
 		case "baseBranch":
 			return `changes against '${target.branch}'`;
+		case "compareBranches":
+			return `branch '${target.targetBranch}' against '${target.baseBranch}'`;
 		case "commit": {
 			const shortSha = target.sha.slice(0, 7);
 			return target.title ? `commit ${shortSha}: ${target.title}` : `commit ${shortSha}`;
@@ -832,6 +869,7 @@ async function waitForLoopTurnToStart(ctx: ExtensionContext, previousAssistantId
 const REVIEW_PRESETS = [
 	{ value: "uncommitted", label: "Review uncommitted changes", description: "" },
 	{ value: "baseBranch", label: "Review against a base branch", description: "(local)" },
+	{ value: "compareBranches", label: "Review another branch against base", description: "(no checkout)" },
 	{ value: "commit", label: "Review a commit", description: "" },
 	{ value: "pullRequest", label: "Review a pull request", description: "(GitHub PR)" },
 	{ value: "folder", label: "Review a folder (or more)", description: "(snapshot, not diff)" },
@@ -1012,9 +1050,15 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					break;
 				}
 
+				case "compareBranches": {
+					const target = await showCompareBranchesSelector(ctx);
+					if (target) return target;
+					break;
+				}
+
 				case "commit": {
 					if (reviewLoopFixingEnabled) {
-						ctx.ui.notify("Loop mode does not work with commit review.", "error");
+						ctx.ui.notify("Loop mode does not work with this review target.", "error");
 						break;
 					}
 					const target = await showCommitSelector(ctx);
@@ -1044,22 +1088,55 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	 * Show branch selector for base branch review
 	 */
 	async function showBranchSelector(ctx: ExtensionContext): Promise<ReviewTarget | null> {
+		const result = await showBranchOrRefSelector(ctx, {
+			title: "Select base branch",
+			excludeCurrentBranch: true,
+			allowFreeformWhenEmpty: false,
+		});
+
+		if (!result) return null;
+		return { type: "baseBranch", branch: result };
+	}
+
+	type BranchOrRefSelectorOptions = {
+		title: string;
+		excludeCurrentBranch?: boolean;
+		defaultToDefaultBranch?: boolean;
+		excludeBranches?: string[];
+		allowFreeformWhenEmpty?: boolean;
+	};
+
+	async function showBranchOrRefSelector(
+		ctx: ExtensionContext,
+		options: BranchOrRefSelectorOptions,
+	): Promise<string | null> {
 		const branches = await getLocalBranches(pi);
 		const currentBranch = await getCurrentBranch(pi);
 		const defaultBranch = await getDefaultBranch(pi);
+		const excluded = new Set(options.excludeBranches ?? []);
 
-		// Never offer the current branch as a base branch (reviewing against itself is meaningless).
-		const candidateBranches = currentBranch ? branches.filter((b) => b !== currentBranch) : branches;
-
-		if (candidateBranches.length === 0) {
-			ctx.ui.notify(
-				currentBranch ? `No other branches found (current branch: ${currentBranch})` : "No branches found",
-				"error",
-			);
-			return null;
+		let candidateBranches = branches.filter((branch) => !excluded.has(branch));
+		if (options.excludeCurrentBranch && currentBranch) {
+			candidateBranches = candidateBranches.filter((branch) => branch !== currentBranch);
+		}
+		if (options.defaultToDefaultBranch && !excluded.has(defaultBranch) && !candidateBranches.includes(defaultBranch)) {
+			candidateBranches = [defaultBranch, ...candidateBranches];
 		}
 
-		// Sort branches with default branch first
+		const defaultValue = options.defaultToDefaultBranch ? defaultBranch : "";
+		if (candidateBranches.length === 0) {
+			if (options.allowFreeformWhenEmpty === false) {
+				ctx.ui.notify(
+					currentBranch ? `No other branches found (current branch: ${currentBranch})` : "No branches found",
+					"error",
+				);
+				return null;
+			}
+
+			const result = await ctx.ui.editor(`${options.title}:`, defaultValue);
+			return result?.trim() || null;
+		}
+
 		const sortedBranches = candidateBranches.sort((a, b) => {
 			if (a === defaultBranch) return -1;
 			if (b === defaultBranch) return 1;
@@ -1071,11 +1148,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			label: branch,
 			description: branch === defaultBranch ? "(default)" : "",
 		}));
+		const defaultBranchIndex = items.findIndex((item) => item.value === defaultBranch);
 
-		const result = await ctx.ui.custom<string | null>((tui, theme, keybindings, done) => {
+		return ctx.ui.custom<string | null>((tui, theme, keybindings, done) => {
 			const container = new Container();
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-			container.addChild(new Text(theme.fg("accent", theme.bold("Select base branch"))));
+			container.addChild(new Text(theme.fg("accent", theme.bold(options.title))));
 
 			const searchInput = new Input();
 			container.addChild(searchInput);
@@ -1083,7 +1161,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 			const listContainer = new Container();
 			container.addChild(listContainer);
-			container.addChild(new Text(theme.fg("dim", "Type to filter • enter to select • esc to cancel")));
+			container.addChild(new Text(theme.fg("dim", "Type to filter or enter a ref • enter to select/use typed ref • esc to cancel")));
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
 			let filteredItems = items;
@@ -1092,7 +1170,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			const updateList = () => {
 				listContainer.clear();
 				if (filteredItems.length === 0) {
-					listContainer.addChild(new Text(theme.fg("warning", "  No matching branches")));
+					listContainer.addChild(new Text(theme.fg("warning", "  No matching branches; press enter to use typed ref")));
 					selectList = null;
 					return;
 				}
@@ -1104,6 +1182,10 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					scrollInfo: (text) => theme.fg("dim", text),
 					noMatch: (text) => theme.fg("warning", text),
 				});
+
+				if (options.defaultToDefaultBranch && defaultBranchIndex >= 0 && filteredItems === items) {
+					selectList.setSelectedIndex(defaultBranchIndex);
+				}
 
 				selectList.onSelect = (item) => done(item.value);
 				selectList.onCancel = () => done(null);
@@ -1128,17 +1210,24 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					container.invalidate();
 				},
 				handleInput(data: string) {
-					if (
-						keybindings.matches(data, "tui.select.up") ||
-						keybindings.matches(data, "tui.select.down") ||
-						keybindings.matches(data, "tui.select.confirm") ||
-						keybindings.matches(data, "tui.select.cancel")
-					) {
+					if (keybindings.matches(data, "tui.select.cancel")) {
+						done(null);
+						tui.requestRender();
+						return;
+					}
+
+					if (keybindings.matches(data, "tui.select.confirm")) {
 						if (selectList) {
 							selectList.handleInput(data);
-						} else if (keybindings.matches(data, "tui.select.cancel")) {
-							done(null);
+						} else {
+							done(searchInput.getValue().trim() || null);
 						}
+						tui.requestRender();
+						return;
+					}
+
+					if (keybindings.matches(data, "tui.select.up") || keybindings.matches(data, "tui.select.down")) {
+						selectList?.handleInput(data);
 						tui.requestRender();
 						return;
 					}
@@ -1149,9 +1238,25 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				},
 			};
 		});
+	}
 
-		if (!result) return null;
-		return { type: "baseBranch", branch: result };
+	async function showCompareBranchesSelector(ctx: ExtensionContext): Promise<ReviewTarget | null> {
+		const targetBranch = await showBranchOrRefSelector(ctx, {
+			title: "Select target branch/ref to review",
+			excludeCurrentBranch: false,
+			defaultToDefaultBranch: false,
+		});
+		if (!targetBranch) return null;
+
+		const baseBranch = await showBranchOrRefSelector(ctx, {
+			title: "Select base branch/ref",
+			excludeCurrentBranch: false,
+			defaultToDefaultBranch: true,
+			excludeBranches: [targetBranch],
+		});
+		if (!baseBranch) return null;
+
+		return { type: "compareBranches", targetBranch, baseBranch };
 	}
 
 	/**
@@ -1539,6 +1644,19 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				return { target: { type: "baseBranch", branch }, extraInstruction };
 			}
 
+			case "compare": {
+				const parsed: CompareBranchesTarget | null = parseCompareBranchArgs(parts.slice(1));
+				if (!parsed) return { target: null, extraInstruction };
+				return {
+					target: {
+						type: "compareBranches",
+						targetBranch: parsed.targetBranch,
+						baseBranch: parsed.baseBranch || "",
+					},
+					extraInstruction,
+				};
+			}
+
 			case "commit": {
 				const sha = parts[1];
 				if (!sha) return { target: null, extraInstruction };
@@ -1609,11 +1727,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	}
 
 	function isLoopCompatibleTarget(target: ReviewTarget): boolean {
-		if (target.type !== "commit") {
-			return true;
-		}
-
-		return false;
+		return target.type !== "commit" && target.type !== "compareBranches";
 	}
 
 	async function runLoopFixingReview(
@@ -1785,6 +1899,10 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 			}
 
+			if (target?.type === "compareBranches" && !target.baseBranch) {
+				target = { ...target, baseBranch: await getDefaultBranch(pi) };
+			}
+
 			// If no args or invalid args, show selector
 			if (!target) {
 				fromSelector = true;
@@ -1801,7 +1919,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				if (reviewLoopFixingEnabled && !isLoopCompatibleTarget(target)) {
-					ctx.ui.notify("Loop mode does not work with commit review.", "error");
+					ctx.ui.notify("Loop mode does not work with this review target.", "error");
 					if (fromSelector) {
 						target = null;
 						continue;
