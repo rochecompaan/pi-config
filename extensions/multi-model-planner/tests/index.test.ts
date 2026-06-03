@@ -384,6 +384,11 @@ test("registers run_team and /team-check, and only auto-checks availability once
 	assert.equal(pi.tools.length, 1);
 	assert.equal(pi.commands.has("team-check"), true);
 	assert.equal(pi.tools[0]?.name, "run_team");
+	assert.match(pi.tools[0]?.promptSnippet ?? "", /multi-model planning\/review teams/i);
+	const promptGuidelines = (pi.tools[0]?.promptGuidelines ?? []).join("\n");
+	assert.match(promptGuidelines, /team="Review Team"/i);
+	assert.match(promptGuidelines, /team="Planning Team"/i);
+	assert.match(promptGuidelines, /do not call resolve_agent_team/i);
 	assert.deepEqual(Object.keys(pi.tools[0]?.parameters.properties ?? {}), ["task", "team"]);
 
 	const { ctx } = createContext();

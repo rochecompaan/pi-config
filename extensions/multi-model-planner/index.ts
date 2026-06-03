@@ -192,6 +192,13 @@ export function createMultiModelPlannerExtension(
 			name: "run_team",
 			label: "Run Team",
 			description: "Run a named multi-model team through Draft, Discussion Round 1, Discussion Round 2, and Synthesis.",
+			promptSnippet: "Run named multi-model planning/review teams such as Planning Team or Review Team.",
+			promptGuidelines: [
+				"Use run_team when the user asks to run a multi-model planning or review team.",
+				"Use run_team with team=\"Planning Team\" for requests that say to use the planning team.",
+				"Use run_team with team=\"Review Team\" for requests that say to use the review team.",
+				"Multi-model planner teams are unrelated to Pi subagent teams; do not call resolve_agent_team for run_team requests.",
+			],
 			parameters: deps.schema.Object({
 				task: deps.schema.String({ description: "The task for the team to solve." }),
 				team: deps.schema.String({ description: "The explicit team name to run." }),
