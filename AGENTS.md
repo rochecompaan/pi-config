@@ -28,3 +28,12 @@ Do not write new tests merely to assert:
 For those cases, verify with the appropriate command instead, such as linting, syntax checks, dry-runs, builds, or existing test suites.
 
 When skipping a new test, briefly state the verification used instead.
+
+## Subagent review routing
+
+- The canonical Pi review subagent is `reviewer`.
+- Do not dispatch `code-reviewer`; legacy `code-reviewer` agents are disabled and only document the migration path.
+- When a Superpowers skill or template says to dispatch `superpowers:code-reviewer` or `code-reviewer`, adapt it to Pi by dispatching `reviewer` instead.
+- Before dispatching a review subagent, resolve the active reviewer role with `resolve_agent_team({ role: "reviewer" })` when available. Pass the resolved `model` and `thinking` explicitly when present.
+- Use `context: "fresh"` for adversarial code review unless the user explicitly asks for forked context.
+- Include the Superpowers code-review template context in the `reviewer` task prompt: what was implemented, plan or requirements, base/head SHAs, and a short description.
