@@ -2,6 +2,8 @@
 name: mechanical-worker
 description: Cheap model worker for deterministic mechanical tasks
 tools: read, grep, find, ls, bash, edit, write
+model: openai-codex/gpt-5.3-codex-spark
+thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
