@@ -8,6 +8,7 @@
  * - Review another branch/ref against a base branch without checkout
  * - Review uncommitted changes
  * - Review a specific commit
+ * - Selectable review profiles (standard or thermo-nuclear code quality)
  * - Shared custom review instructions (applied to all review modes when configured)
  *
  * Usage:
@@ -21,6 +22,8 @@
  * - `/review folder src docs` - review specific folders/files (snapshot, not diff)
  * - `/review` selector includes Add/Remove custom review instructions (applies to all modes)
  * - `/review --extra "focus on performance regressions"` - add extra review instruction (works with any mode)
+ * - `/review --profile thermo-nuclear` - choose the thermo-nuclear code-quality review profile
+ * - `/review branch main --profile thermo-nuclear` - use a review profile with any target mode
  *
  * Project-specific review guidelines:
  * - If a REVIEW_GUIDELINES.md file exists in the same directory as .pi,
@@ -1137,6 +1140,48 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		return "commit";
 	}
 
+	async function showReviewProfileSelector(ctx: ExtensionContext): Promise<ReviewProfileId | null> {
+		const items: SelectItem[] = REVIEW_PROFILE_OPTIONS.map((profile) => ({
+			value: profile.id,
+			label: profile.label,
+			description: profile.description,
+		}));
+
+		return ctx.ui.custom<ReviewProfileId | null>((tui, theme, _kb, done) => {
+			const container = new Container();
+			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
+			container.addChild(new Text(theme.fg("accent", theme.bold("Select a review profile"))));
+
+			const selectList = new SelectList(items, Math.min(items.length, 10), {
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			});
+
+			selectList.onSelect = (item) => done(item.value as ReviewProfileId);
+			selectList.onCancel = () => done(null);
+
+			container.addChild(selectList);
+			container.addChild(new Text(theme.fg("dim", "Press enter to confirm or esc to cancel")));
+			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
+
+			return {
+				render(width: number) {
+					return container.render(width);
+				},
+				invalidate() {
+					container.invalidate();
+				},
+				handleInput(data: string) {
+					selectList.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		});
+	}
+
 	/**
 	 * Show the review preset selector
 	 */
@@ -1741,7 +1786,8 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		}
 
 		const modeHint = useFreshSession ? " (fresh session)" : "";
-		ctx.ui.notify(`Starting review: ${hint}${modeHint}`, "info");
+		const profileLabel = REVIEW_PROFILE_OPTIONS.find((option) => option.id === profile)?.label ?? profile;
+		ctx.ui.notify(`Starting ${profileLabel}: ${hint}${modeHint}`, "info");
 
 		// Send as a user message that triggers a turn
 		pi.sendUserMessage(fullPrompt);
@@ -2146,6 +2192,16 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 			while (true) {
 				if (!target && fromSelector) {
+					if (!profileSpecified) {
+						const selectedProfile = await showReviewProfileSelector(ctx);
+						if (!selectedProfile) {
+							ctx.ui.notify("Review cancelled", "info");
+							return;
+						}
+						profile = selectedProfile;
+						profileSpecified = true;
+					}
+
 					target = await showReviewSelector(ctx);
 				}
 
