@@ -79,7 +79,6 @@ let
     ln -s ${settingsJson} "$out/settings.json"
     ln -s ${mcpJson} "$out/mcp.json"
     ln -s ${extensions} "$out/extensions"
-    ln -s ${package}/agent-teams "$out/agent-teams"
     ln -s ${package}/agents "$out/agents"
     ln -s ${multiModelPlanningTeams} "$out/multi-model-planning-teams"
     ln -s ${skills} "$out/skills"
@@ -100,7 +99,6 @@ in
     ;
 
   agents = "${package}/agents";
-  agentTeams = "${package}/agent-teams";
   agentsMd = "${package}/AGENTS.md";
   nodeModules = "${package}/node_modules";
   package = resourcesPackage;

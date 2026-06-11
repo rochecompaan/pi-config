@@ -18,9 +18,7 @@
           pkgs.nixfmt-rfc-style
         ];
 
-        shellHook = config.lib.projectPiShellHook {
-          agentTeam = "openai-only";
-        };
+        shellHook = config.lib.projectPiShellHook { };
       };
 
       devShells.jailed-pi = pkgs.mkShell {
@@ -44,7 +42,6 @@
         ];
 
         shellHook = config.lib.projectPiShellHook {
-          agentTeam = "openai-only";
           jailedPi.enable = true;
         };
       };

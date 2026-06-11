@@ -178,7 +178,6 @@ let
           ln -sfnT ${piResources.package}/AGENTS.md "$agent_dir/AGENTS.md"
           ln -sfnT ${piResources.package}/settings.json "$agent_dir/settings.json"
           ln -sfnT ${piResources.package}/mcp.json "$agent_dir/mcp.json"
-          ln -sfnT ${piResources.package}/agent-teams "$agent_dir/agent-teams"
           ln -sfnT ${piResources.package}/agents "$agent_dir/agents"
           ln -sfnT ${piResources.package}/extensions "$agent_dir/extensions"
           ln -sfnT ${piResources.package}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"

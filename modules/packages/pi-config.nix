@@ -79,7 +79,6 @@
         cp -r ${../../skills} "$out/skills"
         cp -r ${../../themes} "$out/themes"
         cp -r ${../../agents} "$out/agents"
-        cp -r ${../../agent-teams} "$out/agent-teams"
         cp -r ${../../multi-model-planning-teams} "$out/multi-model-planning-teams"
 
         chmod u+w "$out/extensions" "$out/skills"
