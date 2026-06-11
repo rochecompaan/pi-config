@@ -73,3 +73,20 @@ test("parseReviewProfileOption rejects empty equals profile values", () => {
 		error: "Missing value for --profile",
 	});
 });
+
+test("parseReviewProfileOption preserves the first profile parse error", () => {
+	assert.deepEqual(parseReviewProfileOption(["--profile", "--profile=thermo-nuclear", "branch", "main"]), {
+		profile: DEFAULT_REVIEW_PROFILE_ID,
+		profileSpecified: true,
+		parts: ["branch", "main"],
+		error: "Missing value for --profile",
+	});
+});
+
+test("parseReviewProfileOption preserves --extra values that look like profile flags", () => {
+	assert.deepEqual(parseReviewProfileOption(["--extra", "--profile=thermo-nuclear", "branch", "main"]), {
+		profile: DEFAULT_REVIEW_PROFILE_ID,
+		profileSpecified: false,
+		parts: ["--extra", "--profile=thermo-nuclear", "branch", "main"],
+	});
+});

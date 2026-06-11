@@ -64,17 +64,34 @@ export function parseReviewProfileOption(parts: string[]): ParsedReviewProfileOp
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
 
+		if (part === "--extra") {
+			remainingParts.push(part);
+			if (i + 1 < parts.length) {
+				remainingParts.push(parts[i + 1]);
+				i += 1;
+			}
+			continue;
+		}
+
+		if (part.startsWith("--extra=")) {
+			remainingParts.push(part);
+			continue;
+		}
+
 		if (part === "--profile") {
 			profileSpecified = true;
 			const next = parts[i + 1];
 			if (!next || next.startsWith("--")) {
-				error = "Missing value for --profile";
+				error = error ?? "Missing value for --profile";
 				continue;
 			}
 
 			const parsed = parseProfileValue(next);
-			profile = parsed.profile;
-			error = parsed.error;
+			if (parsed.error) {
+				error = error ?? parsed.error;
+			} else if (!error) {
+				profile = parsed.profile;
+			}
 			i += 1;
 			continue;
 		}
@@ -82,8 +99,11 @@ export function parseReviewProfileOption(parts: string[]): ParsedReviewProfileOp
 		if (part.startsWith("--profile=")) {
 			profileSpecified = true;
 			const parsed = parseProfileValue(part.slice("--profile=".length));
-			profile = parsed.profile;
-			error = parsed.error;
+			if (parsed.error) {
+				error = error ?? parsed.error;
+			} else if (!error) {
+				profile = parsed.profile;
+			}
 			continue;
 		}
 
