@@ -1654,7 +1654,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		ctx: ExtensionCommandContext,
 		target: ReviewTarget,
 		useFreshSession: boolean,
-		options?: { includeLocalChanges?: boolean; extraInstruction?: string },
+		options?: { includeLocalChanges?: boolean; extraInstruction?: string; profile?: ReviewProfileId },
 	): Promise<boolean> {
 		// Check if we're already in a review
 		if (reviewOriginId) {
@@ -1723,8 +1723,10 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const hint = getUserFacingHint(target);
 		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
 
-		// Combine the review rubric with the specific prompt
-		let fullPrompt = `${REVIEW_RUBRIC}\n\n---\n\nPlease perform a code review with the following focus:\n\n${prompt}`;
+		// Combine the selected review rubric with the specific prompt
+		const profile = options?.profile ?? DEFAULT_REVIEW_PROFILE_ID;
+		const rubric = REVIEW_PROFILE_RUBRICS[profile];
+		let fullPrompt = `${rubric}\n\n---\n\nPlease perform a code review with the following focus:\n\n${prompt}`;
 
 		if (reviewCustomInstructions) {
 			fullPrompt += `\n\nShared custom review instructions (applies to all reviews):\n\n${reviewCustomInstructions}`;
@@ -1752,6 +1754,8 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	 */
 	type ParsedReviewArgs = {
 		target: ReviewTarget | { type: "pr"; ref: string } | null;
+		profile: ReviewProfileId;
+		profileSpecified: boolean;
 		extraInstruction?: string;
 		error?: string;
 	};
@@ -1802,18 +1806,39 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	}
 
 	function parseArgs(args: string | undefined): ParsedReviewArgs {
-		if (!args?.trim()) return { target: null };
+		if (!args?.trim()) {
+			return {
+				target: null,
+				profile: DEFAULT_REVIEW_PROFILE_ID,
+				profileSpecified: false,
+			};
+		}
 
 		const rawParts = tokenizeArgs(args.trim());
+		const profileParse = parseReviewProfileOption(rawParts);
+		if (profileParse.error) {
+			return {
+				target: null,
+				profile: profileParse.profile,
+				profileSpecified: profileParse.profileSpecified,
+				error: profileParse.error,
+			};
+		}
+
 		const parts: string[] = [];
 		let extraInstruction: string | undefined;
 
-		for (let i = 0; i < rawParts.length; i++) {
-			const part = rawParts[i];
+		for (let i = 0; i < profileParse.parts.length; i++) {
+			const part = profileParse.parts[i];
 			if (part === "--extra") {
-				const next = rawParts[i + 1];
+				const next = profileParse.parts[i + 1];
 				if (!next) {
-					return { target: null, error: "Missing value for --extra" };
+					return {
+						target: null,
+						profile: profileParse.profile,
+						profileSpecified: profileParse.profileSpecified,
+						error: "Missing value for --extra",
+					};
 				}
 				extraInstruction = next;
 				i += 1;
@@ -1828,57 +1853,62 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			parts.push(part);
 		}
 
+		const baseResult = {
+			profile: profileParse.profile,
+			profileSpecified: profileParse.profileSpecified,
+			extraInstruction,
+		};
+
 		if (parts.length === 0) {
-			return { target: null, extraInstruction };
+			return { target: null, ...baseResult };
 		}
 
 		const subcommand = parts[0]?.toLowerCase();
 
 		switch (subcommand) {
 			case "uncommitted":
-				return { target: { type: "uncommitted" }, extraInstruction };
+				return { target: { type: "uncommitted" }, ...baseResult };
 
 			case "branch": {
 				const branch = parts[1];
-				if (!branch) return { target: null, extraInstruction };
-				return { target: { type: "baseBranch", branch }, extraInstruction };
+				if (!branch) return { target: null, ...baseResult };
+				return { target: { type: "baseBranch", branch }, ...baseResult };
 			}
 
 			case "compare": {
 				const parsed: CompareBranchesTarget | null = parseCompareBranchArgs(parts.slice(1));
-				if (!parsed) return { target: null, extraInstruction };
+				if (!parsed) return { target: null, ...baseResult };
 				return {
 					target: {
 						type: "compareBranches",
 						targetBranch: parsed.targetBranch,
 						baseBranch: parsed.baseBranch || "",
 					},
-					extraInstruction,
+					...baseResult,
 				};
 			}
 
 			case "commit": {
 				const sha = parts[1];
-				if (!sha) return { target: null, extraInstruction };
+				if (!sha) return { target: null, ...baseResult };
 				const title = parts.slice(2).join(" ") || undefined;
-				return { target: { type: "commit", sha, title }, extraInstruction };
+				return { target: { type: "commit", sha, title }, ...baseResult };
 			}
-
 
 			case "folder": {
 				const paths = parseReviewPaths(parts.slice(1).join(" "));
-				if (paths.length === 0) return { target: null, extraInstruction };
-				return { target: { type: "folder", paths }, extraInstruction };
+				if (paths.length === 0) return { target: null, ...baseResult };
+				return { target: { type: "folder", paths }, ...baseResult };
 			}
 
 			case "pr": {
 				const ref = parts[1];
-				if (!ref) return { target: null, extraInstruction };
-				return { target: { type: "pr", ref }, extraInstruction };
+				if (!ref) return { target: null, ...baseResult };
+				return { target: { type: "pr", ref }, ...baseResult };
 			}
 
 			default:
-				return { target: null, extraInstruction };
+				return { target: null, ...baseResult };
 		}
 	}
 
@@ -1933,6 +1963,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	async function runLoopFixingReview(
 		ctx: ExtensionCommandContext,
 		target: ReviewTarget,
+		profile: ReviewProfileId,
 		extraInstruction?: string,
 	): Promise<void> {
 		if (reviewLoopInProgress) {
@@ -1953,6 +1984,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				const started = await executeReview(ctx, target, true, {
 					includeLocalChanges: true,
 					extraInstruction,
+					profile,
 				});
 				if (!started) {
 					ctx.ui.notify("Loop fixing stopped before starting the review pass.", "warning");
@@ -2080,12 +2112,16 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			let target: ReviewTarget | null = null;
 			let fromSelector = false;
 			let extraInstruction: string | undefined;
+			let profile: ReviewProfileId = DEFAULT_REVIEW_PROFILE_ID;
+			let profileSpecified = false;
 			const parsed = parseArgs(args);
 			if (parsed.error) {
 				ctx.ui.notify(parsed.error, "error");
 				return;
 			}
 			extraInstruction = parsed.extraInstruction?.trim() || undefined;
+			profile = parsed.profile;
+			profileSpecified = parsed.profileSpecified;
 
 			if (parsed.target) {
 				if (parsed.target.type === "pr") {
@@ -2128,7 +2164,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				if (reviewLoopFixingEnabled) {
-					await runLoopFixingReview(ctx, target, extraInstruction);
+					await runLoopFixingReview(ctx, target, profile, extraInstruction);
 					return;
 				}
 
@@ -2156,7 +2192,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					useFreshSession = choice === "Empty branch";
 				}
 
-				await executeReview(ctx, target, useFreshSession, { extraInstruction });
+				await executeReview(ctx, target, useFreshSession, { extraInstruction, profile });
 				return;
 			}
 		},
