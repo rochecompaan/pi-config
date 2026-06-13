@@ -3,7 +3,7 @@ name: planner
 description: Creates implementation plans from context and requirements
 tools: read, grep, find, ls, bash, write
 model: openai-codex/gpt-5.5
-thinking: high
+thinking: xhigh
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

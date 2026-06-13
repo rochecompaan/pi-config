@@ -2,7 +2,7 @@
 name: worker
 description: Standard implementation worker for Superpowers subagent workflows
 tools: read, grep, find, ls, bash, edit, write, contact_supervisor
-model: openai-codex/gpt-5.4
+model: openai-codex/gpt-5.5
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

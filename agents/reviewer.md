@@ -3,7 +3,7 @@ name: reviewer
 description: Versatile review specialist for code diffs, plans, proposed solutions, codebase health, and PR/issue validation
 tools: read, grep, find, ls, bash
 model: openai-codex/gpt-5.5
-thinking: high
+thinking: xhigh
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
