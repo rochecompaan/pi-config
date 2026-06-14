@@ -32,10 +32,7 @@ else
       hash = "sha256-cHjU3ZhxKPea/RksT2IfZK3s435D8qh1bx0KnwNN5xg=";
     };
 
-    piMessengerBridgePackageLock = pkgs.fetchurl {
-      url = "https://raw.githubusercontent.com/tintinweb/pi-messenger-bridge/8b0c1da19c930225b15ec971f9225241a82b381d/package-lock.json";
-      hash = "sha256-6gwABX5hgrLzHWLP/CWefq1F5pwuwlPTNoYi702R8pw=";
-    };
+    piMessengerBridgePackageLock = ./pi-messenger-bridge-package-lock.json;
 
     piMessengerBridgeSrc = pkgs.fetchzip {
       url = "https://registry.npmjs.org/pi-messenger-bridge/-/pi-messenger-bridge-0.4.0.tgz";
@@ -47,7 +44,7 @@ else
       version = "0.4.0";
       src = piMessengerBridgeSrc;
 
-      npmDepsHash = "sha256-iTQy7wkXT86MZCDpPnU7jpwoxroV97w7WyxTqW15ZwI=";
+      npmDepsHash = "sha256-NoSzGuRXBu0ph2MpqC9bVx+/1FvG3Po/VsCQCyBPhT8=";
 
       dontNpmBuild = true;
       makeCacheWritable = true;
