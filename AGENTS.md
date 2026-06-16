@@ -2,6 +2,8 @@
 
 - **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 - Write the validated design (spec) to `docs/specs/YYYY-MM-DD-<topic>-design.md`
+- Treat specs and plans as the start of a new feature: create or use a task-specific git worktree before writing them, just like implementation changes.
+- If the task-specific worktree does not exist yet, create it with the `using-git-worktrees` skill before writing the spec or plan.
 
 ## Testing policy
 
