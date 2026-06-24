@@ -9,13 +9,13 @@ else
     };
 
     sherpaOnnxNode = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.0.tgz";
-      hash = "sha256-YV+px436CmhSDmshUmOLWTaeoqp+miY69TqHJpMwPkA=";
+      url = "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.3.tgz";
+      hash = "sha256-ybZ3MNNbQW/QSz1qSXggk7jrHaldCfXbu9p7f0/1DR4=";
     };
 
     sherpaOnnxLinuxX64 = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.0.tgz";
-      hash = "sha256-w1SfJmebP8inl1z/sd0qaC1wL/KYDmnzD/NiDCde3gY=";
+      url = "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.3.tgz";
+      hash = "sha256-6qNYH/QPMk1/7hghVLT9POmed39CqeI29QBqARtQ098=";
     };
 
     piListen = pkgs.runCommand "pi-listen-7.2.2" { } ''
@@ -61,29 +61,29 @@ else
 
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
-      rev = "0b3f5b4d16557228cf7ce3e2de7b708f94ccf9ac";
-      sha256 = "sha256-OOepzpERAz1E7yIl85IxcXs+QFUzi6uhpC6RjQXr1Yc=";
+      rev = "e4f06282d0c95856b36b7ec2893f4fd294ebfefe";
+      sha256 = "sha256-lvcf6VC6xfZ3j8oHpKoYPNQi8hKFLLhcQq5FxcjJaKk=";
     };
 
     piSubagents = pkgs.buildNpmPackage {
       pname = "pi-subagents";
-      version = "0.23.0";
+      version = "0.31.0";
       src = piSubagentsSrc;
 
-      npmDepsHash = "sha256-hJwe6crzgVnosyJcfV5BIu0cfm69kEQ1vaZNteQxoY4=";
+      npmDepsHash = "sha256-z57zpjsprtC0CPJbLukAwD9N/lOCHglMrC8Te7UWSgQ=";
 
       dontNpmBuild = true;
     };
 
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
-      rev = "e7a2d16476bf042e9add4699c9d018a90f86e4a6";
-      sha256 = "sha256-8/M/S0BUYurZkFqe6LemVtBQnPSxBNfy1C7Q6f92hjE=";
+      rev = "896224c4b1879920ab573417e68fd51d2ccc9072";
+      sha256 = "sha256-+lT2a/qq0SF4k0PgnEDKiuidVlZX2p0vEso4d/5T1os=";
     };
 
     diffPackageSrc = pkgs.fetchurl {
-      url = "https://registry.npmjs.org/diff/-/diff-7.0.0.tgz";
-      sha256 = "sha256-kRLnmAa9a+V4p6bxJNlnEdQGCwus1NS6xOlq59CPKsE=";
+      url = "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz";
+      sha256 = "sha256-uJi/I8lVlGB1duJd3UAT8dUe0OhiqvBzKBWDDIeztY8=";
     };
 
     diffPackage = pkgs.runCommand "diff-npm" { } ''
