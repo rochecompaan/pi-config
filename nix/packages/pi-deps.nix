@@ -98,16 +98,16 @@ else
     '';
 
     contextModeSrc = pkgs.fetchurl {
-      url = "https://registry.npmjs.org/context-mode/-/context-mode-1.0.166.tgz";
-      hash = "sha256-lmx1iIcEsmcOEE01OYu8pFhhDrIdyk03w7Dc2Ldlj9M=";
+      url = "https://registry.npmjs.org/context-mode/-/context-mode-1.0.168.tgz";
+      hash = "sha256-qyCmudpZBZxrG9AnwR6f3j/GFfU64X2jaS9LoC4+GIc=";
     };
 
     contextMode = pkgs.buildNpmPackage {
       pname = "context-mode";
-      version = "1.0.166";
+      version = "1.0.168";
       src = contextModeSrc;
 
-      npmDepsHash = "sha256-T04kruce0Ghu9WN+aDnwX6Q79Au9p4TtHI3OvcHLcbA=";
+      npmDepsHash = "sha256-OL0ezpLWDFFuijKiHTLNwNTXPRXQxWV+FhH5d9BEnKI=";
 
       dontNpmBuild = true;
       makeCacheWritable = true;
