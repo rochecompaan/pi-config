@@ -14,7 +14,6 @@
         "diff-package" = piDeps.diffPackage;
         "pi-listen" = piDeps.piListen;
         "pi-messenger-bridge" = piDeps.piMessengerBridge;
-        "pi-ponytail" = piDeps.piPonytail;
         "pi-subagents" = piDeps.piSubagents;
       };
     };

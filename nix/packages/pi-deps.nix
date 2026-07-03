@@ -59,11 +59,6 @@ else
       '';
     };
 
-    piPonytail = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/pi-ponytail/-/pi-ponytail-0.1.2.tgz";
-      hash = "sha256-ECZc+Zu0Gv7YvvrpbLp+H8oVrxZv0Gq0h/b4MvdvsHA=";
-    };
-
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
       rev = "e4f06282d0c95856b36b7ec2893f4fd294ebfefe";
@@ -124,7 +119,6 @@ else
       diffPackage
       piListen
       piMessengerBridge
-      piPonytail
       piRemote
       piSubagents
       superpowersSrc
@@ -134,7 +128,6 @@ else
       "${contextMode}/lib/node_modules/context-mode"
       "${piListen}"
       "${piMessengerBridge}/lib/node_modules/pi-messenger-bridge"
-      "${piPonytail}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${superpowersSrc}"
