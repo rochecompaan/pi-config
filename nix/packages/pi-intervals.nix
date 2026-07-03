@@ -2,13 +2,13 @@
 
 pkgs.buildNpmPackage {
   pname = "pi-intervals";
-  version = "0.1.0-bd3b432";
+  version = "0.1.0-f95c1bb";
 
   src = pkgs.fetchFromGitHub {
     owner = "sixfeetup";
     repo = "pi-intervals";
-    rev = "bd3b4328e14246db55540328448560359ff14a2b";
-    hash = "sha256-kUQYlIBMNhDC2US2i25Ll4rgants2YiYaJGIrGlOAI0=";
+    rev = "f95c1bb9d87d2440b3750b561f25e958d4b81be7";
+    hash = "sha256-T+mvd/fAVMENAmizCUjRp+BsMrFUvQG1/K4h0kCJnQc=";
   };
 
   npmDepsHash = "sha256-DJWK6Vw7H8GJJQSkoFNAbI5Mkecq5S3LpQtOdqZVSO0=";
