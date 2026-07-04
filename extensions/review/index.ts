@@ -56,6 +56,10 @@ import {
 	parseReviewProfileOption,
 	type ReviewProfileId,
 } from "./review-profile.ts";
+import {
+	createReviewFindingsTodo,
+	getReviewSummaryText,
+} from "./review-todo.ts";
 
 // State to track fresh session review (where we branched from).
 // Module-level state means only one review can be active at a time.
@@ -2311,11 +2315,18 @@ Instructions:
 8. Run relevant tests/checks for touched code where practical.
 9. End with: fixed items, deferred/skipped items (with reasons), and verification results.`;
 
-	type EndReviewAction = "returnOnly" | "returnAndFix" | "returnAndSummarize";
+	type EndReviewAction = "returnOnly" | "returnAndFix" | "returnAndSummarize" | "returnAndTodo";
 	type EndReviewActionResult = "ok" | "cancelled" | "error";
 	type EndReviewActionOptions = {
 		showSummaryLoader?: boolean;
 		notifySuccess?: boolean;
+	};
+	type NavigateWithSummaryResult = {
+		cancelled: boolean;
+		error?: string;
+		summaryEntry?: {
+			summary?: string;
+		};
 	};
 
 	function getActiveReviewOrigin(ctx: ExtensionContext): string | undefined {
@@ -2348,9 +2359,9 @@ Instructions:
 		ctx: ExtensionCommandContext,
 		originId: string,
 		showLoader: boolean,
-	): Promise<{ cancelled: boolean; error?: string } | null> {
+	): Promise<NavigateWithSummaryResult | null> {
 		if (showLoader && ctx.hasUI) {
-			return ctx.ui.custom<{ cancelled: boolean; error?: string } | null>((tui, theme, _kb, done) => {
+			return ctx.ui.custom<NavigateWithSummaryResult | null>((tui, theme, _kb, done) => {
 				const loader = new BorderedLoader(tui, theme, "Returning and summarizing review branch...");
 				loader.onAbort = () => done(null);
 
@@ -2359,7 +2370,7 @@ Instructions:
 					customInstructions: REVIEW_SUMMARY_PROMPT,
 					replaceInstructions: true,
 				})
-					.then(done)
+					.then((result) => done(result as NavigateWithSummaryResult))
 					.catch((err) => done({ cancelled: false, error: err instanceof Error ? err.message : String(err) }));
 
 				return loader;
@@ -2367,11 +2378,12 @@ Instructions:
 		}
 
 		try {
-			return await ctx.navigateTree(originId, {
+			const result = await ctx.navigateTree(originId, {
 				summarize: true,
 				customInstructions: REVIEW_SUMMARY_PROMPT,
 				replaceInstructions: true,
 			});
+			return result as NavigateWithSummaryResult;
 		} catch (error) {
 			return { cancelled: false, error: error instanceof Error ? error.message : String(error) };
 		}
@@ -2427,6 +2439,32 @@ Instructions:
 			return "cancelled";
 		}
 
+		if (action === "returnAndTodo") {
+			const summaryText = getReviewSummaryText(summaryResult);
+			if (!summaryText) {
+				ctx.ui.notify(
+					"Review summary did not contain text; todo was not created. Use /end-review to try again.",
+					"error",
+				);
+				return "error";
+			}
+
+			try {
+				const todo = await createReviewFindingsTodo(ctx.cwd, summaryText);
+				clearReviewState(ctx);
+				if (notifySuccess) {
+					ctx.ui.notify(`Review complete! Created ${todo.displayId} with review findings.`, "info");
+				}
+				return "ok";
+			} catch (error) {
+				ctx.ui.notify(
+					`Failed to create review findings todo: ${error instanceof Error ? error.message : String(error)}`,
+					"error",
+				);
+				return "error";
+			}
+		}
+
 		clearReviewState(ctx);
 
 		if (action === "returnAndSummarize") {
@@ -2468,6 +2506,7 @@ Instructions:
 				"Return only",
 				"Return and fix findings",
 				"Return and summarize",
+				"Return and add findings to todo",
 			]);
 
 			if (choice === undefined) {
@@ -2480,7 +2519,9 @@ Instructions:
 					? "returnAndFix"
 					: choice === "Return and summarize"
 						? "returnAndSummarize"
-						: "returnOnly";
+						: choice === "Return and add findings to todo"
+							? "returnAndTodo"
+							: "returnOnly";
 
 			await executeEndReviewAction(ctx, action, {
 				showSummaryLoader: true,
