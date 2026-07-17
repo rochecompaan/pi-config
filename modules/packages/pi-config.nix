@@ -97,6 +97,36 @@
         default = piConfig;
       };
 
-      checks."pi-config-build" = piConfig;
+      checks = {
+        "pi-config-build" = piConfig;
+
+        "pi-config-extension-load" = pkgs.runCommand "pi-config-extension-load" { } ''
+          export HOME="$TMPDIR/home"
+          agent_dir="$HOME/.pi/agent"
+          mkdir -p "$agent_dir"
+
+          ln -s ${piConfig}/AGENTS.md "$agent_dir/AGENTS.md"
+          ln -s ${piConfig}/settings.json "$agent_dir/settings.json"
+          ln -s ${piConfig}/mcp.json "$agent_dir/mcp.json"
+          ln -s ${piConfig}/extensions "$agent_dir/extensions"
+          ln -s ${piConfig}/agents "$agent_dir/agents"
+          ln -s ${piConfig}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"
+          ln -s ${piConfig}/skills "$agent_dir/skills"
+          ln -s ${piConfig}/themes "$agent_dir/themes"
+          ln -s ${piConfig}/node_modules "$agent_dir/node_modules"
+
+          set +e
+          ${piPackage}/bin/pi -p "Say ok" --no-tools --provider __invalid__ > "$TMPDIR/pi.log" 2>&1
+          pi_status=$?
+          set -e
+
+          if ${pkgs.gnugrep}/bin/grep -q "Failed to load extension" "$TMPDIR/pi.log"; then
+            cat "$TMPDIR/pi.log"
+            exit 1
+          fi
+
+          touch "$out"
+        '';
+      };
     };
 }

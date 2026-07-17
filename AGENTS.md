@@ -31,6 +31,26 @@ For those cases, verify with the appropriate command instead, such as linting, s
 
 When skipping a new test, briefly state the verification used instead.
 
+## Pi and dependency update testing
+
+After updating Pi itself, flake inputs, or packaged Pi dependencies, do not rely on `pi --help`, `pi list`, or Nix builds alone. Those checks can miss extension-loading failures.
+
+Run the runtime extension-load check before declaring the update complete:
+
+```sh
+nix build .#checks.x86_64-linux.pi-config-extension-load --no-link
+```
+
+Also run the full flake check:
+
+```sh
+nix flake check --accept-flake-config --print-build-logs
+```
+
+If the extension-load check is unavailable, manually test a Home Manager-like startup path: build `.#packages.x86_64-linux.pi-config`, create a temporary `HOME` with `~/.pi/agent` symlinked to the package resources, and run Pi in non-interactive prompt mode (for example `pi -p "Say ok" --no-tools --provider __invalid__`). The test must fail only at the expected provider/API-key stage; any `Failed to load extension`, `No such built-in module`, or `Cannot find package` error is a regression.
+
+`pi-intervals` is maintained separately at `~/projects/pi/extensions/pi-intervals`. If `pi-intervals` breaks after a Pi or dependency update, prefer asking the user to fix it there and then bump the pinned revision in this repo. Do not patch `pi-intervals` source in this repo except as an explicit temporary workaround requested by the user.
+
 ## Subagent review routing
 
 - The canonical Pi review subagent is `reviewer`.

@@ -9,13 +9,13 @@ else
     };
 
     sherpaOnnxNode = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.3.tgz";
-      hash = "sha256-ybZ3MNNbQW/QSz1qSXggk7jrHaldCfXbu9p7f0/1DR4=";
+      url = "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz";
+      hash = "sha256-cbdaglSWW0PFQALKrjKXbUQTQJ7ddFDW+7Nuhi0zmBg=";
     };
 
     sherpaOnnxLinuxX64 = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.3.tgz";
-      hash = "sha256-6qNYH/QPMk1/7hghVLT9POmed39CqeI29QBqARtQ098=";
+      url = "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.4.tgz";
+      hash = "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=";
     };
 
     piListen = pkgs.runCommand "pi-listen-7.2.2" { } ''
@@ -61,7 +61,7 @@ else
 
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
-      rev = "12a157d2a70b2f4cbc004c020c5f9213b6d8eea8";
+      rev = "v0.34.0";
       sha256 = "sha256-RN8f5cT/oRSkqwOAmvJ2uJsOmScYb0ijwixTd75iGHk=";
     };
 
@@ -77,8 +77,8 @@ else
 
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
-      rev = "896224c4b1879920ab573417e68fd51d2ccc9072";
-      sha256 = "sha256-+lT2a/qq0SF4k0PgnEDKiuidVlZX2p0vEso4d/5T1os=";
+      rev = "v6.1.1";
+      sha256 = "sha256-kHdQ9e44doBk2yYW88tMSCqVG8ycYcvJSZlrIziXhpA=";
     };
 
     diffPackageSrc = pkgs.fetchurl {
@@ -127,7 +127,6 @@ else
     packagePaths = [
       "${contextMode}/lib/node_modules/context-mode"
       "${piListen}"
-      "${piMessengerBridge}/lib/node_modules/pi-messenger-bridge"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${superpowersSrc}"
