@@ -1,23 +1,33 @@
 # Pi Agent Profiles for Superpowers
 
-This directory contains Pi-specific agent profiles used by Superpowers subagent workflows.
+This directory contains project-owned Pi agent profiles used by Superpowers and pi-subagents workflows.
 
-## Included profiles
+## Hybrid builtin roles
 
-- `scout.md` — fast repository reconnaissance and handoff context.
-- `planner.md` — implementation planning from approved requirements.
-- `reviewer.md` — fresh-context adversarial review.
+These profiles intentionally shadow same-named pi-subagents builtins so the project can retain its Superpowers adaptations and review/implementation guardrails while incorporating useful builtin coordination behavior:
+
+- `scout.md` — focused repository reconnaissance and handoff context.
+- `planner.md` — approved-scope implementation planning.
+- `reviewer.md` — fresh-context, read-only adversarial review.
 - `worker.md` — standard single-writer implementation.
+
+Their model and thinking fields are intentionally absent. `settings.json` owns role model routing through `subagents.agentOverrides`.
+
+All four profiles use:
+
+```yaml
+systemPromptMode: replace
+inheritProjectContext: true
+inheritSkills: false
+```
+
+Project instructions remain available through inherited context. Broad skill discovery is disabled for ordinary children; required Superpowers skills are passed explicitly by the parent task.
+
+## Custom roles
+
 - `mechanical-worker.md` — narrow deterministic implementation.
-- `code-reviewer.md` — used by `requesting-code-review` and workflows that depend on it.
+- `code-reviewer.md` — disabled compatibility shim documenting migration to the canonical `reviewer` role.
 
 ## Installation
 
-Install these profiles into your Pi user agents directory:
-
-```bash
-mkdir -p ~/.pi/agent/agents
-ln -sf ~/.pi/agent/git/github.com/obra/superpowers/.pi/agents/code-reviewer.md ~/.pi/agent/agents/code-reviewer.md
-```
-
-If Superpowers is installed from a local path, replace the source path accordingly.
+The Nix `pi-config` package copies this directory and exposes it through Home Manager and project Pi shell resources. Do not install these files manually or symlink them from a Superpowers checkout.

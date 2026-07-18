@@ -59,3 +59,14 @@ If the extension-load check is unavailable, manually test a Home Manager-like st
 - Before dispatching a review subagent, resolve the active reviewer role with `resolve_agent_team({ role: "reviewer" })` when available. Pass the resolved `model` and `thinking` explicitly when present.
 - Use `context: "fresh"` for adversarial code review unless the user explicitly asks for forked context.
 - Include the Superpowers code-review template context in the `reviewer` task prompt: what was implemented, plan or requirements, base/head SHAs, and a short description.
+
+## Subagent skill routing
+
+- Project role profiles intentionally set `inheritSkills: false`; ordinary children should receive only the skills required by their concrete task.
+- Any explicitly injected skill is part of the child task contract. The child must read it before acting and follow it unless it conflicts with project instructions or approved scope.
+- When delegating creation of a Superpowers implementation plan to `planner`, pass the `writing-plans` skill explicitly.
+- For `worker` tasks that change production behavior, fix bugs, add reusable logic, parse or validate input, change API contracts, handle errors, affect security, or prevent regressions, pass both `test-driven-development` and `verification-before-completion`.
+- For static configuration, documentation, dependency pins, or another Testing Value Gate exclusion, do not force TDD. Require the appropriate direct verification and pass `verification-before-completion` when the worker owns completion evidence.
+- Use `mechanical-worker` for exact deterministic edits needing little judgment.
+- `scout` does not require a default Superpowers skill.
+- `reviewer` receives the applicable Superpowers review-template context in its task prompt and runs with `context: "fresh"`; do not rely on broad inherited skill discovery.
