@@ -66,6 +66,17 @@
       );
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
 
+      sherpaLoadExtension = pkgs.writeText "pi-listen-sherpa-load.ts" ''
+        import { createRequire } from "node:module";
+
+        const require = createRequire(import.meta.url);
+
+        export default function () {
+          require("${piDeps.piListen}/node_modules/sherpa-onnx-node/sherpa-onnx.js");
+          console.error("PI_LISTEN_SHERPA_LOADED");
+        }
+      '';
+
       piConfig = pkgs.runCommand "pi-config" { } ''
         mkdir -p "$out" "$out/node_modules"
 
@@ -121,6 +132,28 @@
           set -e
 
           if ${pkgs.gnugrep}/bin/grep -q "Failed to load extension" "$TMPDIR/pi.log"; then
+            cat "$TMPDIR/pi.log"
+            exit 1
+          fi
+
+          touch "$out"
+        '';
+
+        "pi-listen-sherpa-load" = pkgs.runCommand "pi-listen-sherpa-load" { } ''
+          export HOME="$TMPDIR/home"
+          mkdir -p "$HOME"
+
+          set +e
+          ${piPackage}/bin/pi \
+            -p "Say ok" \
+            --no-tools \
+            --provider __invalid__ \
+            -e ${sherpaLoadExtension} \
+            > "$TMPDIR/pi.log" 2>&1
+          pi_status=$?
+          set -e
+
+          if ! ${pkgs.gnugrep}/bin/grep -q "PI_LISTEN_SHERPA_LOADED" "$TMPDIR/pi.log"; then
             cat "$TMPDIR/pi.log"
             exit 1
           fi

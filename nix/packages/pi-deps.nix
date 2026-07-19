@@ -18,11 +18,16 @@ else
       hash = "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=";
     };
 
-    piListen = pkgs.runCommand "pi-listen-7.2.2" { } ''
+    piListen = pkgs.runCommand "pi-listen-7.2.2" {
+      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+    } ''
       mkdir -p $out/node_modules
       cp -r ${piListenSrc}/. $out/
       cp -r ${sherpaOnnxNode} $out/node_modules/sherpa-onnx-node
       cp -r ${sherpaOnnxLinuxX64} $out/node_modules/sherpa-onnx-linux-x64
+      chmod -R u+w $out/node_modules/sherpa-onnx-linux-x64
+      autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
     '';
 
     matrixSdkCryptoNodeFile = "matrix-sdk-crypto.linux-x64-gnu.node";
