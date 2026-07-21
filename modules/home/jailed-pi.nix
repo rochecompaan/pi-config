@@ -39,6 +39,7 @@ let
       piCfg = config.programs."roche-pi";
       piPackage = inputs.llm-agents.packages.${pkgs.system}.pi;
       homeDir = config.home.homeDirectory;
+      credentialJail = inputs.jail-nix.lib.init pkgs;
       gitUserName = config.programs.git.settings.user.name or null;
       gitUserEmail = config.programs.git.settings.user.email or null;
       sessionEditor = config.home.sessionVariables.EDITOR or "vi";
@@ -60,6 +61,25 @@ let
       apiKeyFiles = lib.filter (file: file != null) (
         lib.mapAttrsToList (_: apiKey: apiKey.file) cfg.apiKeys
       );
+
+      hostCredentialPermissions = with credentialJail.combinators; [
+        (add-runtime ''
+          if [ -n "''${XDG_RUNTIME_DIR:-}" ]; then
+            RUNTIME_ARGS+=(
+              --dir /run
+              --dir /run/user
+              --dir "$XDG_RUNTIME_DIR"
+              --bind-try "$XDG_RUNTIME_DIR/op-daemon.sock" "$XDG_RUNTIME_DIR/op-daemon.sock"
+              --bind-try "$XDG_RUNTIME_DIR/gnupg" "$XDG_RUNTIME_DIR/gnupg"
+            )
+          fi
+        '')
+        (try-fwd-env "XDG_RUNTIME_DIR")
+        (try-fwd-env "GPG_TTY")
+        (try-readwrite (noescape ''"$HOME/.config/op"''))
+        (try-readwrite (noescape ''"$HOME/.gnupg"''))
+        (try-readonly (noescape ''"$HOME/.config/git"''))
+      ];
     in
     {
       options.programs."roche-pi".jailed = {
@@ -199,10 +219,15 @@ let
             inherit gitUserName gitUserEmail;
             docker = cfg.docker;
             podman = cfg.podman;
-            extraPkgs = cfg.extraPkgs ++ optional (editorPackage != null) editorPackage;
-            runtimeStoreClosurePaths = cfg.runtimeStoreClosurePaths;
+            extraPkgs = [
+              pkgs._1password-cli
+              config.programs.gpg.package
+            ]
+            ++ cfg.extraPkgs
+            ++ optional (editorPackage != null) editorPackage;
+            runtimeStoreClosurePaths = cfg.runtimeStoreClosurePaths ++ [ ''"$HOME/.config/git/config"'' ];
             runtimeClosurePkgs = [ piResources.package ];
-            extraPermissions = cfg.extraPermissions;
+            extraPermissions = hostCredentialPermissions ++ cfg.extraPermissions;
           })
         ];
       };
