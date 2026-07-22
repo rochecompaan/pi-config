@@ -10,7 +10,7 @@ Use interactive `claude` in an ephemeral Zellij pane. Preserve the prompt; the c
 ## Preconditions
 
 - Run from the sandboxed repository Claude should inspect.
-- Require `claude`, `jq`, and Zellij whose `zellij action list-panes --help` documents `--json`. Do not invoke `list-panes --json` before the session exists.
+- Require `claude`, `jq`, GNU `timeout`, and Zellij whose `zellij action list-panes --help` documents `--json`. Do not invoke `list-panes --json` before the session exists.
 - Never use `claude --print`, API credentials, `--dangerously-skip-permissions`, or tool restrictions.
 
 ## Session Contract
@@ -33,11 +33,21 @@ trap cleanup EXIT INT TERM HUP
 mkdir -p "$ZELLIJ_SOCKET_DIR"
 
 zellij attach --create-background "$session"
-until pane=$(ZELLIJ_SESSION_NAME="$session" zellij action list-panes --json 2>/dev/null | jq -r 'map(select(.is_plugin == false and .is_focused == true)) | first | .id // empty') && test -n "$pane"; do
+while :; do
+  remaining=$((deadline - SECONDS))
+  if ((remaining <= 0)); then
+    printf 'TIMEOUT session=%s phase=pane-discovery\n' "$session" >&2
+    exit 124
+  fi
+  pane=$(
+    ZELLIJ_SESSION_NAME="$session" timeout "${remaining}s" zellij action list-panes --json 2>/dev/null |
+      jq -r 'map(select(.is_plugin == false and .is_focused == true)) | first | .id // empty'
+  ) || true
   if ((SECONDS >= deadline)); then
     printf 'TIMEOUT session=%s phase=pane-discovery\n' "$session" >&2
     exit 124
   fi
+  test -n "$pane" && break
   sleep 0.2
 done
 ZELLIJ_SESSION_NAME="$session" zellij action write-chars --pane-id "$pane" claude
@@ -68,7 +78,7 @@ On deadline expiry, report the session name, timeout, and latest capture; cleanu
 | Need | Command |
 | --- | --- |
 | Isolate temporary server | Set `ZELLIJ_SOCKET_DIR` and `ZELLIJ_SOCK_DIR` under `$temp_dir` |
-| Bound every wait | Set one `$deadline` before session creation and check it in every polling loop |
+| Bound every wait | Set one `$deadline`, wrap each external poll with `timeout`, and recheck before accepting success |
 | Start temporary session | `zellij attach --create-background "$session"` |
 | Start interactive Claude | `zellij action write-chars ... claude`, then Enter |
 | Send arbitrary multiline prompt | `zellij ... action paste --pane-id "$pane" "$prompt"` |
@@ -82,7 +92,7 @@ On deadline expiry, report the session name, timeout, and latest capture; cleanu
 | --- | --- |
 | “Print mode is faster.” | Use interactive Claude in its pane. |
 | “The default Zellij socket is simpler.” | Use the private socket directory; never expose unrelated sessions. |
-| “Pane discovery will finish quickly.” | Check the shared deadline and exit 124 so the cleanup trap runs. |
+| “Checking time between polls is enough.” | Bound each Zellij call with its remaining budget and recheck before accepting a pane. |
 | “A created session means Claude is ready.” | Type static `claude`, submit Enter, then poll for its visible prompt. |
 | “A fixed name or repo capture is simpler.” | Use a unique name and temporary capture. |
 | “Shell-building prompts or approval is safe.” | Use quoted `paste`; never respond. |
