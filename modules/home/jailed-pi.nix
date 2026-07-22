@@ -38,6 +38,8 @@ let
       cfg = config.programs."roche-pi".jailed;
       piCfg = config.programs."roche-pi";
       piPackage = inputs.llm-agents.packages.${pkgs.system}.pi;
+      claudePackage = inputs.llm-agents.packages.${pkgs.system}."claude-code";
+      zellijPackage = inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij;
       homeDir = config.home.homeDirectory;
       credentialJail = inputs.jail-nix.lib.init pkgs;
       gitUserName = config.programs.git.settings.user.name or null;
@@ -79,6 +81,9 @@ let
         (try-readwrite (noescape ''"$HOME/.config/op"''))
         (try-readwrite (noescape ''"$HOME/.gnupg"''))
         (try-readonly (noescape ''"$HOME/.config/git"''))
+        (try-readwrite (noescape ''"$HOME/.claude"''))
+        (try-readwrite (noescape ''"$HOME/.claude.json"''))
+        (try-readwrite (noescape ''"$HOME/.config/claude"''))
       ];
     in
     {
@@ -222,6 +227,8 @@ let
             extraPkgs = [
               pkgs._1password-cli
               config.programs.gpg.package
+              claudePackage
+              zellijPackage
             ]
             ++ cfg.extraPkgs
             ++ optional (editorPackage != null) editorPackage;
