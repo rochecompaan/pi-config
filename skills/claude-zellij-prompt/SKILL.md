@@ -21,6 +21,8 @@ Use a collision-resistant name, a private temporary Zellij socket directory, and
 set -euo pipefail
 temp_dir="$(mktemp -d)"
 session="pi-claude-feedback-$(date +%s)-$RANDOM"
+timeout_seconds="${CLAUDE_ZELLIJ_TIMEOUT_SECONDS:-600}"
+deadline=$((SECONDS + timeout_seconds))
 export ZELLIJ_SOCKET_DIR="$temp_dir/zellij"
 export ZELLIJ_SOCK_DIR="$ZELLIJ_SOCKET_DIR"
 cleanup() {
@@ -31,12 +33,18 @@ trap cleanup EXIT INT TERM HUP
 mkdir -p "$ZELLIJ_SOCKET_DIR"
 
 zellij attach --create-background "$session"
-until pane=$(ZELLIJ_SESSION_NAME="$session" zellij action list-panes --json 2>/dev/null | jq -r 'map(select(.is_plugin == false and .is_focused == true)) | first | .id // empty') && test -n "$pane"; do sleep 0.2; done
+until pane=$(ZELLIJ_SESSION_NAME="$session" zellij action list-panes --json 2>/dev/null | jq -r 'map(select(.is_plugin == false and .is_focused == true)) | first | .id // empty') && test -n "$pane"; do
+  if ((SECONDS >= deadline)); then
+    printf 'TIMEOUT session=%s phase=pane-discovery\n' "$session" >&2
+    exit 124
+  fi
+  sleep 0.2
+done
 ZELLIJ_SESSION_NAME="$session" zellij action write-chars --pane-id "$pane" claude
 ZELLIJ_SESSION_NAME="$session" zellij action send-keys --pane-id "$pane" Enter
 ```
 
-Launching static `claude` and submitting Enter are required before prompt polling. Use caller deadline while polling `ZELLIJ_SESSION_NAME="$session" zellij action dump-screen --full --pane-id "$pane"` until Claude visibly reaches its prompt. Inspect the UI—never hardcode a prompt glyph/regex. Keep every capture under `$temp_dir`, outside the repository, so the same trap removes sockets and captures. Poll intervals are acceptable; fixed sleeps do not prove readiness.
+Launching static `claude` and submitting Enter are required before prompt polling. Set `CLAUDE_ZELLIJ_TIMEOUT_SECONDS` from the caller's deadline when it differs from 600 seconds, and use the same `$deadline` while polling `ZELLIJ_SESSION_NAME="$session" zellij action dump-screen --full --pane-id "$pane"` until Claude visibly reaches its prompt. Inspect the UI—never hardcode a prompt glyph/regex. Keep every capture under `$temp_dir`, outside the repository, so the same trap removes sockets and captures. Poll intervals are acceptable; fixed sleeps do not prove readiness.
 
 ## Deliver and Capture the Prompt
 
@@ -60,6 +68,7 @@ On deadline expiry, report the session name, timeout, and latest capture; cleanu
 | Need | Command |
 | --- | --- |
 | Isolate temporary server | Set `ZELLIJ_SOCKET_DIR` and `ZELLIJ_SOCK_DIR` under `$temp_dir` |
+| Bound every wait | Set one `$deadline` before session creation and check it in every polling loop |
 | Start temporary session | `zellij attach --create-background "$session"` |
 | Start interactive Claude | `zellij action write-chars ... claude`, then Enter |
 | Send arbitrary multiline prompt | `zellij ... action paste --pane-id "$pane" "$prompt"` |
@@ -73,6 +82,7 @@ On deadline expiry, report the session name, timeout, and latest capture; cleanu
 | --- | --- |
 | “Print mode is faster.” | Use interactive Claude in its pane. |
 | “The default Zellij socket is simpler.” | Use the private socket directory; never expose unrelated sessions. |
+| “Pane discovery will finish quickly.” | Check the shared deadline and exit 124 so the cleanup trap runs. |
 | “A created session means Claude is ready.” | Type static `claude`, submit Enter, then poll for its visible prompt. |
 | “A fixed name or repo capture is simpler.” | Use a unique name and temporary capture. |
 | “Shell-building prompts or approval is safe.” | Use quoted `paste`; never respond. |
