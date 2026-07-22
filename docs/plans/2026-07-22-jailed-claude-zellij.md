@@ -4,7 +4,7 @@
 
 **Goal:** Make the packaged `claude-zellij-prompt` skill work from jailed Pi with the user's existing Claude subscription state and an isolated temporary Zellij server.
 
-**Architecture:** Add the pinned Claude Code CLI and a compatible Zellij 0.44.3 package to jailed Pi, expose only Claude's three state paths, and forward `TERM`. Keep Claude inside Pi's existing jail; update the skill to create its Zellij sockets inside the same cleanup-managed temporary directory as captures.
+**Architecture:** Add the pinned Claude Code CLI and a compatible Zellij 0.44.3 package to jailed Pi, expose only Claude's three state paths, and rely on jail-nix's existing `TERM` forwarding. Keep Claude inside Pi's existing jail; update the skill to create its Zellij sockets inside the same cleanup-managed temporary directory as captures.
 
 **Tech Stack:** Nix flakes, Home Manager, jail-nix/bubblewrap, Claude Code, Zellij, jq, Pi skills.
 
@@ -23,7 +23,7 @@
 
 ## File Structure
 
-- Modify `modules/home/jailed-pi.nix`: add package bindings, Claude state access, and `TERM` forwarding.
+- Modify `modules/home/jailed-pi.nix`: add package bindings and Claude state access; verify the existing jail-nix base `TERM` forwarding.
 - Modify `skills/claude-zellij-prompt/SKILL.md`: require a compatible Zellij command surface and isolate session sockets under the temporary directory.
 - No persistent automated test file: these are static Nix configuration and process guidance. The project Testing Value Gate calls for direct build/runtime checks, while `writing-skills` requires red/green pressure scenarios for the skill edit.
 
@@ -38,7 +38,7 @@
 
 **Interfaces:**
 - Consumes: `inputs.llm-agents.packages.${pkgs.system}."claude-code"`, `inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij`, and existing jail-nix combinators.
-- Produces: Claude and Zellij commands in jailed Pi's PATH, shared Claude state mounts, and a forwarded `TERM`.
+- Produces: Claude and Zellij commands in jailed Pi's PATH and shared Claude state mounts; the existing jail-nix base continues forwarding `TERM`.
 
 - [ ] **Step 1: Record the failing pre-change behavior**
 
@@ -61,8 +61,8 @@ Build the existing jailed Home Manager fixture and inspect its generated sandbox
 
 - no Claude Code closure path;
 - no Zellij closure path;
-- no `TERM` forwarding;
-- no `~/.claude`, `~/.claude.json`, or `~/.config/claude` binds.
+- no `~/.claude`, `~/.claude.json`, or `~/.config/claude` binds;
+- existing `--setenv TERM "$TERM"` forwarding is already present and must remain unchanged.
 
 Use the same Home Manager fixture shape from `docs/plans/2026-07-21-jailed-pi-op-gpg.md`, with `config.allowUnfree = true`, and inspect the built closure with `nix-store --query --requisites` plus the generated `jailed-pi-sandbox` script.
 
@@ -75,13 +75,9 @@ Add these bindings after `piPackage`:
       zellijPackage = inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij;
 ```
 
-- [ ] **Step 3: Add narrow state and terminal permissions**
+- [ ] **Step 3: Add narrow Claude state permissions**
 
-Extend `hostCredentialPermissions` after the existing environment forwarding and Git bind:
-
-```nix
-        (try-fwd-env "TERM")
-```
+Extend `hostCredentialPermissions` after the existing Git bind:
 
 ```nix
         (try-readwrite (noescape ''"$HOME/.claude"''))
@@ -89,7 +85,7 @@ Extend `hostCredentialPermissions` after the existing environment forwarding and
         (try-readwrite (noescape ''"$HOME/.config/claude"''))
 ```
 
-Keep all paths optional and preserve the existing op, GnuPG, Git, and XDG runtime permissions.
+Keep all paths optional and preserve the existing op, GnuPG, Git, XDG runtime, and jail-nix base `TERM` behavior.
 
 - [ ] **Step 4: Add Claude and Zellij to the package list**
 
@@ -125,7 +121,7 @@ Inspect the closure and generated sandbox script. Require:
 
 - a Claude Code closure path;
 - a Zellij closure path whose version is at least 0.44.3;
-- `--setenv TERM` forwarding when the caller sets it;
+- the existing `--setenv TERM "$TERM"` base permission remains present;
 - optional read-write binds for all three Claude state paths;
 - preservation of existing op/GnuPG/Git permissions.
 
