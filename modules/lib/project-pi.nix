@@ -13,14 +13,21 @@
           jailedPi ? {
             enable = false;
             agentDir = ".pi/agent-jailed";
+            authMode = "global";
           },
         }:
         let
           jailedPiCfg = {
             enable = false;
             agentDir = ".pi/agent-jailed";
+            authMode = "global";
           }
           // jailedPi;
+
+          authSetupLib = import ../../nix/lib/jailed-pi-auth.nix { lib = pkgs.lib; };
+          authSetupScript = authSetupLib.mkAuthSetup {
+            inherit (jailedPiCfg) authMode;
+          };
 
           settings = pkgs.lib.recursiveUpdate (
             { }
@@ -29,6 +36,10 @@
             }
           ) extraSettings;
         in
+        assert pkgs.lib.assertMsg (builtins.elem jailedPiCfg.authMode [
+          "global"
+          "local"
+        ]) "projectPiShellHook jailedPi.authMode must be either \"global\" or \"local\"";
         ''
           mkdir -p .pi
           ln -sfnT ${piConfigPackage}/agents .pi/agents
@@ -41,7 +52,6 @@
             agent_dir=${pkgs.lib.escapeShellArg jailedPiCfg.agentDir}
             mkdir -p "$agent_dir"
             mkdir -p "$HOME/.pi/agent/sessions"
-            touch "$HOME/.pi/agent/auth.json"
 
             ln -sfnT ${piConfigPackage}/AGENTS.md "$agent_dir/AGENTS.md"
             ln -sfnT ${piConfigPackage}/settings.json "$agent_dir/settings.json"
@@ -52,7 +62,7 @@
             ln -sfnT ${piConfigPackage}/node_modules "$agent_dir/node_modules"
             ln -sfnT ${piConfigPackage}/skills "$agent_dir/skills"
             ln -sfnT ${piConfigPackage}/themes "$agent_dir/themes"
-            ln -sfn "$HOME/.pi/agent/auth.json" "$agent_dir/auth.json"
+            ${authSetupScript}
             ln -sfn "$HOME/.pi/agent/sessions" "$agent_dir/sessions"
 
             case "$agent_dir" in

@@ -34,6 +34,7 @@ Initial platform support is `x86_64-linux` only.
 
     jailed = {
       enable = true;
+      authMode = "local"; # keep auth.json in the resolved agent directory
       apiKeys = {
         OPENROUTER_API_KEY.file = config.sops.secrets."openrouter-api-key".path;
         ANTHROPIC_API_KEY.fromEnv = true;
@@ -45,6 +46,8 @@ Initial platform support is `x86_64-linux` only.
   };
 }
 ```
+
+`jailed.authMode` defaults to `"global"`, which links jailed Pi to `~/.pi/agent/auth.json`. Set it to `"local"` to let the resolved `PI_CODING_AGENT_DIR` own `auth.json` and keep the global credential outside the jail. Sessions remain shared through `~/.pi/agent/sessions` in both modes.
 
 `docker.enable` binds the host Docker socket into the jail and should be enabled only for trusted project or host profiles. It includes `docker` and `docker-compose`. `podman.enable` adds Podman client tooling (`podman` and `podman-compose`) and binds the rootless host Podman socket path when available; it expects a host Podman service rather than launching nested local containers inside the jail.
 
@@ -71,6 +74,7 @@ pkgs.mkShell {
     (inputs.roche-pi.lib.${system}.mkJailedPi {
       agentConfigPackage = inputs.roche-pi.packages.${system}.pi-config;
       defaultAgentDir = "$PWD/.pi/agent-jailed";
+      authMode = "local";
       apiKeys = {
         OPENROUTER_API_KEY.fromEnv = true;
         ANTHROPIC_API_KEY.fromEnv = true;
@@ -84,8 +88,13 @@ pkgs.mkShell {
   shellHook = ''
     ${inputs.roche-pi.lib.${system}.projectPiShellHook {
       agentTeam = "openai-only";
-      jailedPi.enable = true;
+      jailedPi = {
+        enable = true;
+        authMode = "local";
+      };
     }}
   '';
 }
 ```
+
+Use the same `authMode` for `mkJailedPi` and `projectPiShellHook.jailedPi`. Local mode works with `pi-local-auth`: authentication remains under `.pi/local-agent` (or another runtime `PI_CODING_AGENT_DIR`) while sessions continue to use `~/.pi/agent/sessions`.

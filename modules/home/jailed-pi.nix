@@ -33,7 +33,12 @@ let
   };
 
   jailedPiModule =
-    { config, pkgs, ... }:
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
     let
       cfg = config.programs."roche-pi".jailed;
       piCfg = config.programs."roche-pi";
@@ -41,6 +46,11 @@ let
       claudePackage = inputs.llm-agents.packages.${pkgs.system}."claude-code";
       zellijPackage = inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij;
       homeDir = config.home.homeDirectory;
+      authSetupLib = import ../../nix/lib/jailed-pi-auth.nix { inherit lib; };
+      authSetupScript = authSetupLib.mkAuthSetup {
+        inherit (cfg) authMode;
+        globalAuthPathExpr = lib.escapeShellArg "${homeDir}/.pi/agent/auth.json";
+      };
       credentialJail = inputs.jail-nix.lib.init pkgs;
       gitUserName = config.programs.git.settings.user.name or null;
       gitUserEmail = config.programs.git.settings.user.email or null;
@@ -98,6 +108,15 @@ let
         agentDir = mkOption {
           type = types.str;
           default = "${homeDir}/.pi/agent-jailed";
+        };
+
+        authMode = mkOption {
+          type = types.enum [
+            "global"
+            "local"
+          ];
+          default = "global";
+          description = "Whether jailed Pi shares global authentication or stores authentication in its agent directory.";
         };
 
         apiKeys = mkOption {
@@ -196,7 +215,6 @@ let
           agent_dir=${lib.escapeShellArg cfg.agentDir}
 
           mkdir -p ${lib.escapeShellArg homeDir}/.pi/agent/sessions
-          touch ${lib.escapeShellArg homeDir}/.pi/agent/auth.json
 
           mkdir -p "$agent_dir"
 
@@ -209,7 +227,7 @@ let
           ln -sfnT ${piResources.package}/node_modules "$agent_dir/node_modules"
           ln -sfnT ${piResources.package}/skills "$agent_dir/skills"
           ln -sfnT ${piResources.package}/themes "$agent_dir/themes"
-          ln -sfnT ${lib.escapeShellArg homeDir}/.pi/agent/auth.json "$agent_dir/auth.json"
+          ${authSetupScript}
           ln -sfnT ${lib.escapeShellArg homeDir}/.pi/agent/sessions "$agent_dir/sessions"
         '';
 
@@ -218,6 +236,7 @@ let
             name = cfg.packageName;
             agentConfigPackage = piResources.package;
             defaultAgentDir = cfg.agentDir;
+            authMode = cfg.authMode;
             apiKeys = cfg.apiKeys;
             inherit piPackage;
             editor = cfg.editor;

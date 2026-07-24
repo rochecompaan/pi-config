@@ -56,6 +56,7 @@
           piPackage ? inputs.llm-agents.packages.${system}.pi,
           agentConfigPackage,
           defaultAgentDir ? "$HOME/.pi/agent-jailed",
+          authMode ? "global",
           apiKeys ? { },
           editor ? "vi",
           gitUserName ? null,
@@ -67,6 +68,10 @@
           runtimeClosurePkgs ? [ agentConfigPackage ],
           extraPermissions ? [ ],
         }:
+        assert lib.assertMsg (builtins.elem authMode [
+          "global"
+          "local"
+        ]) "mkJailedPi authMode must be either \"global\" or \"local\"";
         assert (gitUserName == null) == (gitUserEmail == null);
         let
           normalizedApiKeys = lib.mapAttrs normalizeApiKey apiKeys;
@@ -165,7 +170,9 @@
               no-new-session
               mount-cwd
               (readwrite (noescape ''"$PI_CODING_AGENT_DIR"''))
-              (try-readwrite (noescape ''"$HOME/.pi/agent/auth.json"''))
+            ]
+            ++ lib.optional (authMode == "global") (try-readwrite (noescape ''"$HOME/.pi/agent/auth.json"''))
+            ++ [
               (try-readwrite (noescape ''"$HOME/.pi/agent/sessions"''))
               (readonly "${agentConfigPackage}")
               (try-fwd-env "EDITOR")
