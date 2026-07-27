@@ -5,6 +5,11 @@
 - Treat specs and plans as the start of a new feature: create or use a task-specific git worktree before writing them, just like implementation changes.
 - If the task-specific worktree does not exist yet, create it with the `using-git-worktrees` skill before writing the spec or plan.
 
+## Completing development work
+
+- When presenting branch-completion options, offer to squash merge into `main` locally instead of offering a regular merge into `main`.
+- When that option is selected, integrate the feature as one squash commit on `main`; preserve the feature branch's individual commits only when the user explicitly requests it.
+
 ## Testing policy
 
 Use automated tests by default for production behavior changes, bug fixes, reusable logic, parsing/validation, API contracts, error handling, security-sensitive behavior, and regressions.
