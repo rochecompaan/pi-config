@@ -5,6 +5,10 @@
     let
       inherit (pkgs) lib;
 
+      gitIdentityLib = import ../../nix/lib/jailed-pi-git-identity.nix {
+        inherit lib pkgs;
+      };
+
       commonPkgsBase = with pkgs; [
         bashInteractive
         coreutils
@@ -59,6 +63,7 @@
           authMode ? "global",
           apiKeys ? { },
           editor ? "vi",
+          inheritGitIdentity ? true,
           gitUserName ? null,
           gitUserEmail ? null,
           docker ? { },
@@ -74,6 +79,9 @@
         ]) "mkJailedPi authMode must be either \"global\" or \"local\"";
         assert (gitUserName == null) == (gitUserEmail == null);
         let
+          gitIdentitySetup = gitIdentityLib.mkSetupScript {
+            inherit inheritGitIdentity gitUserName gitUserEmail;
+          };
           normalizedApiKeys = lib.mapAttrs normalizeApiKey apiKeys;
           apiKeyNames = lib.attrNames normalizedApiKeys;
           apiKeyFiles = lib.filter (file: file != null) (
@@ -105,14 +113,6 @@
             inherit pkgs;
             additionalCombinators =
               combinators: with combinators; {
-                git-identity-env = compose [
-                  (set-env "GIT_CONFIG_COUNT" "2")
-                  (set-env "GIT_CONFIG_KEY_0" "user.name")
-                  (set-env "GIT_CONFIG_VALUE_0" gitUserName)
-                  (set-env "GIT_CONFIG_KEY_1" "user.email")
-                  (set-env "GIT_CONFIG_VALUE_1" gitUserEmail)
-                ];
-
                 runtime-closures =
                   packages: state:
                   state
@@ -180,6 +180,7 @@
               (try-fwd-env "VISUAL")
               (try-fwd-env "PI_CODING_AGENT_DIR")
             ]
+            ++ map try-fwd-env gitIdentityLib.envNames
             ++ map (path: runtime-store-closure-for-path (noescape path)) runtimeStoreClosurePaths
             ++ lib.optionals dockerCfg.enable [
               (unsafe-add-raw-args "--dir /run")
@@ -206,7 +207,6 @@
             ]
             ++ map (file: readonly file) apiKeyFiles
             ++ map try-fwd-env forwardedApiKeyNames
-            ++ lib.optionals (gitUserName != null) [ git-identity-env ]
             ++ lib.optionals (runtimeClosurePkgs != [ ]) [ (runtime-closures runtimeClosurePkgs) ]
             ++ extraPermissions
             ++ [ (add-pkg-deps (commonPkgsBase ++ [ pkgs.git ] ++ containerPkgs ++ extraPkgs)) ]
@@ -214,12 +214,16 @@
         in
         pkgs.writeShellApplication {
           inherit name;
-          runtimeInputs = [ pkgs.coreutils ];
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.git
+          ];
           text = ''
             export EDITOR="''${EDITOR:-${editor}}"
             export GIT_EDITOR="''${GIT_EDITOR:-$EDITOR}"
             export VISUAL="''${VISUAL:-$EDITOR}"
             export PI_CODING_AGENT_DIR="''${PI_CODING_AGENT_DIR:-${defaultAgentDir}}"
+            ${gitIdentitySetup}
             ${lib.optionalString dockerCfg.enable ''
               export DOCKER_CONFIG="''${DOCKER_CONFIG:-$HOME/.docker}"
             ''}

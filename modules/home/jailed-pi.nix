@@ -52,8 +52,6 @@ let
         globalAuthPathExpr = lib.escapeShellArg "${homeDir}/.pi/agent/auth.json";
       };
       credentialJail = inputs.jail-nix.lib.init pkgs;
-      gitUserName = config.programs.git.settings.user.name or null;
-      gitUserEmail = config.programs.git.settings.user.email or null;
       sessionEditor = config.home.sessionVariables.EDITOR or "vi";
       editorPackage = if sessionEditor == "nvim" || cfg.editor == "nvim" then pkgs.neovim else null;
       editorCommand = if sessionEditor == "nvim" then "${pkgs.neovim}/bin/nvim" else sessionEditor;
@@ -117,6 +115,12 @@ let
           ];
           default = "global";
           description = "Whether jailed Pi shares global authentication or stores authentication in its agent directory.";
+        };
+
+        inheritGitIdentity = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether jailed Pi inherits Git's effective name and email from the launch repository.";
         };
 
         apiKeys = mkOption {
@@ -205,10 +209,6 @@ let
             assertion = all (file: hasPrefix "/" file) apiKeyFiles;
             message = "programs.roche-pi.jailed.apiKeys.<name>.file values must be absolute paths.";
           }
-          {
-            assertion = (gitUserName == null) == (gitUserEmail == null);
-            message = "Jailed Pi git identity requires both programs.git.settings.user.name and programs.git.settings.user.email.";
-          }
         ];
 
         home.activation.jailedPiAgentDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -240,7 +240,7 @@ let
             apiKeys = cfg.apiKeys;
             inherit piPackage;
             editor = cfg.editor;
-            inherit gitUserName gitUserEmail;
+            inheritGitIdentity = cfg.inheritGitIdentity;
             docker = cfg.docker;
             podman = cfg.podman;
             extraPkgs = [
