@@ -30,6 +30,29 @@ else
       autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
     '';
 
+    piVimPackageLock = ./pi-vim-package-lock.json;
+
+    piVimSrc = pkgs.fetchzip {
+      url = "https://registry.npmjs.org/pi-vim/-/pi-vim-0.14.1.tgz";
+      hash = "sha256-2Mv39IBm/vIKTYIa5g/RpQmlJ+O3aabY4KbRf5VPvF0=";
+    };
+
+    piVim = pkgs.buildNpmPackage {
+      pname = "pi-vim";
+      version = "0.14.1";
+      src = piVimSrc;
+
+      npmDepsHash = "sha256-6BI/fEQ2C6U/oip1fNh+7HG6UfeXNHmlpIQDKi1TmaI=";
+
+      dontNpmBuild = true;
+      makeCacheWritable = true;
+      npmInstallFlags = [ "--omit=dev" ];
+
+      postPatch = ''
+        cp ${piVimPackageLock} package-lock.json
+      '';
+    };
+
     matrixSdkCryptoNodeFile = "matrix-sdk-crypto.linux-x64-gnu.node";
 
     matrixSdkCryptoNode = pkgs.fetchurl {
@@ -126,6 +149,7 @@ else
       piMessengerBridge
       piRemote
       piSubagents
+      piVim
       superpowersSrc
       ;
 
@@ -134,6 +158,7 @@ else
       "${piListen}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
+      "${piVim}/lib/node_modules/pi-vim"
       "${superpowersSrc}"
     ];
 
