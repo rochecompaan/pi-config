@@ -1,7 +1,7 @@
 { ... }:
 {
   perSystem =
-    { pkgs, self', ... }:
+    { pkgs, ... }:
     let
       piLocalAuth = pkgs.writeShellApplication {
         name = "pi-local-auth";
@@ -9,9 +9,9 @@
           pkgs.coreutils
           pkgs.gnugrep
           pkgs.jq
+          pkgs.python3
         ];
         text = ''
-          export PI_LOCAL_AUTH_SETTINGS_TEMPLATE=${self'.packages.pi-config}/settings.json
           # shellcheck disable=SC1091
           source ${../../scripts/pi-local-auth.sh}
         '';
