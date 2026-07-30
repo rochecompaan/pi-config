@@ -47,6 +47,9 @@ let
       zellijPackage = inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij;
       homeDir = config.home.homeDirectory;
       authSetupLib = import ../../nix/lib/jailed-pi-auth.nix { inherit lib; };
+      githubBrokerLib = import ../../nix/lib/jailed-github-broker.nix {
+        inherit lib pkgs;
+      };
       authSetupScript = authSetupLib.mkAuthSetup {
         inherit (cfg) authMode;
         globalAuthPathExpr = lib.escapeShellArg "${homeDir}/.pi/agent/auth.json";
@@ -121,6 +124,12 @@ let
           type = types.bool;
           default = true;
           description = "Whether jailed Pi inherits Git's effective name and email from the launch repository.";
+        };
+
+        githubBroker = mkOption {
+          type = githubBrokerLib.mkSubmoduleType;
+          default = { };
+          description = "Non-secret repository policy and resource limits for the host-side GitHub broker.";
         };
 
         apiKeys = mkOption {
@@ -202,6 +211,27 @@ let
             message = "programs.roche-pi.jailed.agentDir must not be the normal ~/.pi/agent directory.";
           }
           {
+            assertion = !cfg.githubBroker.enable || cfg.githubBroker.repository != "";
+            message = "programs.roche-pi.jailed.githubBroker.repository is required when the broker is enabled.";
+          }
+          {
+            assertion =
+              lib.length cfg.githubBroker.capabilities == lib.length (lib.unique cfg.githubBroker.capabilities);
+            message = "programs.roche-pi.jailed.githubBroker.capabilities must not contain duplicates.";
+          }
+          {
+            assertion =
+              !builtins.elem "git:write" cfg.githubBroker.capabilities
+              || builtins.elem "git:read" cfg.githubBroker.capabilities;
+            message = "programs.roche-pi.jailed.githubBroker git:write requires git:read.";
+          }
+          {
+            assertion =
+              lib.length cfg.githubBroker.pushPolicy.denyRefs
+              == lib.length (lib.unique cfg.githubBroker.pushPolicy.denyRefs);
+            message = "programs.roche-pi.jailed.githubBroker.pushPolicy.denyRefs must not contain duplicates.";
+          }
+          {
             assertion = all (name: isValidPosixName name) (lib.attrNames cfg.apiKeys);
             message = "programs.roche-pi.jailed.apiKeys attribute names must be valid POSIX environment variable names.";
           }
@@ -241,6 +271,7 @@ let
             inherit piPackage;
             editor = cfg.editor;
             inheritGitIdentity = cfg.inheritGitIdentity;
+            githubBroker = cfg.githubBroker;
             docker = cfg.docker;
             podman = cfg.podman;
             extraPkgs = [
