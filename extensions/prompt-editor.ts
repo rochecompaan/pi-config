@@ -1249,6 +1249,8 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Prompt modes must not replace the active editor component. Dedicated editor
+	// extensions such as pi-vim retain ownership across session lifecycle events.
 	pi.on("session_start", async (_event, ctx) => {
 		lastObservedModel = { provider: ctx.model?.provider, modelId: ctx.model?.id };
 		await ensureRuntime(pi, ctx);
@@ -1264,7 +1266,6 @@ export default function (pi: ExtensionAPI) {
 			customOverlay = getCurrentSelectionSpec(pi, ctx);
 		}
 
-		applyEditor(pi, ctx);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
@@ -1281,9 +1282,7 @@ export default function (pi: ExtensionAPI) {
 			customOverlay = getCurrentSelectionSpec(pi, ctx);
 		}
 
-		applyEditor(pi, ctx);
 	});
-
 
 	pi.on("model_select", async (event: ModelSelectEvent, ctx) => {
 		// Always track the last observed model for overlay/store correctness.
