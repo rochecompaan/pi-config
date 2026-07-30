@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
@@ -131,6 +130,7 @@ export type CollectContextModeSavingsOptions = {
 	cwd: string;
 	sessionId: string | null;
 	homeDir?: string;
+	databaseScope?: "all" | "project";
 };
 
 export function normalizeProjectPath(projectPath: string): string {
@@ -177,106 +177,6 @@ export function aggregateSessionRows(rows: SessionSavingsRow[], cwd: string, ses
 		skippedDbs: 0,
 		matchedSessions: matches.length,
 	};
-}
-
-type DatabaseCtor = new (filename: string, options?: { readonly?: boolean; fileMustExist?: boolean }) => any;
-
-function resolveContextModePackageJson(homeDir: string): string | null {
-	try {
-		const requireHere = createRequire(import.meta.url);
-		return requireHere.resolve("context-mode/package.json");
-	} catch {
-		// fall through to mcp.json discovery
-	}
-
-	try {
-		const mcpPath = path.join(homeDir, ".pi", "agent", "mcp.json");
-		const parsed = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
-		const command = parsed?.mcpServers?.["context-mode"]?.command;
-		if (typeof command !== "string" || !path.isAbsolute(command)) return null;
-		const packageJson = path.join(path.dirname(path.dirname(command)), "lib", "node_modules", "context-mode", "package.json");
-		return fs.existsSync(packageJson) ? packageJson : null;
-	} catch {
-		return null;
-	}
-}
-
-function loadBetterSqlite3(homeDir: string): DatabaseCtor | null {
-	try {
-		const requireHere = createRequire(import.meta.url);
-		return requireHere("better-sqlite3") as DatabaseCtor;
-	} catch {
-		// fall through to context-mode dependency discovery
-	}
-
-	const contextModePackageJson = resolveContextModePackageJson(homeDir);
-	if (!contextModePackageJson) return null;
-	try {
-		return createRequire(contextModePackageJson)("better-sqlite3") as DatabaseCtor;
-	} catch {
-		return null;
-	}
-}
-
-function listContextModeDbs(homeDir: string): string[] {
-	const sessionsDir = path.join(homeDir, ".pi", "context-mode", "sessions");
-	try {
-		return fs
-			.readdirSync(sessionsDir, { withFileTypes: true })
-			.filter((entry) => entry.isFile() && entry.name.endsWith(".db"))
-			.map((entry) => path.join(sessionsDir, entry.name));
-	} catch {
-		return [];
-	}
-}
-
-function readRowsFromDb(db: any): SessionSavingsRow[] {
-	const metaRows = db
-		.prepare("select session_id as sessionId, project_dir as projectDir, last_event_at as lastEventAt from session_meta")
-		.all() as Array<{ sessionId: string; projectDir: string; lastEventAt: string | null }>;
-
-	return metaRows.map((row) => {
-		const bytes = db
-			.prepare(
-				"select coalesce(sum(bytes_avoided), 0) as savedBytes, coalesce(sum(bytes_returned), 0) as usedBytes from session_events where session_id = ?",
-			)
-			.get(row.sessionId) as { savedBytes?: number; usedBytes?: number };
-		return {
-			sessionId: row.sessionId,
-			projectDir: row.projectDir,
-			lastEventAt: row.lastEventAt,
-			savedBytes: Number(bytes.savedBytes ?? 0),
-			usedBytes: Number(bytes.usedBytes ?? 0),
-		};
-	});
-}
-
-export async function collectContextModeSavings(options: CollectContextModeSavingsOptions): Promise<ContextModeSavings> {
-	const homeDir = options.homeDir ?? os.homedir();
-	const Database = loadBetterSqlite3(homeDir);
-	if (!Database) {
-		return { sessionRaw: null, worktreeRaw: null, inferredSession: false, skippedDbs: 0, matchedSessions: 0 };
-	}
-
-	const rows: SessionSavingsRow[] = [];
-	let skippedDbs = 0;
-	for (const dbPath of listContextModeDbs(homeDir)) {
-		let db: any = null;
-		try {
-			db = new Database(dbPath, { readonly: true, fileMustExist: true });
-			rows.push(...readRowsFromDb(db));
-		} catch {
-			skippedDbs += 1;
-		} finally {
-			try {
-				db?.close?.();
-			} catch {
-				// ignore close failures for read-only best-effort reporting
-			}
-		}
-	}
-
-	return { ...aggregateSessionRows(rows, options.cwd, options.sessionId), skippedDbs };
 }
 
 export type UsageTotals = {
