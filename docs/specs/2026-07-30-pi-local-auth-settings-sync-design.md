@@ -10,7 +10,7 @@ Approved for implementation.
 
 That template is not the effective user configuration. Home Manager applies host-specific `programs.roche-pi.settings` overrides after building `pi-config`, and Pi may persist additional runtime settings in `~/.pi/agent/settings.json`. A project-local file generated from the package template therefore omits effective global settings and becomes stale after later global changes. Refusing to update an existing local file preserves that drift.
 
-The project-local agent directory exists only to give the project its own `auth.json`. The effective global settings remain the source of truth.
+The project-local agent directory exists to give the project its own `auth.json` and hold the synchronized settings output. The effective global settings remain the source of truth. Project shell initialization must not replace that output with packaged settings. Jailed shells retain their immutable resource and global-session compatibility links because Pi resource discovery and session routing inside the jail depend on them.
 
 Local-auth and global-auth Pi sessions otherwise look the same in the TUI, so users also lack a persistent indication of which agent-directory mode is active. That makes it easy to authenticate or work in the wrong scope without noticing.
 
@@ -20,6 +20,7 @@ Local-auth and global-auth Pi sessions otherwise look the same in the TUI, so us
 - Reconcile `.pi/local-agent/settings.json` every time `pi-local-auth` runs.
 - Preserve all effective global settings while adding the routing required after overriding `PI_CODING_AGENT_DIR`.
 - Keep project-specific authentication under `.pi/local-agent/auth.json` untouched.
+- Prevent `projectPiShellHook` from overwriting synchronized local settings while preserving the existing jailed resource and session routing.
 - Continue sharing global sessions and global Pi resources.
 - Preserve the existing idempotent `.envrc` behavior.
 - Fail without damaging an existing local configuration when the global settings cannot be used.
@@ -31,7 +32,7 @@ Local-auth and global-auth Pi sessions otherwise look the same in the TUI, so us
 - Supporting repository-specific settings overrides.
 - Keeping settings synchronized continuously without rerunning `pi-local-auth`.
 - Synchronizing Pi runtime files such as trust, run history, model caches, or crash logs.
-- Adding or managing resource symlinks.
+- Adding or managing resource symlinks from `pi-local-auth`.
 - Moving or migrating authentication contents.
 - Inspecting `auth.json`, following auth-file symlinks, or verifying which credentials Pi ultimately resolves.
 - Replacing or otherwise customizing Pi's built-in footer.
@@ -69,6 +70,12 @@ When run from a project directory, `pi-local-auth` will:
 The command performs settings reconciliation on every run. An existing local settings regular file or symlink, including a symlink to a directory, is managed output and is replaced. An existing directory at the settings path is rejected without modifying `.envrc`. No backup is created because repository-specific settings are unsupported and the global file is authoritative.
 
 The command does not read, write, remove, or relink `.pi/local-agent/auth.json`. Other Pi-created files under the local agent directory are also left untouched.
+
+## Project Shell Hook Coordination
+
+When jailed Pi support is enabled, `projectPiShellHook` creates the configured agent directory, prepares the global session directory, applies the selected global/local auth setup, exports `PI_CODING_AGENT_DIR`, and retains immutable links for `AGENTS.md`, `mcp.json`, packaged resources, `node_modules`, and global sessions. Those links are required for Pi to discover packaged resources and route sessions through the current jail mounts.
+
+The hook does not create or replace the agent directory's `settings.json`. This separation is required because shell entry can run repeatedly; recreating the packaged settings link would overwrite `pi-local-auth`'s synchronized settings on every devenv or direnv initialization. `pi-local-auth` remains the explicit settings reconciliation command.
 
 ## Authentication Scope Status
 
@@ -129,6 +136,11 @@ The focused `pi-local-auth` Nix check will prove that:
 11. Symlinked `.pi` and `.pi/local-agent` parents are rejected without changing global settings or `.envrc`.
 12. Repeated successful runs remain idempotent and do not duplicate `.envrc` exports.
 13. Existing custom `.envrc` assignments remain preserved under the current variable-detection rules.
+
+The focused `jailed-pi-auth-mode` Nix check will prove that:
+
+1. Global and local auth shell hooks create no settings on a fresh agent directory and preserve an existing synchronized settings regular file.
+2. Representative packaged commands remain discoverable and the reported session path resolves through the global session directory.
 
 Focused extension tests will prove that:
 

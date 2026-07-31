@@ -831,3 +831,52 @@ Use the `requesting-code-review` skill and the canonical `reviewer` subagent wit
 - verification results from Steps 1-4.
 
 Expected: no unresolved critical or important findings before branch completion.
+
+---
+
+### Task 4: Prevent project shell entry from overwriting synchronized settings
+
+**Files:**
+- Modify: `modules/checks/jailed-pi-auth-mode.nix`
+- Modify: `modules/lib/project-pi.nix`
+- Modify: `docs/specs/2026-07-30-pi-local-auth-settings-sync-design.md`
+
+**Interfaces:**
+- `projectPiShellHook` continues to create the jailed agent directory, configure auth mode, prepare the global session directory, export `PI_CODING_AGENT_DIR`, and provide the immutable resource/node-module/global-session links required inside the jail.
+- The hook no longer owns agent-local `settings.json`.
+- `pi-local-auth` remains the only component that reconciles the local settings file.
+
+- [ ] **Step 1: Add the shell-entry regression**
+
+Extend the existing jailed auth-mode Nix check to prove both global and local hooks preserve an existing regular `settings.json` and do not create settings on a fresh agent directory. Retain assertions for the immutable resource and global-session links, add a fresh-local scenario, and use real Pi RPC calls to prove representative packaged commands load and the session path resolves through the global session directory.
+
+- [ ] **Step 2: Verify the regression fails for the packaged-settings overwrite**
+
+```bash
+nix build .#checks.x86_64-linux.jailed-pi-auth-mode --no-link
+```
+
+Expected before the fix: the check fails because `projectPiShellHook` creates the packaged `settings.json` symlink.
+
+- [ ] **Step 3: Remove settings ownership from the shell hook**
+
+Remove only the packaged `settings.json` link from `modules/lib/project-pi.nix`. Keep directory creation, immutable resource/node-module links, global session routing, auth setup, and `PI_CODING_AGENT_DIR` export.
+
+- [ ] **Step 4: Verify the focused regression passes**
+
+```bash
+nix fmt modules/lib/project-pi.nix modules/checks/jailed-pi-auth-mode.nix
+nix build .#checks.x86_64-linux.jailed-pi-auth-mode --no-link
+```
+
+Expected: formatting succeeds and the focused check proves repeated shell entry cannot replace synchronized settings while jailed resource discovery and global session routing remain functional.
+
+- [ ] **Step 5: Re-run feature and flake verification**
+
+```bash
+nix build .#checks.x86_64-linux.pi-local-auth --no-link
+nix build .#checks.x86_64-linux.pi-config-extension-load --no-link
+nix flake check --accept-flake-config --print-build-logs
+```
+
+Expected: settings synchronization, extension loading, jailed auth modes, and the full flake remain green.

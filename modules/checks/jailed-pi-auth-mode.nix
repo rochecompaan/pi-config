@@ -30,6 +30,8 @@
         }
       );
 
+      realPi = inputs.llm-agents.packages.${system}.pi;
+
       fakePi = pkgs.writeShellApplication {
         name = "pi";
         text = ''
@@ -191,12 +193,83 @@
           assert_link_target() {
             path="$1"
             expected="$2"
-            test -L "$path"
+            if ! test -L "$path"; then
+              echo "expected $path to be a symlink to $expected" >&2
+              exit 1
+            fi
             actual="$(readlink "$path")"
             if [ "$actual" != "$expected" ]; then
               echo "expected $path -> $expected, got $actual" >&2
               exit 1
             fi
+          }
+
+          assert_resource_links() {
+            agent_dir="$1"
+            test_home="$2"
+            for resource in \
+              AGENTS.md \
+              mcp.json \
+              agents \
+              extensions \
+              multi-model-planning-teams \
+              node_modules \
+              skills \
+              themes
+            do
+              assert_link_target "$agent_dir/$resource" "${self'.packages.pi-config}/$resource"
+            done
+            assert_link_target "$agent_dir/sessions" "$test_home/.pi/agent/sessions"
+          }
+
+          assert_runtime_resources_and_sessions() {
+            test_home="$1"
+            test_repo="$2"
+            agent_dir="$3"
+            (
+              export HOME="$test_home"
+              export PI_CODING_AGENT_DIR="$agent_dir"
+              export PI_OFFLINE=1
+              cd "$test_repo"
+
+              printf '%s\n' '{"id":"commands","type":"get_commands"}' \
+                | ${pkgs.coreutils}/bin/timeout 30 ${pkgs.lib.getExe realPi} \
+                    --mode rpc --no-session --provider __invalid__ --approve \
+                    > commands.log 2>/dev/null || true
+              commands_response="$(${pkgs.jq}/bin/jq -c \
+                'select(.id == "commands" and .success == true)' \
+                commands.log | tail -n 1)"
+              test -n "$commands_response"
+              printf '%s\n' "$commands_response" \
+                | ${pkgs.jq}/bin/jq -e 'any(.data.commands[]; .name == "answer")'
+              printf '%s\n' "$commands_response" \
+                | ${pkgs.jq}/bin/jq -e 'any(.data.commands[]; .name == "review")'
+
+              printf '%s\n' '{"id":"state","type":"get_state"}' \
+                | ${pkgs.coreutils}/bin/timeout 30 ${pkgs.lib.getExe realPi} \
+                    --mode rpc --provider __invalid__ --approve \
+                    > state.log 2>/dev/null || true
+              state_response="$(${pkgs.jq}/bin/jq -c \
+                'select(.id == "state" and .success == true)' \
+                state.log | tail -n 1)"
+              if [ -z "$state_response" ]; then
+                echo "expected jailed Pi RPC state response" >&2
+                cat state.log >&2
+                exit 1
+              fi
+              session_file="$(printf '%s\n' "$state_response" \
+                | ${pkgs.jq}/bin/jq -r '.data.sessionFile')"
+              resolved_session_file="$(${pkgs.coreutils}/bin/realpath -m "$session_file")"
+              case "$resolved_session_file" in
+                "$test_home/.pi/agent/sessions/"*) ;;
+                *)
+                  echo "expected jailed Pi session to resolve under global session directory" >&2
+                  printf 'session: %s\nresolved: %s\n' \
+                    "$session_file" "$resolved_session_file" >&2
+                  exit 1
+                  ;;
+              esac
+            )
           }
 
           global_home="$TMPDIR/global-home"
@@ -205,11 +278,20 @@
           global_agent="$global_repo/.pi/agent-jailed"
           global_auth="$global_home/.pi/agent/auth.json"
           assert_link_target "$global_agent/auth.json" "$global_auth"
-          assert_link_target "$global_agent/sessions" "$global_home/.pi/agent/sessions"
+          if [ -e "$global_agent/settings.json" ] || [ -L "$global_agent/settings.json" ]; then
+            echo "expected project Pi hook to leave $global_agent/settings.json unmanaged" >&2
+            exit 1
+          fi
+          assert_resource_links "$global_agent" "$global_home"
+          assert_runtime_resources_and_sessions "$global_home" "$global_repo" "$global_agent"
 
           printf '%s\n' 'global-secret' > "$global_auth"
+          printf '%s\n' 'synced-global-settings' > "$global_agent/settings.json"
           run_hook ${globalHook} "$global_home" "$global_repo"
           grep -Fx 'global-secret' "$global_auth"
+          grep -Fx 'synced-global-settings' "$global_agent/settings.json"
+          test ! -L "$global_agent/settings.json"
+          assert_resource_links "$global_agent" "$global_home"
 
           regular_home="$TMPDIR/regular-home"
           regular_repo="$TMPDIR/regular-repo"
@@ -236,10 +318,23 @@
           local_repo="$TMPDIR/local-repo"
           mkdir -p "$local_repo/.pi/agent-jailed"
           printf '%s\n' 'repo-secret' > "$local_repo/.pi/agent-jailed/auth.json"
+          printf '%s\n' 'synced-local-settings' > "$local_repo/.pi/agent-jailed/settings.json"
           run_hook ${localHook} "$local_home" "$local_repo"
           grep -Fx 'repo-secret' "$local_repo/.pi/agent-jailed/auth.json"
+          grep -Fx 'synced-local-settings' "$local_repo/.pi/agent-jailed/settings.json"
+          test ! -L "$local_repo/.pi/agent-jailed/settings.json"
           test ! -e "$local_home/.pi/agent/auth.json"
-          assert_link_target "$local_repo/.pi/agent-jailed/sessions" "$local_home/.pi/agent/sessions"
+          assert_resource_links "$local_repo/.pi/agent-jailed" "$local_home"
+
+          fresh_local_home="$TMPDIR/fresh-local-home"
+          fresh_local_repo="$TMPDIR/fresh-local-repo"
+          run_hook ${localHook} "$fresh_local_home" "$fresh_local_repo"
+          fresh_local_agent="$fresh_local_repo/.pi/agent-jailed"
+          test ! -e "$fresh_local_agent/auth.json"
+          test ! -L "$fresh_local_agent/auth.json"
+          test ! -e "$fresh_local_agent/settings.json"
+          test ! -L "$fresh_local_agent/settings.json"
+          assert_resource_links "$fresh_local_agent" "$fresh_local_home"
 
           migrate_home="$TMPDIR/migrate-home"
           migrate_repo="$TMPDIR/migrate-repo"

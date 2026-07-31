@@ -54,7 +54,6 @@
             mkdir -p "$HOME/.pi/agent/sessions"
 
             ln -sfnT ${piConfigPackage}/AGENTS.md "$agent_dir/AGENTS.md"
-            ln -sfnT ${piConfigPackage}/settings.json "$agent_dir/settings.json"
             ln -sfnT ${piConfigPackage}/mcp.json "$agent_dir/mcp.json"
             ln -sfnT ${piConfigPackage}/agents "$agent_dir/agents"
             ln -sfnT ${piConfigPackage}/extensions "$agent_dir/extensions"
