@@ -378,6 +378,17 @@
           printf '%s\n' "$$" > "$test_dir/jail-pid"
           ${pkgs.gawk}/bin/awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$$/stat" \
             > "$test_dir/jail-identity"
+          if [ "$jail_mode" = stdin-probe ]; then
+            if IFS= read -r jail_stdin; then
+              printf '%s\n' "$jail_stdin" > "$test_dir/jail-stdin"
+              if [ "$jail_stdin" != stdin-preserved ]; then
+                exit 74
+              fi
+              exit 0
+            fi
+            touch "$test_dir/jail-stdin-eof"
+            exit 75
+          fi
           if [ "$jail_mode" = immediate-exit ]; then
             jail_pid="$$"
             wrapper_pid="$PPID"
@@ -1211,6 +1222,27 @@
             test "$stop_loss_status" -eq 37
             test "$stop_loss_residue" -eq 0
             test -e "$stop_loss_dir/anchor-stop-injected"
+
+            stdin_dir="$TMPDIR/jail-stdin"
+            mkdir -p "$stdin_dir/runtime"
+            export TEST_DIR="$stdin_dir"
+            export XDG_RUNTIME_DIR="$stdin_dir/runtime"
+            export FAKE_BROKER_MODE=normal
+            export FAKE_JAIL_MODE=stdin-probe
+            export FAKE_JAIL_WAIT=0
+            printf 'stdin-preserved\n' > "$stdin_dir/input"
+            set +e
+            timeout -k 1 5 ${lifecycleWrapper}/bin/jailed-github-broker-lifecycle-test \
+              <"$stdin_dir/input" >"$stdin_dir/stdout" 2>"$stdin_dir/stderr"
+            stdin_status=$?
+            set -e
+            if [ "$stdin_status" -ne 0 ]; then
+              echo "expected preserved jail stdin, got status $stdin_status" >&2
+              exit 1
+            fi
+            grep -Fx stdin-preserved "$stdin_dir/jail-stdin" >/dev/null
+            test ! -e "$stdin_dir/jail-stdin-eof"
+            test -z "$(find "$stdin_dir/runtime" -mindepth 1 -print -quit)"
 
             immediate_dir="$TMPDIR/immediate-jail-exit"
             mkdir -p "$immediate_dir/runtime"

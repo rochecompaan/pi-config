@@ -482,7 +482,9 @@ let
       # anchor/manager chain. Closing this outer copy prevents jail inheritance.
       exec 3>&-
       export ${hostSocketEnvironment}="$broker_socket"
-      ${pkgs.coreutils}/bin/env --default-signal=HUP,INT,TERM ${jailExecutable} "$@" 3>&- &
+      # Bash gives asynchronous commands /dev/null as stdin when job control
+      # is disabled unless the command has an explicit stdin redirection.
+      ${pkgs.coreutils}/bin/env --default-signal=HUP,INT,TERM ${jailExecutable} "$@" 3>&- <&0 &
       jail_pid=$!
       # A signal can interrupt this loop, but its trap only records the signal
       # until this identity handshake has either completed or timed out.
