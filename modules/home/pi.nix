@@ -47,6 +47,12 @@ let
           default = true;
         };
 
+        installCodegraphCli = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether to install the CodeGraph CLI used by the pi-codegraph extension.";
+        };
+
         settings = mkOption {
           type = jsonFormat.type;
           default = { };
@@ -62,7 +68,8 @@ let
         home.packages = [
           inputs.llm-agents.packages.${pkgs.system}.pi
         ]
-        ++ optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli;
+        ++ optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli
+        ++ optional cfg.installCodegraphCli self.packages.${pkgs.system}.codegraph;
 
         home.file = {
           ".pi/agent/AGENTS.md".source = piResources.agentsMd;

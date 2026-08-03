@@ -10,8 +10,10 @@
     in
     {
       packages = {
+        "codegraph" = piDeps.codegraphCli;
         "context-mode" = piDeps.contextMode;
         "diff-package" = piDeps.diffPackage;
+        "pi-codegraph" = piDeps.piCodegraph;
         "pi-listen" = piDeps.piListen;
         "pi-messenger-bridge" = piDeps.piMessengerBridge;
         "pi-subagents" = piDeps.piSubagents;

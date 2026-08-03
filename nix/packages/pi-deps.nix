@@ -18,17 +18,20 @@ else
       hash = "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=";
     };
 
-    piListen = pkgs.runCommand "pi-listen-7.2.2" {
-      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-    } ''
-      mkdir -p $out/node_modules
-      cp -r ${piListenSrc}/. $out/
-      cp -r ${sherpaOnnxNode} $out/node_modules/sherpa-onnx-node
-      cp -r ${sherpaOnnxLinuxX64} $out/node_modules/sherpa-onnx-linux-x64
-      chmod -R u+w $out/node_modules/sherpa-onnx-linux-x64
-      autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
-    '';
+    piListen =
+      pkgs.runCommand "pi-listen-7.2.2"
+        {
+          nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+          buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+        }
+        ''
+          mkdir -p $out/node_modules
+          cp -r ${piListenSrc}/. $out/
+          cp -r ${sherpaOnnxNode} $out/node_modules/sherpa-onnx-node
+          cp -r ${sherpaOnnxLinuxX64} $out/node_modules/sherpa-onnx-linux-x64
+          chmod -R u+w $out/node_modules/sherpa-onnx-linux-x64
+          autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
+        '';
 
     piVimPackageLock = ./pi-vim-package-lock.json;
 
@@ -125,6 +128,53 @@ else
       hash = "sha256-CcQeTPd7IVZsdrjqL9vX89gjBV/uLwLCFm/Vu1ddryw=";
     };
 
+    piCodegraph = pkgs.fetchzip {
+      name = "pi-codegraph-0.1.10";
+      url = "https://registry.npmjs.org/@vndv/pi-codegraph/-/pi-codegraph-0.1.10.tgz";
+      hash = "sha256-QV7TBdbzuZwdNNAffOqeoXRVKjeJumpNF4S57KzAGmU=";
+    };
+
+    codegraphShimSrc = pkgs.fetchzip {
+      name = "codegraph-shim-1.5.0";
+      url = "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.5.0.tgz";
+      hash = "sha256-ZHTn1NdPp+gaTYKChscEMYr+maUwdAqzyKguUfwBXG4=";
+    };
+
+    codegraphLinuxX64Src = pkgs.fetchzip {
+      name = "codegraph-linux-x64-1.5.0";
+      url = "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.5.0.tgz";
+      hash = "sha256-jueJv5/6tw8MeL4fKwEz6hTjLJ9IrxzrZmoPELA5v0Y=";
+    };
+
+    # The npm thin installer (npm-shim.js) resolves the platform bundle as a
+    # sibling package under the same @colbymchenry scope via require.resolve,
+    # then execs the bundle's launcher, which runs the vendored Node 24 binary.
+    # CODEGRAPH_NO_DOWNLOAD keeps the shim's network self-heal fallback off so
+    # the CLI stays fully store-resolved.
+    codegraphCli =
+      pkgs.runCommand "codegraph-1.5.0"
+        {
+          nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+          buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+        }
+        ''
+          mkdir -p $out/lib/node_modules/@colbymchenry/codegraph
+          cp -r ${codegraphShimSrc}/. $out/lib/node_modules/@colbymchenry/codegraph/
+          cp -r ${codegraphLinuxX64Src} $out/lib/node_modules/@colbymchenry/codegraph-linux-x64
+          chmod -R u+w $out/lib/node_modules/@colbymchenry/codegraph-linux-x64
+          chmod +x $out/lib/node_modules/@colbymchenry/codegraph-linux-x64/bin/codegraph
+          chmod +x $out/lib/node_modules/@colbymchenry/codegraph-linux-x64/node
+          autoPatchelf $out/lib/node_modules/@colbymchenry/codegraph-linux-x64
+
+          mkdir -p $out/bin
+          cat > $out/bin/codegraph <<EOF
+          #!${pkgs.runtimeShell}
+          export CODEGRAPH_NO_DOWNLOAD=1
+          exec ${pkgs.nodejs}/bin/node $out/lib/node_modules/@colbymchenry/codegraph/npm-shim.js "\$@"
+          EOF
+          chmod +x $out/bin/codegraph
+        '';
+
     contextMode = pkgs.buildNpmPackage {
       pname = "context-mode";
       version = "1.0.169";
@@ -143,8 +193,10 @@ else
   in
   {
     inherit
+      codegraphCli
       contextMode
       diffPackage
+      piCodegraph
       piListen
       piMessengerBridge
       piRemote
@@ -155,6 +207,7 @@ else
 
     packagePaths = [
       "${contextMode}/lib/node_modules/context-mode"
+      "${piCodegraph}"
       "${piListen}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"

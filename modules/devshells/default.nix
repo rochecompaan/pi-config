@@ -12,6 +12,7 @@
       devShells.default = pkgs.mkShell {
         packages = [
           inputs.llm-agents.packages.${system}.pi
+          self'.packages.codegraph
           self'.packages.pi-local-auth
           pkgs.git
           pkgs.jq
@@ -31,6 +32,7 @@
               ANTHROPIC_API_KEY.fromEnv = true;
             };
             extraPkgs = [
+              self'.packages.codegraph
               pkgs.git
               pkgs.jq
               pkgs.nixfmt-rfc-style
