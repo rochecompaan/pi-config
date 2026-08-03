@@ -24,6 +24,7 @@
  * - `/review --extra "focus on performance regressions"` - add extra review instruction (works with any mode)
  * - `/review --profile thermo-nuclear` - choose the thermo-nuclear code-quality review profile
  * - `/review branch main --profile thermo-nuclear` - use a review profile with any target mode
+ * - Empty branch reviews use Pi's model selector to choose a review-only model
  *
  * Project-specific review guidelines:
  * - If a REVIEW_GUIDELINES.md file exists in the same directory as .pi,
@@ -60,11 +61,26 @@ import {
 	createReviewFindingsTodo,
 	getReviewSummaryText,
 } from "./review-todo.ts";
+import {
+	pickReviewModel,
+	restoreReviewModel,
+	switchReviewModel,
+	toReviewModelIdentity,
+	type ReviewModelIdentity,
+	type SelectedReviewModel,
+} from "./review-model.ts";
+import {
+	finishReviewLifecycle,
+	startReviewLifecycle,
+	type ReviewLifecycleStepResult,
+	type ReviewLifecycleValueResult,
+} from "./review-model-lifecycle.ts";
 
 // State to track fresh session review (where we branched from).
 // Module-level state means only one review can be active at a time.
 // This is intentional - the UI and /end-review command assume a single active review.
 let reviewOriginId: string | undefined = undefined;
+let reviewOriginModel: ReviewModelIdentity | undefined = undefined;
 let endReviewInProgress = false;
 let reviewLoopFixingEnabled = false;
 let reviewCustomInstructions: string | undefined = undefined;
@@ -80,6 +96,7 @@ const REVIEW_LOOP_START_POLL_MS = 50;
 type ReviewSessionState = {
 	active: boolean;
 	originId?: string;
+	originModel?: ReviewModelIdentity;
 };
 
 type ReviewSettingsState = {
@@ -128,11 +145,13 @@ function applyReviewState(ctx: ExtensionContext) {
 
 	if (state?.active && state.originId) {
 		reviewOriginId = state.originId;
+		reviewOriginModel = state.originModel;
 		setReviewWidget(ctx, true);
 		return;
 	}
 
 	reviewOriginId = undefined;
+	reviewOriginModel = undefined;
 	setReviewWidget(ctx, false);
 }
 
@@ -1696,83 +1715,25 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		};
 	}
 
-	/**
-	 * Execute the review
-	 */
-	async function executeReview(
+	type ExecuteReviewOptions = {
+		includeLocalChanges?: boolean;
+		extraInstruction?: string;
+		profile?: ReviewProfileId;
+		modelSelection?: SelectedReviewModel;
+	};
+
+	async function dispatchReviewPrompt(
 		ctx: ExtensionCommandContext,
 		target: ReviewTarget,
 		useFreshSession: boolean,
-		options?: { includeLocalChanges?: boolean; extraInstruction?: string; profile?: ReviewProfileId },
-	): Promise<boolean> {
-		// Check if we're already in a review
-		if (reviewOriginId) {
-			ctx.ui.notify("Already in a review. Use /end-review to finish first.", "warning");
-			return false;
-		}
-
-		// Handle fresh session mode
-		if (useFreshSession) {
-			// Store current position (where we'll return to).
-			// In an empty session there is no leaf yet, so create a lightweight anchor first.
-			let originId = ctx.sessionManager.getLeafId() ?? undefined;
-			if (!originId) {
-				pi.appendEntry(REVIEW_ANCHOR_TYPE, { createdAt: new Date().toISOString() });
-				originId = ctx.sessionManager.getLeafId() ?? undefined;
-			}
-			if (!originId) {
-				ctx.ui.notify("Failed to determine review origin.", "error");
-				return false;
-			}
-			reviewOriginId = originId;
-
-			// Keep a local copy so session_tree events during navigation don't wipe it
-			const lockedOriginId = originId;
-
-			// Find the first user message in the session.
-			// If none exists (e.g. brand-new session), we'll stay on the current leaf.
-			const entries = ctx.sessionManager.getEntries();
-			const firstUserMessage = entries.find(
-				(e) => e.type === "message" && e.message.role === "user",
-			);
-
-			if (firstUserMessage) {
-				// Navigate to first user message to create a new branch from that point
-				// Label it as "code-review" so it's visible in the tree
-				try {
-					const result = await ctx.navigateTree(firstUserMessage.id, { summarize: false, label: "code-review" });
-					if (result.cancelled) {
-						reviewOriginId = undefined;
-						return false;
-					}
-				} catch (error) {
-					// Clean up state if navigation fails
-					reviewOriginId = undefined;
-					ctx.ui.notify(`Failed to start review: ${error instanceof Error ? error.message : String(error)}`, "error");
-					return false;
-				}
-
-				// Clear the editor (navigating to user message fills it with the message text)
-				ctx.ui.setEditorText("");
-			}
-
-			// Restore origin after navigation events (session_tree can reset it)
-			reviewOriginId = lockedOriginId;
-
-			// Show widget indicating review is active
-			setReviewWidget(ctx, true);
-
-			// Persist review state so tree navigation can restore/reset it
-			pi.appendEntry(REVIEW_STATE_TYPE, { active: true, originId: lockedOriginId });
-		}
-
+		options?: ExecuteReviewOptions,
+	): Promise<void> {
 		const prompt = await buildReviewPrompt(pi, target, {
 			includeLocalChanges: options?.includeLocalChanges === true,
 		});
 		const hint = getUserFacingHint(target);
 		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
 
-		// Combine the selected review rubric with the specific prompt
 		const profile = options?.profile ?? DEFAULT_REVIEW_PROFILE_ID;
 		const rubric = REVIEW_PROFILE_RUBRICS[profile];
 		let fullPrompt = `${rubric}\n\n---\n\nPlease perform a code review with the following focus:\n\n${prompt}`;
@@ -1792,9 +1753,129 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const modeHint = useFreshSession ? " (fresh session)" : "";
 		const profileLabel = REVIEW_PROFILE_OPTIONS.find((option) => option.id === profile)?.label ?? profile;
 		ctx.ui.notify(`Starting ${profileLabel}: ${hint}${modeHint}`, "info");
-
-		// Send as a user message that triggers a turn
 		pi.sendUserMessage(fullPrompt);
+	}
+
+	/**
+	 * Execute the review
+	 */
+	async function executeReview(
+		ctx: ExtensionCommandContext,
+		target: ReviewTarget,
+		useFreshSession: boolean,
+		options?: ExecuteReviewOptions,
+	): Promise<boolean> {
+		// Check if we're already in a review
+		if (reviewOriginId) {
+			ctx.ui.notify("Already in a review. Use /end-review to finish first.", "warning");
+			return false;
+		}
+
+		// Handle fresh session mode
+		if (useFreshSession) {
+			const originModel =
+				options?.modelSelection?.kind === "alternate" && ctx.model
+					? toReviewModelIdentity(ctx.model)
+					: undefined;
+			if (options?.modelSelection?.kind === "alternate" && !originModel) {
+				ctx.ui.notify("Failed to determine the original model before starting review.", "error");
+				return false;
+			}
+
+			// Store current position (where we'll return to).
+			// In an empty session there is no leaf yet, so create a lightweight anchor first.
+			let originId = ctx.sessionManager.getLeafId() ?? undefined;
+			if (!originId) {
+				pi.appendEntry(REVIEW_ANCHOR_TYPE, { createdAt: new Date().toISOString() });
+				originId = ctx.sessionManager.getLeafId() ?? undefined;
+			}
+			if (!originId) {
+				ctx.ui.notify("Failed to determine review origin.", "error");
+				return false;
+			}
+			reviewOriginId = originId;
+			reviewOriginModel = originModel;
+
+			// Keep local copies so session_tree events during navigation don't wipe them
+			const lockedOriginId = originId;
+			const lockedOriginModel = originModel;
+
+			// Find the first user message in the session.
+			// If none exists (e.g. brand-new session), we'll stay on the current leaf.
+			const entries = ctx.sessionManager.getEntries();
+			const firstUserMessage = entries.find(
+				(e) => e.type === "message" && e.message.role === "user",
+			);
+
+			const lifecycleResult = await startReviewLifecycle({
+				navigateToReview: async (): Promise<ReviewLifecycleStepResult> => {
+					if (!firstUserMessage) return { ok: true };
+					try {
+						const result = await ctx.navigateTree(firstUserMessage.id, { summarize: false, label: "code-review" });
+						if (result.cancelled) {
+							return { ok: false, error: "Review navigation was cancelled", cancelled: true };
+						}
+						ctx.ui.setEditorText("");
+						return { ok: true };
+					} catch (error) {
+						return {
+							ok: false,
+							error: `Failed to start review: ${error instanceof Error ? error.message : String(error)}`,
+						};
+					}
+				},
+				switchReviewModel: async (): Promise<ReviewLifecycleStepResult> => {
+					reviewOriginId = lockedOriginId;
+					reviewOriginModel = lockedOriginModel;
+					if (!options?.modelSelection) return { ok: true };
+					return switchReviewModel(options.modelSelection, (model) => pi.setModel(model));
+				},
+				rollbackToOrigin: async (): Promise<ReviewLifecycleStepResult> => {
+					try {
+						const rollback = await ctx.navigateTree(lockedOriginId, { summarize: false });
+						return rollback.cancelled
+							? { ok: false, error: "origin navigation was cancelled" }
+							: { ok: true };
+					} catch (error) {
+						return {
+							ok: false,
+							error: `origin navigation failed: ${error instanceof Error ? error.message : String(error)}`,
+						};
+					}
+				},
+				restoreOriginModel: async (): Promise<ReviewLifecycleStepResult> => {
+					if (!lockedOriginModel) return { ok: true };
+					return restoreReviewModel(
+						lockedOriginModel,
+						ctx.model,
+						(provider, modelId) => ctx.modelRegistry.find(provider, modelId),
+						(model) => pi.setModel(model),
+					);
+				},
+				activateAndDispatch: async () => {
+					reviewOriginId = lockedOriginId;
+					reviewOriginModel = lockedOriginModel;
+					setReviewWidget(ctx, true);
+					pi.appendEntry(REVIEW_STATE_TYPE, {
+						active: true,
+						originId: lockedOriginId,
+						...(lockedOriginModel ? { originModel: lockedOriginModel } : {}),
+					});
+					await dispatchReviewPrompt(ctx, target, useFreshSession, options);
+				},
+			});
+
+			if (!lifecycleResult.ok) {
+				reviewOriginId = undefined;
+				reviewOriginModel = undefined;
+				setReviewWidget(ctx, false);
+				ctx.ui.notify(lifecycleResult.error, lifecycleResult.cancelled ? "info" : "error");
+				return false;
+			}
+			return true;
+		}
+
+		await dispatchReviewPrompt(ctx, target, useFreshSession, options);
 		return true;
 	}
 
@@ -2252,7 +2333,25 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					useFreshSession = choice === "Empty branch";
 				}
 
-				await executeReview(ctx, target, useFreshSession, { extraInstruction, profile });
+				let modelSelection: SelectedReviewModel | undefined;
+				if (useFreshSession) {
+					const selection = await pickReviewModel(ctx);
+					if (selection.kind === "cancelled") {
+						ctx.ui.notify("Review cancelled", "info");
+						return;
+					}
+					if (selection.kind === "unavailable") {
+						ctx.ui.notify("No models are currently available. Use /login to configure a provider.", "error");
+						return;
+					}
+					modelSelection = selection;
+				}
+
+				await executeReview(ctx, target, useFreshSession, {
+					extraInstruction,
+					profile,
+					modelSelection,
+				});
 				return;
 			}
 		},
@@ -2337,6 +2436,7 @@ Instructions:
 		const state = getReviewState(ctx);
 		if (state?.active && state.originId) {
 			reviewOriginId = state.originId;
+			reviewOriginModel = state.originModel;
 			return reviewOriginId;
 		}
 
@@ -2352,7 +2452,55 @@ Instructions:
 	function clearReviewState(ctx: ExtensionContext) {
 		setReviewWidget(ctx, false);
 		reviewOriginId = undefined;
+		reviewOriginModel = undefined;
 		pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
+	}
+
+	async function returnFromReview<T>(
+		ctx: ExtensionCommandContext,
+		originId: string,
+		originModel: ReviewModelIdentity | undefined,
+		reviewLeafId: string | undefined,
+		reviewModel: ExtensionContext["model"],
+		navigateToOrigin: () => Promise<ReviewLifecycleValueResult<T>>,
+	): Promise<ReviewLifecycleValueResult<T>> {
+		const result = await finishReviewLifecycle({
+			navigateToOrigin,
+			restoreOriginModel: async (): Promise<ReviewLifecycleStepResult> => {
+				if (!originModel) return { ok: true };
+				return restoreReviewModel(
+					originModel,
+					ctx.model,
+					(provider, modelId) => ctx.modelRegistry.find(provider, modelId),
+					(model) => pi.setModel(model),
+				);
+			},
+			rollbackToReview: async (): Promise<ReviewLifecycleStepResult> => {
+				if (!reviewLeafId) return { ok: false, error: "review branch position is unavailable" };
+				try {
+					const rollback = await ctx.navigateTree(reviewLeafId, { summarize: false });
+					if (rollback.cancelled) return { ok: false, error: "review navigation was cancelled" };
+					if (reviewModel && (ctx.model?.provider !== reviewModel.provider || ctx.model.id !== reviewModel.id)) {
+						const restored = await pi.setModel(reviewModel);
+						if (!restored) return { ok: false, error: "Pi could not reactivate the review model" };
+					}
+					return { ok: true };
+				} catch (error) {
+					return {
+						ok: false,
+						error: error instanceof Error ? error.message : String(error),
+					};
+				}
+			},
+		});
+
+		if (!result.ok) {
+			reviewOriginId = originId;
+			reviewOriginModel = originModel;
+			setReviewWidget(ctx, true);
+			ctx.ui.notify(result.error, result.cancelled ? "info" : "error");
+		}
+		return result;
 	}
 
 	async function navigateWithSummary(
@@ -2402,19 +2550,38 @@ Instructions:
 			return "error";
 		}
 
+		const originModel = reviewOriginModel ?? getReviewState(ctx)?.originModel;
+		const reviewLeafId = ctx.sessionManager.getLeafId() ?? undefined;
+		const reviewModel = ctx.model;
+		if (originModel && !reviewLeafId) {
+			ctx.ui.notify("Failed to determine the review branch position for model restoration.", "error");
+			return "error";
+		}
+
 		const notifySuccess = options.notifySuccess ?? true;
 
 		if (action === "returnOnly") {
-			try {
-				const result = await ctx.navigateTree(originId, { summarize: false });
-				if (result.cancelled) {
-					ctx.ui.notify("Navigation cancelled. Use /end-review to try again.", "info");
-					return "cancelled";
-				}
-			} catch (error) {
-				ctx.ui.notify(`Failed to return: ${error instanceof Error ? error.message : String(error)}`, "error");
-				return "error";
-			}
+			const returnResult = await returnFromReview<void>(
+				ctx,
+				originId,
+				originModel,
+				reviewLeafId,
+				reviewModel,
+				async (): Promise<ReviewLifecycleValueResult<void>> => {
+					try {
+						const result = await ctx.navigateTree(originId, { summarize: false });
+						return result.cancelled
+							? { ok: false, error: "Navigation cancelled. Use /end-review to try again.", cancelled: true }
+							: { ok: true, value: undefined };
+					} catch (error) {
+						return {
+							ok: false,
+							error: `Failed to return: ${error instanceof Error ? error.message : String(error)}`,
+						};
+					}
+				},
+			);
+			if (!returnResult.ok) return returnResult.cancelled ? "cancelled" : "error";
 
 			clearReviewState(ctx);
 			if (notifySuccess) {
@@ -2423,21 +2590,28 @@ Instructions:
 			return "ok";
 		}
 
-		const summaryResult = await navigateWithSummary(ctx, originId, options.showSummaryLoader ?? false);
-		if (summaryResult === null) {
-			ctx.ui.notify("Summarization cancelled. Use /end-review to try again.", "info");
-			return "cancelled";
-		}
-
-		if (summaryResult.error) {
-			ctx.ui.notify(`Summarization failed: ${summaryResult.error}`, "error");
-			return "error";
-		}
-
-		if (summaryResult.cancelled) {
-			ctx.ui.notify("Navigation cancelled. Use /end-review to try again.", "info");
-			return "cancelled";
-		}
+		const returnResult = await returnFromReview<NavigateWithSummaryResult>(
+			ctx,
+			originId,
+			originModel,
+			reviewLeafId,
+			reviewModel,
+			async (): Promise<ReviewLifecycleValueResult<NavigateWithSummaryResult>> => {
+				const summaryResult = await navigateWithSummary(ctx, originId, options.showSummaryLoader ?? false);
+				if (summaryResult === null) {
+					return { ok: false, error: "Summarization cancelled. Use /end-review to try again.", cancelled: true };
+				}
+				if (summaryResult.error) {
+					return { ok: false, error: `Summarization failed: ${summaryResult.error}` };
+				}
+				if (summaryResult.cancelled) {
+					return { ok: false, error: "Navigation cancelled. Use /end-review to try again.", cancelled: true };
+				}
+				return { ok: true, value: summaryResult };
+			},
+		);
+		if (!returnResult.ok) return returnResult.cancelled ? "cancelled" : "error";
+		const summaryResult = returnResult.value;
 
 		if (action === "returnAndTodo") {
 			const summaryText = getReviewSummaryText(summaryResult);
