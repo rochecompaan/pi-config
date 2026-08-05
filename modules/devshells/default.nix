@@ -13,6 +13,7 @@
         packages = [
           inputs.llm-agents.packages.${system}.pi
           self'.packages.codegraph
+          self'.packages.codegraph-viz
           self'.packages.pi-local-auth
           pkgs.git
           pkgs.jq
@@ -33,6 +34,7 @@
             };
             extraPkgs = [
               self'.packages.codegraph
+              self'.packages.codegraph-viz
               pkgs.git
               pkgs.jq
               pkgs.nixfmt-rfc-style
