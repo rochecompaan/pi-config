@@ -30,7 +30,10 @@ test("generates a working html file from an index", () => {
   assert.ok(existsSync(out));
   const model = extractPayload(readFileSync(out, "utf8"));
   assert.equal(model.meta.nodeCount, 5);
-  assert.ok(model.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y)));
+  assert.ok(model.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)));
+  const html = readFileSync(out, "utf8");
+  assert.ok(html.includes("function project("));
+  assert.ok(!html.includes("export {"));
 });
 
 test("missing index exits 1 with the spec message", () => {

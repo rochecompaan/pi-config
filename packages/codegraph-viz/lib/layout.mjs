@@ -3,6 +3,8 @@
 // Phase 2 lays out each file's symbols in that file's local frame.
 // All randomness comes from one seeded PRNG; tick budgets are fixed.
 
+import { assignDepth } from "./depth-layout.mjs";
+
 export function computeLayout(model) {
   const rng = mulberry32(0xc0ffee);
   const files = model.nodes.filter((n) => n.kind === "file");
@@ -82,6 +84,7 @@ export function computeLayout(model) {
     }
   }
 
+  assignDepth(model.nodes, model.fileEdges);
   return model;
 }
 

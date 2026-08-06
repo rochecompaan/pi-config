@@ -1,6 +1,18 @@
 import { gzipSync, gunzipSync } from "node:zlib";
 
 const PAYLOAD_RE = /<script type="application\/octet-stream" id="payload">\s*([A-Za-z0-9+/=]+)\s*<\/script>/;
+const EXPORT_LINE_RE = /^export \{[^}]*\};?\s*$/m;
+
+// Concatenates projection + viewer into one classic-script source for
+// inlining. projection.mjs keeps a single trailing `export { … }` line so
+// Node tests can import it; that line is a syntax error in a classic
+// browser script and must be stripped here. Throws on refactor drift.
+export function inlineViewerSources(projectionJs, viewerJs) {
+  if (!EXPORT_LINE_RE.test(projectionJs)) {
+    throw new Error("projection.mjs must contain a single `export { … }` line");
+  }
+  return `${projectionJs.replace(EXPORT_LINE_RE, "")}\n${viewerJs}`;
+}
 
 const CSS = `
 :root { color-scheme: dark; }
@@ -11,6 +23,8 @@ body { margin: 0; background: #1a1b26; color: #c0caf5; font: 13px/1.4 system-ui,
 #search { background: #24283b; color: #c0caf5; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 8px; width: 220px; }
 #toggles { display: flex; gap: 6px; background: #24283bcc; padding: 4px 8px; border-radius: 4px; }
 #toggles label { display: flex; gap: 3px; align-items: center; cursor: pointer; }
+#hud button { background: #24283b; color: #c0caf5; border: 1px solid #3b4261; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+#hud button[aria-pressed="true"] { border-color: #7aa2f7; color: #7dcfff; }
 #legend { position: fixed; bottom: 28px; left: 10px; background: #24283bcc; padding: 6px 8px; border-radius: 4px; max-width: 260px; }
 #legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
 #legend .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { extractGraph } from "./lib/extract.mjs";
 import { computeLayout } from "./lib/layout.mjs";
-import { buildHtml } from "./lib/emit.mjs";
+import { buildHtml, inlineViewerSources } from "./lib/emit.mjs";
 
 const DEFAULT_MAX_NODES = 100_000;
 
@@ -50,11 +50,15 @@ export function main(argv) {
     );
   }
   computeLayout(model);
+  const projectionJs = readFileSync(
+    join(import.meta.dirname, "lib", "projection.mjs"),
+    "utf8",
+  );
   const viewerJs = readFileSync(
     join(import.meta.dirname, "viewer", "viewer.js"),
     "utf8",
   );
-  const html = buildHtml(model, viewerJs);
+  const html = buildHtml(model, inlineViewerSources(projectionJs, viewerJs));
   const output = resolve(opts.output ?? `./${basename(projectPath)}-graph.html`);
   writeFileSync(output, html);
   process.stdout.write(`${output}\n`);

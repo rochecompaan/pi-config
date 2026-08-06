@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createFixtureProject } from "./fixture.mjs";
 import { extractGraph } from "../lib/extract.mjs";
 import { computeLayout } from "../lib/layout.mjs";
-import { buildHtml, extractPayload } from "../lib/emit.mjs";
+import { buildHtml, extractPayload, inlineViewerSources } from "../lib/emit.mjs";
 
 function laidOutModel() {
   return computeLayout(extractGraph(createFixtureProject().dir));
@@ -31,4 +31,15 @@ test("project name appears in the title, HTML-escaped", () => {
 
 test("extractPayload rejects HTML without a payload block", () => {
   assert.throws(() => extractPayload("<!doctype html>"), /payload/i);
+});
+
+test("inlineViewerSources strips the export line and keeps source order", () => {
+  const projection = "function rotate() {}\nfunction project() {}\nexport { rotate, project };\n";
+  const out = inlineViewerSources(projection, "/* viewer */");
+  assert.ok(!out.includes("export {"));
+  assert.ok(out.indexOf("function project()") < out.indexOf("/* viewer */"));
+});
+
+test("inlineViewerSources rejects a projection source without an export line", () => {
+  assert.throws(() => inlineViewerSources("function project() {}\n", ""), /export/);
 });

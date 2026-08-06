@@ -54,6 +54,11 @@ function start(model) {
     enabledEdges: new Set(["calls"]),
     matches: [], matchIndex: 0,
     k: 1, tx: 0, ty: 0,
+    yaw: 0, pitch: 0,
+    mode3d: false,
+    camera3d: { yaw: 0, pitch: Math.PI / 4 },
+    degrading: false,
+    pickDirty: true,
     dirty: true,
   };
 
@@ -77,10 +82,11 @@ function start(model) {
   function fitToContent() {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const f of files) {
-      minX = Math.min(minX, f.x - f.r);
-      maxX = Math.max(maxX, f.x + f.r);
-      minY = Math.min(minY, f.y - f.r);
-      maxY = Math.max(maxY, f.y + f.r);
+      const [px, py] = rotate(f.x, f.y, f.z ?? 0, state.yaw, state.pitch);
+      minX = Math.min(minX, px - f.r);
+      maxX = Math.max(maxX, px + f.r);
+      minY = Math.min(minY, py - f.r);
+      maxY = Math.max(maxY, py + f.r);
     }
     const w = Math.max(maxX - minX, 1);
     const h = Math.max(maxY - minY, 1);
@@ -94,8 +100,14 @@ function start(model) {
   const MAX_QUAD_DEPTH = 32;
   let symbolTree = null;
   function rebuildPickIndex() {
-    const pts = symbols.filter((s) => state.expanded.has(s.parent));
+    const pts = [];
+    for (const s of symbols) {
+      if (!state.expanded.has(s.parent)) continue;
+      const [x, y] = project(s, state);
+      pts.push({ x, y, sym: s });
+    }
     symbolTree = buildPointTree(pts);
+    state.pickDirty = false;
     state.dirty = true;
   }
   rebuildPickIndex();
@@ -143,17 +155,18 @@ function start(model) {
     const bottom = p.y >= node.y + node.size / 2 ? 2 : 0;
     return node.children[right + bottom];
   }
-  function nearestSymbol(x, y, maxDist) {
-    let best = null, bestD = maxDist;
+  function nearestSymbol(sx, sy, maxDistPx) {
+    if (state.pickDirty) rebuildPickIndex();
+    let best = null, bestD = maxDistPx;
     (function visit(node) {
       if (!node) return;
-      if (x < node.x - bestD || x > node.x + node.size + bestD) return;
-      if (y < node.y - bestD || y > node.y + node.size + bestD) return;
+      if (sx < node.x - bestD || sx > node.x + node.size + bestD) return;
+      if (sy < node.y - bestD || sy > node.y + node.size + bestD) return;
       if (!node.children) {
         for (const point of node.points) {
-          const d = Math.hypot(point.x - x, point.y - y);
+          const d = Math.hypot(point.x - sx, point.y - sy);
           if (d < bestD) {
-            best = point;
+            best = point.sym;
             bestD = d;
           }
         }
@@ -164,8 +177,12 @@ function start(model) {
   }
 
   // ---- transform helpers ----
+  // rotate() and project() are globals from the projection source inlined
+  // above this script. Camera fields live directly on `state`.
+  // toWorld is only exact in top-down view (yaw=0, pitch=0); 3D zoom
+  // anchors on the viewport center instead.
   const toWorld = (sx, sy) => [(sx - state.tx) / state.k, (sy - state.ty) / state.k];
-  const toScreen = (x, y) => [x * state.k + state.tx, y * state.k + state.ty];
+  const topDown = () => state.yaw === 0 && state.pitch === 0;
   const owningFile = (node) => node.kind === "file" ? node.id : node.parent;
   const fileEdgeKey = (source, target, kind) => JSON.stringify([source, target, kind]);
 
@@ -183,92 +200,95 @@ function start(model) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#1a1b26";
     ctx.fillRect(0, 0, vw, vh);
-    const rect = visibleWorldRect();
+    const cull2d = topDown();
+    const rect = cull2d ? visibleWorldRect() : null;
     const dimOthers = state.selected !== null;
 
-    // Aggregated file context follows the same kind toggles as detail edges.
-    ctx.lineWidth = 1;
-    for (const e of model.fileEdges) {
-      if (!state.enabledEdges.has(e.kind)) continue;
-      const source = fileById.get(e.source);
-      const target = fileById.get(e.target);
-      if (!source || !target) continue;
-      if (!inRect(rect, source.x, source.y, source.r) && !inRect(rect, target.x, target.y, target.r)) continue;
-      const [sx, sy] = toScreen(source.x, source.y);
-      const [tx, ty] = toScreen(target.x, target.y);
-      const directContext = state.directFileEdges.has(fileEdgeKey(e.source, e.target, e.kind));
-      ctx.strokeStyle = EDGE_COLORS.get(e.kind) ?? "#565f89";
-      ctx.globalAlpha = dimOthers ? (directContext ? 0.75 : 0.025) : 0.15;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-    }
+    // Projection cache for this render pass.
+    const proj = new Map();
+    const P = (n) => {
+      let p = proj.get(n.id);
+      if (!p) {
+        p = project(n, state);
+        proj.set(n.id, p);
+      }
+      return p;
+    };
+    const visible = (n, worldPad) => {
+      if (cull2d) return inRect(rect, n.x, n.y, worldPad);
+      const [px, py] = P(n);
+      const pad = worldPad * state.k + 20;
+      return px >= -pad && px <= vw + pad && py >= -pad && py <= vh + pad;
+    };
 
-    // Detail edges require both owning files expanded; file↔file stays aggregated.
-    for (const e of model.edges) {
-      if (!state.enabledEdges.has(e.kind)) continue;
-      const source = nodeById.get(e.source);
-      const target = nodeById.get(e.target);
-      if (!source || !target || (source.kind === "file" && target.kind === "file")) continue;
-      if (!state.expanded.has(owningFile(source)) || !state.expanded.has(owningFile(target))) continue;
-      if (!inRect(rect, source.x, source.y, 20) && !inRect(rect, target.x, target.y, 20)) continue;
-      const [sx, sy] = toScreen(source.x, source.y);
-      const [tx, ty] = toScreen(target.x, target.y);
-      const selectedCall = e.kind === "calls" && (state.selected === source.id || state.selected === target.id);
-      ctx.strokeStyle = selectedCall
-        ? (state.selected === target.id ? CALLER_COLOR : CALLEE_COLOR)
-        : (EDGE_COLORS.get(e.kind) ?? "#565f89");
-      ctx.globalAlpha = dimOthers ? (selectedCall ? 0.9 : 0.06) : 0.35;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-    }
-
-    // Files participate in direct-call focus even when the endpoint is a symbol.
+    // Painter-ordered node list (far first) and depth range for fading.
+    const drawList = [];
     for (const f of files) {
-      if (!inRect(rect, f.x, f.y, f.r * 1.2)) continue;
-      const [sx, sy] = toScreen(f.x, f.y);
+      if (visible(f, f.r * 1.2)) drawList.push({ depth: P(f)[2], isFile: true, node: f });
+    }
+    if (!state.degrading) {
+      for (const s of symbols) {
+        if (!state.expanded.has(s.parent)) continue;
+        if (visible(s, 20)) drawList.push({ depth: P(s)[2], isFile: false, node: s });
+      }
+    }
+    // Painter order only in 3D: at top-down, insertion order (files in
+    // payload order, then symbols) reproduces the pre-3D draw order exactly.
+    if (!cull2d) drawList.sort((a, b) => a.depth - b.depth);
+    let minDepth = Infinity, maxDepth = -Infinity;
+    for (const item of drawList) {
+      minDepth = Math.min(minDepth, item.depth);
+      maxDepth = Math.max(maxDepth, item.depth);
+    }
+    if (minDepth > maxDepth) { minDepth = 0; maxDepth = 1; }
+    const depthSpan = Math.max(maxDepth - minDepth, 1e-9);
+    // Clamp: edge endpoints can sit outside the visible depth range (culled
+    // nodes, or symbols excluded during degrade drags); out-of-range
+    // globalAlpha assignments are silently ignored by Canvas.
+    const depthFade = (d) => cull2d ? 1 : Math.min(Math.max(0.45 + 0.55 * ((d - minDepth) / depthSpan), 0), 1);
+
+    const drawFile = (f, [sx, sy, depth]) => {
       const baseColor = dirColor.get(f.dir.split("/")[0] || ".") ?? "#7aa2f7";
       const color = f.id === state.selectedFile ? "#ffffff"
         : state.callerFiles.has(f.id) ? CALLER_COLOR
           : state.calleeFiles.has(f.id) ? CALLEE_COLOR : baseColor;
       const related = state.relatedFiles.has(f.id);
-      ctx.globalAlpha = dimOthers ? (related ? 0.95 : 0.12) : 1;
+      ctx.globalAlpha = (dimOthers ? (related ? 0.95 : 0.12) : 1) * depthFade(depth);
       if (state.expanded.has(f.id)) {
+        const rx = f.r * state.k;
+        // Floor the squashed axis only when tilted; at pitch 0 the ellipse
+        // must equal the pre-3D circle exactly, even for rx < 1.
+        const ry = state.pitch === 0 ? rx : Math.max(rx * Math.cos(state.pitch), 1);
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(sx, sy, f.r * state.k, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.font = "12px system-ui";
-        ctx.textAlign = "center";
-        ctx.fillText(f.name, sx, sy - f.r * state.k - 6);
+        if (!state.degrading) {
+          ctx.fillStyle = color;
+          ctx.font = "12px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillText(f.name, sx, sy - ry - 6);
+        }
       } else {
         const pr = 4 + 3 * Math.sqrt(Math.max(f.size, 1));
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(sx, sy, pr, 0, Math.PI * 2);
         ctx.fill();
-        if (state.k >= 0.6) {
+        if (state.k >= 0.6 && !state.degrading) {
           ctx.fillStyle = "#c0caf5";
           ctx.font = "11px system-ui";
           ctx.textAlign = "center";
           ctx.fillText(f.name, sx, sy - pr - 5);
         }
       }
-    }
+    };
 
-    // symbols of expanded files
-    for (const s of symbols) {
-      if (!state.expanded.has(s.parent)) continue;
-      if (!inRect(rect, s.x, s.y, 20)) continue;
-      const [sx, sy] = toScreen(s.x, s.y);
+    const drawSymbol = (s, [sx, sy, depth]) => {
       const isSelected = state.selected === s.id;
       const isHighlighted = state.highlight.has(s.id);
-      ctx.globalAlpha = dimOthers ? (isSelected || isHighlighted ? 1 : 0.15) : 1;
+      ctx.globalAlpha = (dimOthers ? (isSelected || isHighlighted ? 1 : 0.15) : 1) * depthFade(depth);
       ctx.fillStyle = state.callers.has(s.id) ? CALLER_COLOR
         : state.callees.has(s.id) ? CALLEE_COLOR
           : (KIND_COLORS.get(s.kind) ?? "#c0caf5");
@@ -288,6 +308,51 @@ function start(model) {
         ctx.textAlign = "center";
         ctx.fillText(s.name, sx, sy - 8);
       }
+    };
+
+    // Aggregated file context follows the same kind toggles as detail edges.
+    ctx.lineWidth = 1;
+    for (const e of model.fileEdges) {
+      if (!state.enabledEdges.has(e.kind)) continue;
+      const source = fileById.get(e.source);
+      const target = fileById.get(e.target);
+      if (!source || !target) continue;
+      if (!visible(source, source.r) && !visible(target, target.r)) continue;
+      const [sx, sy, sd] = P(source);
+      const [tx, ty, td] = P(target);
+      const directContext = state.directFileEdges.has(fileEdgeKey(e.source, e.target, e.kind));
+      ctx.strokeStyle = EDGE_COLORS.get(e.kind) ?? "#565f89";
+      ctx.globalAlpha = (dimOthers ? (directContext ? 0.75 : 0.025) : 0.15) * depthFade((sd + td) / 2);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+
+    // Detail edges require both owning files expanded; file<->file stays aggregated.
+    for (const e of model.edges) {
+      if (!state.enabledEdges.has(e.kind)) continue;
+      const source = nodeById.get(e.source);
+      const target = nodeById.get(e.target);
+      if (!source || !target || (source.kind === "file" && target.kind === "file")) continue;
+      if (!state.expanded.has(owningFile(source)) || !state.expanded.has(owningFile(target))) continue;
+      if (!visible(source, 20) && !visible(target, 20)) continue;
+      const [sx, sy, sd] = P(source);
+      const [tx, ty, td] = P(target);
+      const selectedCall = e.kind === "calls" && (state.selected === source.id || state.selected === target.id);
+      ctx.strokeStyle = selectedCall
+        ? (state.selected === target.id ? CALLER_COLOR : CALLEE_COLOR)
+        : (EDGE_COLORS.get(e.kind) ?? "#565f89");
+      ctx.globalAlpha = (dimOthers ? (selectedCall ? 0.9 : 0.06) : 0.35) * depthFade((sd + td) / 2);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+
+    for (const item of drawList) {
+      if (item.isFile) drawFile(item.node, P(item.node));
+      else drawSymbol(item.node, P(item.node));
     }
     ctx.globalAlpha = 1;
   }
@@ -299,9 +364,15 @@ function start(model) {
   requestAnimationFrame(frame);
 
   // ---- interaction ----
+  const PITCH_MAX = (80 * Math.PI) / 180;
   let dragStart = null, dragged = false;
   canvas.addEventListener("pointerdown", (e) => {
-    dragStart = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty };
+    dragStart = {
+      x: e.clientX, y: e.clientY,
+      tx: state.tx, ty: state.ty,
+      yaw: state.yaw, pitch: state.pitch,
+      rotate: state.mode3d && e.button === 0 && !e.shiftKey,
+    };
     dragged = false;
     canvas.setPointerCapture(e.pointerId);
   });
@@ -310,43 +381,87 @@ function start(model) {
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
     if (Math.abs(dx) + Math.abs(dy) > 4) dragged = true;
-    state.tx = dragStart.tx + dx;
-    state.ty = dragStart.ty + dy;
+    if (dragStart.rotate) {
+      state.yaw = dragStart.yaw + dx * 0.01;
+      state.pitch = Math.min(Math.max(dragStart.pitch + dy * 0.01, 0), PITCH_MAX);
+      state.degrading = dragged;
+    } else {
+      state.tx = dragStart.tx + dx;
+      state.ty = dragStart.ty + dy;
+    }
+    state.pickDirty = true;
     state.dirty = true;
   });
-  canvas.addEventListener("pointerup", (e) => {
-    if (dragStart && !dragged) onClick(e.clientX, e.clientY);
+  const endDrag = (e, allowClick) => {
+    if (dragStart && allowClick && !dragged) onClick(e.clientX, e.clientY);
+    // Same guard as the toggle: plain clicks (or drags ending exactly
+    // top-down) must not clobber the remembered 3D tilt.
+    if (dragStart?.rotate && !topDown()) state.camera3d = { yaw: state.yaw, pitch: state.pitch };
     dragStart = null;
+    state.degrading = false;
+    state.dirty = true;
+  };
+  canvas.addEventListener("pointerup", (e) => endDrag(e, true));
+  canvas.addEventListener("pointercancel", (e) => endDrag(e, false));
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("dblclick", (e) => {
+    // Only empty space resets the camera: double-clicking a node is
+    // navigation (its two click events already expanded/selected it).
+    if (nearestSymbol(e.clientX, e.clientY, 8)) return;
+    for (const f of files) {
+      const [fx, fy] = project(f, state);
+      const pr = 4 + 3 * Math.sqrt(Math.max(f.size, 1));
+      if (Math.hypot(fx - e.clientX, fy - e.clientY) <= pr + 2) return;
+    }
+    state.yaw = 0;
+    state.pitch = 0;
+    state.camera3d = { yaw: 0, pitch: Math.PI / 4 };
+    fitToContent();
+    state.pickDirty = true;
+    state.dirty = true;
   });
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     const factor = Math.exp(-e.deltaY * 0.0012);
-    const [wx, wy] = toWorld(e.clientX, e.clientY);
-    state.k = Math.min(Math.max(state.k * factor, 0.05), 40);
-    state.tx = e.clientX - wx * state.k;
-    state.ty = e.clientY - wy * state.k;
+    if (topDown()) {
+      const [wx, wy] = toWorld(e.clientX, e.clientY);
+      state.k = Math.min(Math.max(state.k * factor, 0.05), 40);
+      state.tx = e.clientX - wx * state.k;
+      state.ty = e.clientY - wy * state.k;
+    } else {
+      // No exact inverse under rotation: zoom around the viewport center.
+      const cx = vw / 2, cy = vh / 2;
+      const wx = (cx - state.tx) / state.k;
+      const wy = (cy - state.ty) / state.k;
+      state.k = Math.min(Math.max(state.k * factor, 0.05), 40);
+      state.tx = cx - wx * state.k;
+      state.ty = cy - wy * state.k;
+    }
+    state.pickDirty = true;
     state.dirty = true;
   }, { passive: false });
 
   function onClick(sx, sy) {
-    const [wx, wy] = toWorld(sx, sy);
-    const sym = nearestSymbol(wx, wy, 8 / state.k);
+    const sym = nearestSymbol(sx, sy, 8);
     if (sym) {
       selectSymbol(sym);
       return;
     }
     let hit = null;
     for (const f of files) {
-      const distance = Math.hypot(f.x - wx, f.y - wy);
+      const [fx, fy] = project(f, state);
+      const distance = Math.hypot(fx - sx, fy - sy);
       if (state.expanded.has(f.id)) {
-        const ringTolerancePx = 8;
-        if (Math.abs(distance - f.r) <= ringTolerancePx / state.k) {
+        const rx = f.r * state.k;
+        const ry = state.pitch === 0 ? rx : Math.max(rx * Math.cos(state.pitch), 1);
+        const norm = ((sx - fx) / rx) ** 2 + ((sy - fy) / ry) ** 2;
+        if (Math.abs(Math.sqrt(norm) - 1) * Math.min(rx, ry) <= 8) {
           hit = f;
           break;
         }
       } else {
         const pr = 4 + 3 * Math.sqrt(Math.max(f.size, 1));
-        if (distance <= (pr + 2) / state.k) {
+        if (distance <= pr + 2) {
           hit = f;
           break;
         }
@@ -456,8 +571,10 @@ function start(model) {
 
   function zoomTo(node) {
     state.k = 3;
-    state.tx = vw / 2 - node.x * state.k;
-    state.ty = vh / 2 - node.y * state.k;
+    const [px, py] = rotate(node.x, node.y, node.z ?? 0, state.yaw, state.pitch);
+    state.tx = vw / 2 - px * state.k;
+    state.ty = vh / 2 - py * state.k;
+    state.pickDirty = true;
     state.dirty = true;
   }
 
@@ -476,6 +593,31 @@ function start(model) {
     label.append(box, document.createTextNode(kind));
     toggles.append(label);
   }
+
+  const modeButton = document.createElement("button");
+  modeButton.id = "mode3d";
+  modeButton.type = "button";
+  modeButton.textContent = "3D";
+  modeButton.title = "Toggle rotatable 3D overview";
+  modeButton.setAttribute("aria-pressed", "false");
+  modeButton.addEventListener("click", () => {
+    state.mode3d = !state.mode3d;
+    modeButton.setAttribute("aria-pressed", String(state.mode3d));
+    if (state.mode3d) {
+      state.yaw = state.camera3d.yaw;
+      state.pitch = state.camera3d.pitch;
+    } else {
+      // Only remember angles worth restoring: a top-down camera (e.g. right
+      // after a dblclick reset) must not clobber the remembered 3D tilt.
+      if (!topDown()) state.camera3d = { yaw: state.yaw, pitch: state.pitch };
+      state.yaw = 0;
+      state.pitch = 0;
+    }
+    fitToContent();
+    state.pickDirty = true;
+    state.dirty = true;
+  });
+  document.getElementById("hud").append(modeButton);
 
   const kindCounts = new Map();
   for (const s of symbols) kindCounts.set(s.kind, (kindCounts.get(s.kind) ?? 0) + 1);
