@@ -108,8 +108,8 @@ else
 
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
-      rev = "v6.1.1";
-      sha256 = "sha256-kHdQ9e44doBk2yYW88tMSCqVG8ycYcvJSZlrIziXhpA=";
+      rev = "v6.2.0";
+      sha256 = "sha256-F5LEk0yNWbMpan1vZSFZM76XSpsFGvA7h8q6Idrvenk=";
     };
 
     diffPackageSrc = pkgs.fetchurl {
