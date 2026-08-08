@@ -75,3 +75,15 @@ If the extension-load check is unavailable, manually test a Home Manager-like st
 - Use `mechanical-worker` for exact deterministic edits needing little judgment.
 - `scout` does not require a default Superpowers skill.
 - `reviewer` receives the applicable Superpowers review-template context in its task prompt and runs with `context: "fresh"`; do not rely on broad inherited skill discovery.
+
+## Rules for clear, readable writing
+
+Apply these rules to explanatory prose, not code, identifiers, commands,
+quotations, error messages, or text that must remain exact.
+
+1. Prefer short, familiar words when they are equally precise.
+2. Prefer plain language. Use technical terms when they are standard or more exact, and explain uncommon terms when useful.
+3. Remove words that do not add meaning, but keep enough context to avoid ambiguity.
+4. Prefer active voice when it makes the actor and action clearer. Use passive voice when it better serves the sentence.
+5. Avoid clichés and stock figures of speech. Use comparisons only when they improve understanding.
+6. Put accuracy first, clarity second, and brevity third. Break any rule that would make the writing less accurate, clear, natural, or useful.
