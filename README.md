@@ -19,6 +19,24 @@ Initial platform support is `x86_64-linux` only.
 }
 ```
 
+### Per-launch workflow suite
+
+Plain `pi` uses Superpowers. Select Matt Pocock's stable engineering and productivity skills for one process with the canonical selector:
+
+```sh
+ROCHE_PI_SKILLSET=matt pi
+```
+
+For a fixed convenience command, run:
+
+```sh
+pi-matt
+```
+
+`ROCHE_PI_SKILLSET` accepts `superpowers` and `matt`; an unset value defaults to `superpowers`. For normal agent launches, `pi-matt` always selects Matt, even when `ROCHE_PI_SKILLSET=superpowers`. Both commands change the workflow skills and routing instructions only. Authentication, sessions, common extensions, local skills, models, and trust state remain under the same `~/.pi/agent` directory.
+
+Jailed Pi remains fixed to Superpowers and does not install `pi-matt` in this version.
+
 ### Jailed Pi
 
 ```nix

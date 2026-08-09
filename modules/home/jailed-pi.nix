@@ -42,7 +42,8 @@ let
     let
       cfg = config.programs."roche-pi".jailed;
       piCfg = config.programs."roche-pi";
-      piPackage = inputs.llm-agents.packages.${pkgs.system}.pi;
+      upstreamPiPackage = inputs.llm-agents.packages.${pkgs.system}.pi;
+      piPackage = self.packages.${pkgs.system}.pi-superpowers;
       claudePackage = inputs.llm-agents.packages.${pkgs.system}."claude-code";
       zellijPackage = inputs.llm-agents.inputs.nixpkgs.legacyPackages.${pkgs.system}.zellij;
       homeDir = config.home.homeDirectory;
@@ -63,7 +64,7 @@ let
         inherit pkgs;
         package = piCfg.package;
         settings = lib.recursiveUpdate piCfg.settings {
-          lastChangelogVersion = piPackage.version;
+          lastChangelogVersion = upstreamPiPackage.version;
         };
         stylix = {
           enable = piCfg.stylix.enable;

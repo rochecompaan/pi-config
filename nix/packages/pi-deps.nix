@@ -112,6 +112,18 @@ else
       sha256 = "sha256-F5LEk0yNWbMpan1vZSFZM76XSpsFGvA7h8q6Idrvenk=";
     };
 
+    mattPocockSkillsSrc = pkgs.fetchgit {
+      url = "https://github.com/mattpocock/skills.git";
+      rev = "84fdeffd12f2ee307994d1eb6feb48173b6e0502";
+      sha256 = "sha256-pseSJJb5nBBGPzpxA1GzjGLB9OrT+u0At1saJ4NqZ1E=";
+    };
+
+    mattPocockSkills = pkgs.runCommand "mattpocock-skills" { } ''
+      mkdir -p "$out/skills"
+      cp -r ${mattPocockSkillsSrc}/skills/engineering "$out/skills/engineering"
+      cp -r ${mattPocockSkillsSrc}/skills/productivity "$out/skills/productivity"
+    '';
+
     diffPackageSrc = pkgs.fetchurl {
       url = "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz";
       sha256 = "sha256-uJi/I8lVlGB1duJd3UAT8dUe0OhiqvBzKBWDDIeztY8=";
@@ -196,6 +208,8 @@ else
       codegraphCli
       contextMode
       diffPackage
+      mattPocockSkills
+      mattPocockSkillsSrc
       piCodegraph
       piListen
       piMessengerBridge
@@ -212,7 +226,6 @@ else
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${piVim}/lib/node_modules/pi-vim"
-      "${superpowersSrc}"
     ];
 
     nodeModulePaths = {

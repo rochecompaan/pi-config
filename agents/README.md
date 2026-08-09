@@ -1,10 +1,10 @@
-# Pi Agent Profiles for Superpowers
+# Pi Agent Profiles
 
-This directory contains project-owned Pi agent profiles used by Superpowers and pi-subagents workflows.
+This directory contains project-owned Pi agent profiles shared across selectable workflow suites and pi-subagents workflows.
 
 ## Hybrid builtin roles
 
-These profiles intentionally shadow same-named pi-subagents builtins so the project can retain its Superpowers adaptations and review/implementation guardrails while incorporating useful builtin coordination behavior:
+These profiles intentionally shadow same-named pi-subagents builtins so the project can retain its review and implementation guardrails while incorporating useful builtin coordination behavior:
 
 - `scout.md` — focused repository reconnaissance and handoff context.
 - `planner.md` — approved-scope implementation planning.
@@ -21,7 +21,7 @@ inheritProjectContext: true
 inheritSkills: false
 ```
 
-Project instructions remain available through inherited context. Broad skill discovery is disabled for ordinary children; required Superpowers skills are passed explicitly by the parent task.
+Project instructions remain available through inherited context. Broad skill discovery is disabled for ordinary children; required task-specific skills are passed explicitly by the parent task.
 
 ## Custom roles
 
@@ -30,4 +30,4 @@ Project instructions remain available through inherited context. Broad skill dis
 
 ## Installation
 
-The Nix `pi-config` package copies this directory and exposes it through Home Manager and project Pi shell resources. Do not install these files manually or symlink them from a Superpowers checkout.
+The Nix `pi-config` package copies this directory and exposes it through Home Manager and project Pi shell resources. Do not install these files manually or symlink them from a workflow-suite checkout.

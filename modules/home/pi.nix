@@ -1,7 +1,6 @@
 {
   self,
   lib,
-  inputs,
   ...
 }:
 let
@@ -72,7 +71,8 @@ let
 
       config = mkIf cfg.enable {
         home.packages = [
-          inputs.llm-agents.packages.${pkgs.system}.pi
+          self.packages.${pkgs.system}.pi
+          self.packages.${pkgs.system}.pi-matt
         ]
         ++ optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli
         ++ optional cfg.installCodegraphCli self.packages.${pkgs.system}.codegraph

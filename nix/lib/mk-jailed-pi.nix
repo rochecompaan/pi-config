@@ -64,7 +64,7 @@ in
   mkJailedPi =
     {
       name ? "jailed-pi",
-      piPackage ? inputs.llm-agents.packages.${system}.pi,
+      piPackage ? self'.packages.pi-superpowers,
       agentConfigPackage,
       defaultAgentDir ? "$HOME/.pi/agent-jailed",
       authMode ? "global",

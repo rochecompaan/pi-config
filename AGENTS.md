@@ -3,7 +3,7 @@
 - **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 - Write the validated design (spec) to `docs/specs/YYYY-MM-DD-<topic>-design.md`
 - Treat specs and plans as the start of a new feature: create or use a task-specific git worktree before writing them, just like implementation changes.
-- If the task-specific worktree does not exist yet, create it with the `using-git-worktrees` skill before writing the spec or plan.
+- If the task-specific worktree does not exist yet, create one before writing the spec or plan.
 
 ## Completing development work
 
@@ -58,23 +58,21 @@ If the extension-load check is unavailable, manually test a Home Manager-like st
 
 ## Subagent review routing
 
-- The canonical Pi review subagent is `reviewer`.
-- Do not dispatch `code-reviewer`; legacy `code-reviewer` agents are disabled and only document the migration path.
-- When a Superpowers skill or template says to dispatch `superpowers:code-reviewer` or `code-reviewer`, adapt it to Pi by dispatching `reviewer` instead.
-- Before dispatching a review subagent, resolve the active reviewer role with `resolve_agent_team({ role: "reviewer" })` when available. Pass the resolved `model` and `thinking` explicitly when present.
-- Use `context: "fresh"` for adversarial code review unless the user explicitly asks for forked context.
-- Include the Superpowers code-review template context in the `reviewer` task prompt: what was implemented, plan or requirements, base/head SHAs, and a short description.
+- The canonical Pi review subagent is `reviewer`; do not dispatch the disabled `code-reviewer` compatibility shim.
+- Resolve the active reviewer role when the resolver is available. Pass resolved model and thinking values explicitly when present.
+- Use fresh context for adversarial review unless the user explicitly asks for inherited context.
+- Give reviewers the artifact or diff, requirements, base and head references when relevant, acceptance criteria, and a concise task description.
 
 ## Subagent skill routing
 
-- Project role profiles intentionally set `inheritSkills: false`; ordinary children should receive only the skills required by their concrete task.
+- The parent Pi session owns orchestration. Ordinary child agents do not launch subagents or run their own orchestration loops.
+- Keep exactly one writing child active in a shared checkout; parallel research and review roles remain read-only.
+- Project role profiles intentionally set `inheritSkills: false`; ordinary children receive only the skills required by their concrete task.
 - Any explicitly injected skill is part of the child task contract. The child must read it before acting and follow it unless it conflicts with project instructions or approved scope.
-- When delegating creation of a Superpowers implementation plan to `planner`, pass the `writing-plans` skill explicitly.
-- For `worker` tasks that change production behavior, fix bugs, add reusable logic, parse or validate input, change API contracts, handle errors, affect security, or prevent regressions, pass both `test-driven-development` and `verification-before-completion`.
-- For static configuration, documentation, dependency pins, or another Testing Value Gate exclusion, do not force TDD. Require the appropriate direct verification and pass `verification-before-completion` when the worker owns completion evidence.
-- Use `mechanical-worker` for exact deterministic edits needing little judgment.
-- `scout` does not require a default Superpowers skill.
-- `reviewer` receives the applicable Superpowers review-template context in its task prompt and runs with `context: "fresh"`; do not rely on broad inherited skill discovery.
+- The selected launch profile defines suite-specific skill names and workflow-to-subagent adaptations.
+- Use `worker` for judgment-bearing implementation and `mechanical-worker` for exact deterministic edits needing little judgment.
+- `scout` does not require a default skill.
+- `reviewer` runs with fresh context for adversarial review and receives task-specific review instructions instead of broad inherited skill discovery.
 
 ## Rules for clear, readable writing
 

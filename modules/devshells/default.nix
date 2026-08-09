@@ -1,4 +1,4 @@
-{ inputs, ... }:
+{ ... }:
 {
   perSystem =
     {
@@ -11,7 +11,8 @@
     {
       devShells.default = pkgs.mkShell {
         packages = [
-          inputs.llm-agents.packages.${system}.pi
+          self'.packages.pi
+          self'.packages.pi-matt
           self'.packages.codegraph
           self'.packages.codegraph-viz
           self'.packages.pi-local-auth
