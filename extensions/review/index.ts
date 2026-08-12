@@ -52,6 +52,10 @@ import {
 	type CompareBranchesTarget,
 } from "./review-compare.ts";
 import {
+	runVerifiedFixWorkflow,
+	type VerifiedFixWorkflowResult,
+} from "./review-verified-fix-workflow.ts";
+import {
 	DEFAULT_REVIEW_PROFILE_ID,
 	REVIEW_PROFILE_OPTIONS,
 	parseReviewProfileOption,
@@ -1077,7 +1081,7 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForLoopTurnToStart(ctx: ExtensionContext, previousAssistantId?: string): Promise<boolean> {
+async function waitForAgentTurnToStart(ctx: ExtensionContext, previousAssistantId?: string): Promise<boolean> {
 	const deadline = Date.now() + REVIEW_LOOP_START_TIMEOUT_MS;
 
 	while (Date.now() < deadline) {
@@ -2122,7 +2126,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					return;
 				}
 
-				const reviewTurnStarted = await waitForLoopTurnToStart(ctx, reviewBaselineAssistantId);
+				const reviewTurnStarted = await waitForAgentTurnToStart(ctx, reviewBaselineAssistantId);
 				if (!reviewTurnStarted) {
 					ctx.ui.notify("Loop fixing stopped: review pass did not start in time.", "error");
 					return;
@@ -2164,40 +2168,20 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					return;
 				}
 
-				ctx.ui.notify(`Loop fixing pass ${pass}: found blocking findings, returning to fix them...`, "info");
+				ctx.ui.notify(
+					`Loop fixing pass ${pass}: found blocking findings, returning to verify them before fixing...`,
+					"info",
+				);
 
-				const fixBaselineAssistantId = getLastAssistantSnapshot(ctx)?.id;
-				const sentFixPrompt = await executeEndReviewAction(ctx, "returnAndFix", {
+				const verifiedFixResult = await executeEndReviewAction(ctx, "returnVerifyAndFix", {
 					showSummaryLoader: true,
 					notifySuccess: false,
 				});
-				if (sentFixPrompt !== "ok") {
+				if (verifiedFixResult === "noAgreedFindings") {
+					ctx.ui.notify("Loop fixing complete: no findings passed verification.", "info");
 					return;
 				}
-
-				const fixTurnStarted = await waitForLoopTurnToStart(ctx, fixBaselineAssistantId);
-				if (!fixTurnStarted) {
-					ctx.ui.notify("Loop fixing stopped: fix pass did not start in time.", "error");
-					return;
-				}
-
-				await ctx.waitForIdle();
-
-				const fixSnapshot = getLastAssistantSnapshot(ctx);
-				if (!fixSnapshot || fixSnapshot.id === fixBaselineAssistantId) {
-					ctx.ui.notify("Loop fixing stopped: could not read the fix pass result.", "warning");
-					return;
-				}
-				if (fixSnapshot.stopReason === "aborted") {
-					ctx.ui.notify("Loop fixing stopped: fix pass was aborted.", "warning");
-					return;
-				}
-				if (fixSnapshot.stopReason === "error") {
-					ctx.ui.notify("Loop fixing stopped: fix pass failed with an error.", "error");
-					return;
-				}
-				if (fixSnapshot.stopReason === "length") {
-					ctx.ui.notify("Loop fixing stopped: fix pass output was truncated (stopReason=length).", "warning");
+				if (verifiedFixResult !== "ok") {
 					return;
 				}
 			}
@@ -2370,14 +2354,19 @@ Required sections (in order):
 - What was reviewed (files/paths, changes, and scope)
 
 ## Verdict
-- "correct" or "needs attention"
+Write exactly one of these lines:
+- correct
+- needs attention
 
 ## Findings
-For EACH finding, include:
-- Priority tag ([P0]..[P3]) and short title
-- File location (\`path/to/file.ext:line\`)
-- Why it matters (brief)
-- What should change (brief, actionable)
+For EACH finding, use this exact block format:
+- [P0] Short title
+  - File location: \`path/to/file.ext:line\`
+  - Why it matters: <brief explanation>
+  - What should change: <brief, actionable change>
+
+Use one of [P0]..[P3] at the start of every top-level finding bullet. Do not add any other top-level bullets in this section.
+If there are no findings, write exactly "- (none)".
 
 ## Fix Queue
 1. Ordered implementation checklist (highest priority first)
@@ -2399,23 +2388,12 @@ If none apply, write "- (none)".
 
 These are informational callouts for humans and are not fix items by themselves.
 
-Preserve exact file paths, function names, and error messages where available.`;
+Preserve exact file paths, function names, and error messages where available.
+End the summary with this exact final line:
+<!-- END REVIEW SUMMARY -->`;
 
-	const REVIEW_FIX_FINDINGS_PROMPT = `Use the latest review summary in this session and implement the review findings now.
-
-Instructions:
-1. Treat the summary's Findings/Fix Queue as a checklist.
-2. Fix in priority order: P0, P1, then P2 (include P3 if quick and safe).
-3. If a finding is invalid/already fixed/not possible right now, briefly explain why and continue.
-4. Treat "Human Reviewer Callouts (Non-Blocking)" as informational only; do not convert them into fix tasks unless there is a separate explicit finding.
-5. Follow fail-fast error handling: do not add local catch/fallback recovery unless this scope is an explicit boundary that can safely translate the failure.
-6. If you add or keep a \`try/catch\`, explain the expected failure mode and either rethrow with context or return a boundary-safe error response.
-7. JSON parsing/decoding should fail loudly by default; avoid silent fallback parsing.
-8. Run relevant tests/checks for touched code where practical.
-9. End with: fixed items, deferred/skipped items (with reasons), and verification results.`;
-
-	type EndReviewAction = "returnOnly" | "returnAndFix" | "returnAndSummarize" | "returnAndTodo";
-	type EndReviewActionResult = "ok" | "cancelled" | "error";
+	type EndReviewAction = "returnOnly" | "returnVerifyAndFix" | "returnAndSummarize" | "returnAndTodo";
+	type EndReviewActionResult = VerifiedFixWorkflowResult;
 	type EndReviewActionOptions = {
 		showSummaryLoader?: boolean;
 		notifySuccess?: boolean;
@@ -2537,6 +2515,7 @@ Instructions:
 		}
 	}
 
+
 	async function executeEndReviewAction(
 		ctx: ExtensionCommandContext,
 		action: EndReviewAction,
@@ -2612,9 +2591,9 @@ Instructions:
 		);
 		if (!returnResult.ok) return returnResult.cancelled ? "cancelled" : "error";
 		const summaryResult = returnResult.value;
+		const summaryText = getReviewSummaryText(summaryResult);
 
 		if (action === "returnAndTodo") {
-			const summaryText = getReviewSummaryText(summaryResult);
 			if (!summaryText) {
 				ctx.ui.notify(
 					"Review summary did not contain text; todo was not created. Use /end-review to try again.",
@@ -2639,6 +2618,12 @@ Instructions:
 			}
 		}
 
+		if (!summaryText) {
+			clearReviewState(ctx);
+			ctx.ui.notify("Review summary did not contain text; no findings were queued.", "error");
+			return "error";
+		}
+
 		clearReviewState(ctx);
 
 		if (action === "returnAndSummarize") {
@@ -2651,11 +2636,19 @@ Instructions:
 			return "ok";
 		}
 
-		pi.sendUserMessage(REVIEW_FIX_FINDINGS_PROMPT, { deliverAs: "followUp" });
-		if (notifySuccess) {
-			ctx.ui.notify("Review complete! Returned and queued a follow-up to fix findings.", "info");
+		const verifiedFixResult = await runVerifiedFixWorkflow(summaryText, {
+			getActiveTools: () => pi.getActiveTools(),
+			setActiveTools: (toolNames) => pi.setActiveTools(toolNames),
+			getLastAssistantSnapshot: () => getLastAssistantSnapshot(ctx),
+			sendUserMessage: (prompt) => pi.sendUserMessage(prompt, { deliverAs: "followUp" }),
+			waitForTurnToStart: (previousAssistantId) => waitForAgentTurnToStart(ctx, previousAssistantId),
+			waitForIdle: () => ctx.waitForIdle(),
+			notify: (message, level) => ctx.ui.notify(message, level),
+		});
+		if (notifySuccess && verifiedFixResult === "ok") {
+			ctx.ui.notify("Review complete! Fixed the findings that passed verification.", "info");
 		}
-		return "ok";
+		return verifiedFixResult;
 	}
 
 	async function runEndReview(ctx: ExtensionCommandContext): Promise<void> {
@@ -2678,7 +2671,7 @@ Instructions:
 		try {
 			const choice = await ctx.ui.select("Finish review:", [
 				"Return only",
-				"Return and fix findings",
+				"Return, verify, and fix agreed findings",
 				"Return and summarize",
 				"Return and add findings to todo",
 			]);
@@ -2689,8 +2682,8 @@ Instructions:
 			}
 
 			const action: EndReviewAction =
-				choice === "Return and fix findings"
-					? "returnAndFix"
+				choice === "Return, verify, and fix agreed findings"
+					? "returnVerifyAndFix"
 					: choice === "Return and summarize"
 						? "returnAndSummarize"
 						: choice === "Return and add findings to todo"
