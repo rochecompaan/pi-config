@@ -69,18 +69,55 @@ Jailed Pi remains fixed to Superpowers and does not install `pi-matt` in this ve
 
 `docker.enable` binds the host Docker socket into the jail and should be enabled only for trusted project or host profiles. It includes `docker` and `docker-compose`. `podman.enable` adds Podman client tooling (`podman` and `podman-compose`) and binds the rootless host Podman socket path when available; it expects a host Podman service rather than launching nested local containers inside the jail.
 
-## Project shell usage
+## Per-project usage
 
-```nix
-shellHook = ''
-  ${inputs.roche-pi.lib.${system}.projectPiShellHook {
-    agentTeam = "openai-only";
-    # includePackage = true; # opt-in for self-contained project-local package loading
-  }}
-''';
+A project can provide Pi without installing the Home Manager module. For a devenv project, add the flake input to `devenv.yaml`:
+
+```yaml
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+  roche-pi:
+    url: github:rochecompaan/pi-config
 ```
 
-`projectPiShellHook` defaults to `includePackage = false`, so it will not include the project Pi package by default and avoids duplicate global extension loading. Set `includePackage = true` when you need project-local package-based extensions to be loaded explicitly.
+Then install Pi and bootstrap its project resources from `devenv.nix`:
+
+```nix
+{ inputs, pkgs, ... }:
+
+let
+  system = pkgs.stdenv.hostPlatform.system;
+  rochePi = inputs.roche-pi;
+  piConfig = rochePi.packages.${system}.pi-config;
+in
+{
+  packages = [ rochePi.packages.${system}.pi ];
+
+  enterShell = ''
+    export PI_CODING_AGENT_DIR="$DEVENV_ROOT/.pi/agent"
+    mkdir -p "$PI_CODING_AGENT_DIR"
+
+    for resource in \
+      AGENTS.md \
+      settings.json \
+      mcp.json \
+      agents \
+      extensions \
+      multi-model-planning-teams \
+      node_modules \
+      skills \
+      themes
+    do
+      ln -sfnT "${piConfig}/$resource" "$PI_CODING_AGENT_DIR/$resource"
+    done
+  '';
+}
+```
+
+Add `.pi/` to the project `.gitignore`, then run `devenv shell` and launch `pi`. This uses the normal Pi executable rather than jailed Pi. `PI_CODING_AGENT_DIR` points to the repository-local `.pi/agent`, which receives the packaged configuration while keeping project credentials and sessions out of the global agent directory.
+
+For another Nix project shell, use the same bootstrap script in its `shellHook` and replace `$DEVENV_ROOT` with the project root variable available there.
 
 ### Project jailed Pi shell
 
@@ -105,7 +142,6 @@ pkgs.mkShell {
 
   shellHook = ''
     ${inputs.roche-pi.lib.${system}.projectPiShellHook {
-      agentTeam = "openai-only";
       jailedPi = {
         enable = true;
         authMode = "local";
