@@ -176,6 +176,7 @@
             validate_shape("matt", matt)
             validate_shape("matt-convenience", matt_convenience)
             assert matt_convenience == matt, "pi-matt resources differ from Matt selector mode"
+            require("matt-convenience", matt_convenience, ["simple-english"])
 
             require("superpowers", superpowers, [
                 "using-superpowers",
@@ -184,6 +185,7 @@
                 "pi-subagents",
                 "context-mode",
                 "intervals-time-entries",
+                "simple-english",
             ])
             forbid("superpowers", superpowers, ["tdd", "implement", "code-review"])
             assert "[roche-pi skillset: superpowers]" in superpowers["appendSystemPrompt"]
@@ -195,6 +197,7 @@
                 "pi-subagents",
                 "context-mode",
                 "intervals-time-entries",
+                "simple-english",
             ])
             forbid("matt", matt, [
                 "using-superpowers",

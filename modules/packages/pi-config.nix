@@ -95,6 +95,7 @@
         chmod u+w "$out/extensions" "$out/skills"
         ln -s ${piIntervals} "$out/extensions/pi-intervals"
         ln -s ${piIntervals}/skills/intervals-time-entries "$out/skills/intervals-time-entries"
+        ln -s ${piDeps.simpleEnglishSrc}/skills/simple-english "$out/skills/simple-english"
 
         chmod u+w "$out/themes"
         cp ${stylixJson} "$out/themes/stylix.json"

@@ -107,6 +107,12 @@ else
       npmInstallFlags = [ "--omit=dev" ];
     };
 
+    simpleEnglishSrc = pkgs.fetchgit {
+      url = "https://github.com/AminBlg/SimpleEnglish.git";
+      rev = "v1.2.0";
+      sha256 = "sha256-62IdviEpLgMXYzJwjdM6G7VVJtyaAHGhQGHw2oFCAHE=";
+    };
+
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
       rev = "v6.2.0";
@@ -217,6 +223,7 @@ else
       piRemote
       piSubagents
       piVim
+      simpleEnglishSrc
       superpowersSrc
       ;
 
