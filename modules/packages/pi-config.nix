@@ -96,6 +96,11 @@
         ln -s ${piIntervals} "$out/extensions/pi-intervals"
         ln -s ${piIntervals}/skills/intervals-time-entries "$out/skills/intervals-time-entries"
         ln -s ${piDeps.simpleEnglishSrc}/skills/simple-english "$out/skills/simple-english"
+        for skill in codebase-design domain-modeling; do
+          skill_dir="${piDeps.mattPocockSkills}/skills/engineering/$skill"
+          test -f "$skill_dir/SKILL.md"
+          ln -s "$skill_dir" "$out/skills/$skill"
+        done
 
         chmod u+w "$out/themes"
         cp ${stylixJson} "$out/themes/stylix.json"

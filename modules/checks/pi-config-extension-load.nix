@@ -10,6 +10,7 @@
       piConfig = self'.packages.pi-config;
       selectablePi = self'.packages.pi;
       fixedMattPi = self'.packages.pi-matt;
+      mattSkills = self'.packages.mattpocock-skills;
       probeExtension = ../../nix/check-support/pi-skillset-probe.ts;
     in
     {
@@ -140,11 +141,13 @@
               "$TMPDIR/superpowers.json" \
               "$TMPDIR/matt.json" \
               "$TMPDIR/matt-convenience.json" \
+              "${mattSkills}" \
               <<'PY'
             import json
             import sys
+            from pathlib import Path
 
-            superpowers_path, matt_path, matt_convenience_path = sys.argv[1:4]
+            superpowers_path, matt_path, matt_convenience_path, matt_skills_path = sys.argv[1:5]
             with open(superpowers_path, encoding="utf-8") as f:
                 superpowers = json.load(f)
             with open(matt_path, encoding="utf-8") as f:
@@ -152,10 +155,18 @@
             with open(matt_convenience_path, encoding="utf-8") as f:
                 matt_convenience = json.load(f)
 
+            matt_skill_names = {
+                skill_file.parent.name
+                for skill_file in Path(matt_skills_path).glob("skills/*/*/SKILL.md")
+            }
+
             def validate_shape(name, profile):
                 assert isinstance(profile["skills"], list), f"{name}: skills must be a list"
                 assert profile["skills"] == sorted(profile["skills"]), (
                     f"{name}: skills must be sorted"
+                )
+                assert len(profile["skills"]) == len(set(profile["skills"])), (
+                    f"{name}: skills must not contain duplicate names"
                 )
                 assert all(isinstance(skill, str) for skill in profile["skills"]), (
                     f"{name}: every skill name must be a string"
@@ -176,9 +187,15 @@
             validate_shape("matt", matt)
             validate_shape("matt-convenience", matt_convenience)
             assert matt_convenience == matt, "pi-matt resources differ from Matt selector mode"
-            require("matt-convenience", matt_convenience, ["simple-english"])
+            require("matt-convenience", matt_convenience, [
+                "codebase-design",
+                "domain-modeling",
+                "simple-english",
+            ])
 
             require("superpowers", superpowers, [
+                "codebase-design",
+                "domain-modeling",
                 "using-superpowers",
                 "writing-plans",
                 "test-driven-development",
@@ -188,9 +205,18 @@
                 "simple-english",
             ])
             forbid("superpowers", superpowers, ["tdd", "implement", "code-review"])
+            superpowers_matt_skills = matt_skill_names & set(superpowers["skills"])
+            assert superpowers_matt_skills == {"codebase-design", "domain-modeling"}, (
+                "superpowers: unexpected Matt skills: "
+                f"{sorted(superpowers_matt_skills - {'codebase-design', 'domain-modeling'})}; "
+                "missing selected Matt skills: "
+                f"{sorted({'codebase-design', 'domain-modeling'} - superpowers_matt_skills)}"
+            )
             assert "[roche-pi skillset: superpowers]" in superpowers["appendSystemPrompt"]
 
             require("matt", matt, [
+                "codebase-design",
+                "domain-modeling",
                 "tdd",
                 "implement",
                 "code-review",
