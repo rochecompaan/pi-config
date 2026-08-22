@@ -40,6 +40,7 @@
               log="$1"
               for failure in \
                 "Failed to load extension" \
+                "Extension does not export a valid factory function" \
                 "No such built-in module" \
                 "Cannot find package"
               do
