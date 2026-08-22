@@ -9,7 +9,7 @@
  *   /handoff execute phase one of the plan
  *   /handoff check other places that need this fix
  *
- * The generated prompt appears as a draft in the editor for review/editing.
+ * Manual handoffs stage an editable draft; automatic handoffs submit and continue.
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -281,6 +281,18 @@ export function registerHandoffExtension(
 			newSessionResult = await ctx.newSession({
 				parentSession,
 				withSession: async (replacementCtx) => {
+					if (automatic) {
+						try {
+							await replacementCtx.sendUserMessage(stagedPrompt);
+						} catch (error) {
+							replacementCtx.ui.setEditorText(stagedPrompt);
+							replacementCtx.ui.notify(
+								`Automatic handoff submission failed: ${error instanceof Error ? error.message : String(error)}. Prompt staged; submit when ready.`,
+								"error",
+							);
+						}
+						return;
+					}
 					replacementCtx.ui.setEditorText(stagedPrompt);
 					replacementCtx.ui.notify("Handoff ready. Submit when ready.", "info");
 				},

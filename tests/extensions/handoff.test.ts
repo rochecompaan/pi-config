@@ -46,6 +46,7 @@ function createCommandContext(options: {
 } = {}) {
 	const notices: Array<{ message: string; level: string }> = [];
 	const replacementEditor: string[] = [];
+	const replacementUserMessages: string[] = [];
 	const sessionOptions: any[] = [];
 	let manualEditorCalls = 0;
 	const replacementCtx = {
@@ -53,6 +54,7 @@ function createCommandContext(options: {
 			setEditorText(text: string) { replacementEditor.push(text); },
 			notify(message: string, level: string) { notices.push({ message, level }); },
 		},
+		async sendUserMessage(content: string) { replacementUserMessages.push(content); },
 	};
 	const ctx: any = {
 		mode: "tui",
@@ -85,6 +87,7 @@ function createCommandContext(options: {
 		ctx,
 		notices,
 		replacementEditor,
+		replacementUserMessages,
 		sessionOptions,
 		getManualEditorCalls: () => manualEditorCalls,
 	};
@@ -113,6 +116,7 @@ test("manual handoff reviews the generated prompt before staging the edit", asyn
 	assert.equal(command.getManualEditorCalls(), 1);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
 	assert.deepEqual(command.replacementEditor, ["reviewed prompt"]);
+	assert.deepEqual(command.replacementUserMessages, []);
 	assert.deepEqual(harness.sentMessages, []);
 });
 
@@ -277,24 +281,26 @@ test("automatic countdown errors disable later attempts", async () => {
 	assert.equal(harness.sentMessages.length, 1);
 });
 
-test("automatic countdown completion skips the manual editor", async () => {
+test("automatic countdown completion skips the manual editor and submits the generated prompt", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 	assert.equal(command.getManualEditorCalls(), 0);
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 });
 
-test("automatic replacement records the parent and stages without submitting", async () => {
+test("automatic replacement records the parent and continues without Enter", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 	assert.deepEqual(harness.sentMessages, [{
 		content: "/handoff --auto",
 		options: { expandPromptTemplates: true },
@@ -320,13 +326,63 @@ test("successful replacement uses only replacementCtx", async () => {
 					command.notices.push({ message, level });
 				},
 			},
+			async sendUserMessage(content: string) {
+				command.replacementUserMessages.push(content);
+			},
 		});
 		return { cancelled: false };
 	};
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
+});
+
+test("automatic submission failure stays on the replacement context and preserves the prompt", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	let oldContextStale = false;
+	let signalSendStarted: () => void = () => {};
+	let rejectSubmission: (reason?: unknown) => void = () => {};
+	const sendStarted = new Promise<void>((resolve) => { signalSendStarted = resolve; });
+	const submission = new Promise<void>((_resolve, reject) => { rejectSubmission = reject; });
+	command.ctx.ui.notify = () => {
+		if (oldContextStale) throw new Error("stale old context accessed");
+	};
+	command.ctx.newSession = async (newSessionOptions: any) => {
+		command.sessionOptions.push(newSessionOptions);
+		oldContextStale = true;
+		await newSessionOptions.withSession({
+			ui: {
+				setEditorText(text: string) { command.replacementEditor.push(text); },
+				notify(message: string, level: string) {
+					command.notices.push({ message, level });
+				},
+			},
+			sendUserMessage() {
+				signalSendStarted();
+				return submission;
+			},
+		});
+		return { cancelled: false };
+	};
+	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	let handlerSettled = false;
+	const handoff = harness.commandHandler("--auto", command.ctx);
+	void handoff.then(
+		() => { handlerSettled = true; },
+		() => { handlerSettled = true; },
+	);
+	const noRejection = assert.doesNotReject(handoff);
+	await sendStarted;
+	assert.equal(handlerSettled, false);
+	rejectSubmission(new Error("submission failed"));
+	await noRejection;
 	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.match(command.notices.at(-1)?.message ?? "", /submission failed/);
+	assert.equal(command.notices.at(-1)?.level, "error");
 });
 
 const automaticErrorCases: Array<{

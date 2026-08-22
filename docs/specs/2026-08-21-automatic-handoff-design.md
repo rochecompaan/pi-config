@@ -7,7 +7,7 @@
 
 Pi can compact a long session, but compaction loses some detail. The handoff extension creates a focused prompt for a new child session.
 
-This change adds an automatic handoff when raw context usage reaches a token threshold. The user keeps control through a cancellation countdown and final prompt submission.
+This change adds an automatic handoff when raw context usage reaches a token threshold. The user keeps control through a cancellation countdown. When the countdown completes, the replacement session submits the generated prompt and continues automatically.
 
 ## Goals
 
@@ -17,15 +17,14 @@ This change adds an automatic handoff when raw context usage reaches a token thr
 - Let Pi settings override the default threshold.
 - Reuse the current handoff summary and session replacement flow.
 - Give the user five seconds to cancel an automatic handoff.
-- Put the generated prompt in the new session editor.
-- Require the user to press Enter before Pi submits the prompt.
+- Submit the generated prompt in the new session so the agent continues without Enter.
 - Keep manual `/handoff <goal>` behavior unchanged.
 - Prevent repeated automatic attempts after cancellation or an error.
 - Keep Pi compaction enabled as a fallback.
 
 ## Non-Goals
 
-- The extension will not submit the generated prompt automatically.
+- The automatic flow will not offer a second prompt-review step after the countdown.
 - The extension will not replace or disable Pi compaction.
 - The extension will not estimate tool-definition tokens.
 - The extension will not add persistent controls for the enabled state or countdown length.
@@ -138,10 +137,8 @@ The handler ignores unavailable context usage. It also ignores all non-TUI modes
 7. The command collects the active conversation context.
 8. The command generates a prompt with the existing handoff summary logic.
 9. The command creates a child session with the current session file as `parentSession`.
-10. The replacement-session callback puts the prompt in the editor.
-11. The callback tells the user that the handoff prompt is ready.
-12. The user can edit the prompt.
-13. The user presses Enter.
+10. The replacement-session callback submits the generated prompt.
+11. The replacement session starts the next agent turn without waiting for Enter.
 
 Automatic mode uses this fixed goal:
 
@@ -155,13 +152,13 @@ The command captures only plain data before session replacement. This data inclu
 
 After `ctx.newSession()` succeeds, the old extension API and command context are stale. The replacement callback uses only its `replacementCtx` parameter.
 
-The callback calls `replacementCtx.ui.setEditorText()` to stage the prompt. It does not call `sendUserMessage()`.
+For automatic handoffs, the callback awaits `replacementCtx.sendUserMessage()` to submit the prompt and start the next turn. For manual handoffs, it keeps using `replacementCtx.ui.setEditorText()` so the user can review the final prompt before submission.
 
 If another extension cancels the switch, `ctx.newSession()` returns a cancelled result. The original context remains valid in that case, so the extension can show a cancellation notice.
 
 ## Error Handling
 
-The extension changes the automatic state to `disabled` after any unsuccessful automatic attempt. This rule prevents repeated countdowns and repeated model charges.
+The extension changes the automatic state to `disabled` after any unsuccessful automatic attempt before session replacement. This rule prevents repeated countdowns and repeated model charges while the original session remains active.
 
 The automatic flow handles these outcomes:
 
@@ -175,6 +172,8 @@ The automatic flow handles these outcomes:
 - Another extension cancels the new session.
 
 Each outcome keeps the current session active. The extension shows a short error or information notice when a TUI context remains valid.
+
+If prompt submission fails after replacement, the old command context is already stale. The replacement callback catches the error, stages the generated prompt in the replacement editor, and shows an error through `replacementCtx`. The user can then submit the preserved prompt manually.
 
 ## Compaction Fallback
 
@@ -214,11 +213,12 @@ The design uses narrow injected boundaries for the countdown, prompt generation,
 
 - Continue when the countdown reaches zero.
 - Disable automatic handoff when the countdown is cancelled.
-- Disable automatic handoff after dispatch, generation, empty-output, or switch errors.
+- Disable automatic handoff after dispatch, generation, empty-output, or pre-replacement switch errors.
 - Record the old session file as `parentSession`.
 - Use only the replacement context after a successful switch.
-- Put the generated prompt in the replacement editor.
-- Do not submit the generated prompt.
+- Submit the generated prompt through the replacement context.
+- Await replacement submission and preserve the prompt in the editor if submission fails.
+- Start the replacement agent turn without requiring Enter.
 
 ### Manual regression tests
 
@@ -236,7 +236,7 @@ Run these checks after implementation:
 3. Run `nix flake check --accept-flake-config --print-build-logs`.
 4. Do an interactive TUI smoke test.
 
-The smoke test must show the five-second countdown. Escape must cancel the attempt. A completed handoff must leave the prompt in the new editor until the user presses Enter.
+The smoke test must show the five-second countdown. Escape must cancel the attempt. A completed automatic handoff must submit the prompt in the new session and start the next agent turn without keyboard input.
 
 ## Acceptance Criteria
 
@@ -248,6 +248,7 @@ The smoke test must show the five-second countdown. Escape must cancel the attem
 - An unsuccessful attempt does not repeat until the user runs `/handoff auto on`.
 - Re-enabling above the threshold starts the countdown immediately.
 - The new session records the old session as its parent.
-- Automatic mode stages the generated prompt but never submits it.
+- Automatic mode submits the generated prompt and continues without Enter.
+- A failed replacement submission preserves the prompt in the replacement editor without accessing the old context.
 - Manual `/handoff <goal>` keeps its current review and edit behavior.
 - Pi compaction remains enabled as a fallback.

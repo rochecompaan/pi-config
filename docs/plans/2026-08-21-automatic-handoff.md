@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a threshold-driven automatic handoff that stages a generated continuation prompt in a replacement Pi session.
+**Goal:** Add a threshold-driven automatic handoff that submits a generated continuation prompt in a replacement Pi session so the agent continues without Enter.
 
 **Architecture:** `extensions/handoff.ts` remains the Pi-facing shell for events, commands, UI, model calls, and session replacement. `extensions/handoff-auto.ts` contains deterministic settings, parser, trigger, and state-transition rules. Inject the slow or external boundaries so Node tests can exercise the real command flow without a TUI, timer, model call, or session switch.
 
@@ -16,15 +16,16 @@
 - Use 150,000 tokens when the effective setting is missing, invalid, or not positive.
 - Enable automatic handoff by default for each session.
 - Use a fixed five-second countdown. Escape cancels it, and zero continues it.
-- Disable later automatic attempts after cancellation or any automatic error.
+- Disable later automatic attempts after cancellation or any automatic error before replacement.
+- If replacement submission fails, preserve the prompt and report the error through `replacementCtx` only.
 - Require `/handoff auto on` before another automatic attempt.
 - Start immediately when `/handoff auto on` runs at or above the threshold.
 - Dispatch `/handoff --auto` with `expandPromptTemplates: true` before session replacement.
 - Keep `ctx.newSession()` inside the `/handoff` command context.
 - Capture only plain prompt and session-path data before replacement.
 - Use only `replacementCtx` after a successful replacement.
-- Stage the automatic prompt with `replacementCtx.ui.setEditorText()`.
-- Never submit the staged prompt with `sendUserMessage()`.
+- Submit the automatic prompt with `await replacementCtx.sendUserMessage()`.
+- Keep manual prompt staging on `replacementCtx.ui.setEditorText()`.
 - Preserve the manual `/handoff <goal>` review-and-edit flow.
 - Do not subscribe to compaction events or change `compaction.enabled`.
 - Use Node 24 with `node --test --experimental-strip-types` for focused tests.
@@ -407,6 +408,7 @@ function createCommandContext(options: {
 } = {}) {
 	const notices: Array<{ message: string; level: string }> = [];
 	const replacementEditor: string[] = [];
+	const replacementUserMessages: string[] = [];
 	const sessionOptions: any[] = [];
 	let manualEditorCalls = 0;
 	const replacementCtx = {
@@ -414,6 +416,7 @@ function createCommandContext(options: {
 			setEditorText(text: string) { replacementEditor.push(text); },
 			notify(message: string, level: string) { notices.push({ message, level }); },
 		},
+		async sendUserMessage(content: string) { replacementUserMessages.push(content); },
 	};
 	const ctx: any = {
 		mode: "tui",
@@ -446,6 +449,7 @@ function createCommandContext(options: {
 		ctx,
 		notices,
 		replacementEditor,
+		replacementUserMessages,
 		sessionOptions,
 		getManualEditorCalls: () => manualEditorCalls,
 	};
@@ -478,6 +482,7 @@ test("manual handoff reviews the generated prompt before staging the edit", asyn
 	assert.equal(command.getManualEditorCalls(), 1);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
 	assert.deepEqual(command.replacementEditor, ["reviewed prompt"]);
+	assert.deepEqual(command.replacementUserMessages, []);
 	assert.deepEqual(harness.sentMessages, []);
 });
 
@@ -1035,7 +1040,7 @@ git commit -m "feat(handoff): trigger automatic handoff by usage"
 
 **Interfaces:**
 - Consumes: The `running` state and internal dispatch from Task 3.
-- Produces: Five-second Escape cancellation, automatic prompt generation, parent tracking, replacement-editor staging, and failure suppression.
+- Produces: Five-second Escape cancellation, automatic prompt generation, parent tracking, replacement-session submission, and failure suppression.
 
 - [ ] **Step 1: Add failing countdown-result tests**
 
@@ -1044,6 +1049,8 @@ Extend `HandoffDependencies` and the harness with this countdown boundary before
 ```ts
 showAutoCountdown: (ctx: ExtensionCommandContext) => Promise<boolean>;
 ```
+
+Use the harness's `replacementUserMessages` observation to distinguish submission from editor staging.
 
 Use `showAutoCountdown: async () => true` as the harness default. Start the internal command by first reaching the threshold through `agent_settled`.
 
@@ -1063,14 +1070,15 @@ test("automatic countdown cancellation disables later attempts", async () => {
 	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
 });
 
-test("automatic countdown completion skips the manual editor", async () => {
+test("automatic countdown completion skips the manual editor and submits the generated prompt", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 	assert.equal(command.getManualEditorCalls(), 0);
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 });
 ```
 
@@ -1079,14 +1087,15 @@ test("automatic countdown completion skips the manual editor", async () => {
 Add this successful replacement test:
 
 ```ts
-test("automatic replacement records the parent and stages without submitting", async () => {
+test("automatic replacement records the parent and continues without Enter", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 	assert.deepEqual(harness.sentMessages, [{
 		content: "/handoff --auto",
 		options: { expandPromptTemplates: true },
@@ -1116,17 +1125,23 @@ test("successful replacement uses only replacementCtx", async () => {
 					command.notices.push({ message, level });
 				},
 			},
+			async sendUserMessage(content: string) {
+				command.replacementUserMessages.push(content);
+			},
 		});
 		return { cancelled: false };
 	};
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+	assert.deepEqual(command.replacementEditor, []);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 });
 ```
 
-The first test catches a wrong parent, modal review, or prompt submission. The second catches old-context access after replacement.
+The first test catches a wrong parent, modal review, or missing prompt submission. The second catches old-context access after replacement.
+
+Add a rejecting replacement-submission test. Use a deferred `sendUserMessage()` promise to prove the command awaits submission. After rejecting it, assert that the callback uses only `replacementCtx`, stages the generated prompt, and shows an error that includes the submission failure.
 
 - [ ] **Step 3: Add failing automatic-error tests**
 
@@ -1291,7 +1306,8 @@ Use this order:
 7. In manual mode, call `ctx.ui.editor()` and preserve cancellation behavior.
 8. In automatic mode, use the generated prompt without opening the editor modal.
 9. Call `ctx.newSession()` with `parentSession`.
-10. Stage the prompt through `replacementCtx` only.
+10. Submit the automatic prompt, or stage the manual prompt, through `replacementCtx` only.
+11. Catch automatic submission failures inside `withSession`, stage the prompt, and notify through `replacementCtx`.
 
 Use one automatic-error helper before replacement:
 
@@ -1316,6 +1332,18 @@ const parentSession = currentSessionFile;
 const newSessionResult = await ctx.newSession({
 	parentSession,
 	withSession: async (replacementCtx) => {
+		if (automatic) {
+			try {
+				await replacementCtx.sendUserMessage(stagedPrompt);
+			} catch (error) {
+				replacementCtx.ui.setEditorText(stagedPrompt);
+				replacementCtx.ui.notify(
+					`Automatic handoff submission failed: ${error instanceof Error ? error.message : String(error)}. Prompt staged; submit when ready.`,
+					"error",
+				);
+			}
+			return;
+		}
 		replacementCtx.ui.setEditorText(stagedPrompt);
 		replacementCtx.ui.notify("Handoff ready. Submit when ready.", "info");
 	},
@@ -1359,7 +1387,7 @@ Expected: PASS with `# fail 0`.
 
 ```sh
 git add extensions/handoff.ts tests/extensions/handoff.test.ts
-git commit -m "feat(handoff): stage automatic replacement prompts"
+git commit -m "feat(handoff): submit automatic replacement prompts"
 ```
 
 ---
@@ -1550,11 +1578,12 @@ Perform these actions in the TUI:
 9. Make sure that the countdown starts immediately.
 10. Let the countdown reach zero.
 11. Make sure that Pi opens a child session.
-12. Make sure that the generated prompt remains in the editor.
-13. Do not press Enter.
-14. Exit Pi.
+12. Do not press Enter or provide other keyboard input.
+13. Make sure that the generated prompt is submitted in the child session.
+14. Make sure that the child agent starts its response.
+15. Exit Pi.
 
-Expected: Escape cancels once. Suppression prevents repeats. Re-enabling above the threshold starts immediately. The completed flow stages but does not submit the prompt.
+Expected: Escape cancels once. Suppression prevents repeats. Re-enabling above the threshold starts immediately. The completed flow submits the generated prompt and continues without keyboard input.
 
 Remove the temporary settings:
 
@@ -1641,7 +1670,7 @@ Expected: The worktree is clean. The log contains these five implementation boun
 1. `feat(handoff): add automatic handoff policy`
 2. `refactor(handoff): isolate extension side effects`
 3. `feat(handoff): trigger automatic handoff by usage`
-4. `feat(handoff): stage automatic replacement prompts`
+4. `feat(handoff): submit automatic replacement prompts`
 5. `config(handoff): set automatic handoff threshold`
 
 If any verification exposes a behavior defect, write a failing regression test first. Apply the smallest fix, rerun all checks, and commit that fix separately.
