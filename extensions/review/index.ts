@@ -2406,6 +2406,17 @@ End the summary with this exact final line:
 		};
 	};
 
+	function captureNavigatedReviewSummary(
+		ctx: ExtensionContext,
+		result: { cancelled: boolean },
+	): NavigateWithSummaryResult {
+		const summary = getReviewSummaryText(result, ctx.sessionManager.getLeafEntry());
+		return {
+			cancelled: result.cancelled,
+			summaryEntry: summary ? { summary } : undefined,
+		};
+	}
+
 	function getActiveReviewOrigin(ctx: ExtensionContext): string | undefined {
 		if (reviewOriginId) {
 			return reviewOriginId;
@@ -2496,7 +2507,7 @@ End the summary with this exact final line:
 					customInstructions: REVIEW_SUMMARY_PROMPT,
 					replaceInstructions: true,
 				})
-					.then((result) => done(result as NavigateWithSummaryResult))
+					.then((result) => done(captureNavigatedReviewSummary(ctx, result)))
 					.catch((err) => done({ cancelled: false, error: err instanceof Error ? err.message : String(err) }));
 
 				return loader;
@@ -2509,7 +2520,7 @@ End the summary with this exact final line:
 				customInstructions: REVIEW_SUMMARY_PROMPT,
 				replaceInstructions: true,
 			});
-			return result as NavigateWithSummaryResult;
+			return captureNavigatedReviewSummary(ctx, result);
 		} catch (error) {
 			return { cancelled: false, error: error instanceof Error ? error.message : String(error) };
 		}

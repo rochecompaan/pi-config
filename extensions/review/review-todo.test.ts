@@ -48,6 +48,39 @@ test("getReviewSummaryText reads summaryEntry.summary from navigateTree results"
 	assert.equal(getReviewSummaryText({ cancelled: false, summaryEntry: { summary: "   " } }), null);
 });
 
+test("getReviewSummaryText reads the persisted branch summary when navigateTree omits it", () => {
+	assert.equal(
+		getReviewSummaryText(
+			{ cancelled: false },
+			{
+				type: "branch_summary",
+				id: "summary-entry",
+				parentId: "origin-entry",
+				timestamp: "2026-08-22T11:19:43.358Z",
+				fromId: "review-leaf",
+				summary: SUMMARY,
+				details: {},
+				usage: {
+					input: 100,
+					output: 20,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 120,
+					cost: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						total: 0,
+					},
+				},
+				fromHook: false,
+			},
+		),
+		SUMMARY.trim(),
+	);
+});
+
 test("getReviewTodosDir honors PI_TODO_PATH relative to cwd", () => {
 	const cwd = path.resolve("/tmp/example-project");
 	assert.equal(getReviewTodosDir(cwd, {}), path.join(cwd, ".pi/todos"));

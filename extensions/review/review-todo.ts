@@ -15,6 +15,11 @@ type NavigateTreeSummaryResult = {
 	};
 };
 
+type BranchSummaryEntry = {
+	type?: unknown;
+	summary?: unknown;
+};
+
 export type ReviewTodoRecord = {
 	id: string;
 	title: string;
@@ -102,11 +107,20 @@ export function deriveReviewTodoTitle(summary: string): string {
 	return `${DEFAULT_REVIEW_TODO_TITLE}: ${truncateTitle(scope)}`;
 }
 
-export function getReviewSummaryText(result: unknown): string | null {
-	const summary = (result as NavigateTreeSummaryResult | null | undefined)?.summaryEntry?.summary;
+function normalizeReviewSummaryText(summary: unknown): string | null {
 	if (typeof summary !== "string") return null;
 	const trimmed = summary.trim();
 	return trimmed || null;
+}
+
+export function getReviewSummaryText(result: unknown, persistedSummaryEntry?: unknown): string | null {
+	const resultSummary = (result as NavigateTreeSummaryResult | null | undefined)?.summaryEntry?.summary;
+	const normalizedResultSummary = normalizeReviewSummaryText(resultSummary);
+	if (normalizedResultSummary) return normalizedResultSummary;
+
+	const entry = persistedSummaryEntry as BranchSummaryEntry | undefined;
+	if (entry?.type !== "branch_summary") return null;
+	return normalizeReviewSummaryText(entry.summary);
 }
 
 export function serializeReviewTodo(todo: ReviewTodoRecord): string {
