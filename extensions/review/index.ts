@@ -61,6 +61,11 @@ import {
 	parseReviewProfileOption,
 	type ReviewProfileId,
 } from "./review-profile.ts";
+import { createReviewPromptFooterState } from "./review-output-footer.ts";
+import {
+	registerReviewPromptFooterLifecycle,
+	sendReviewPromptWithFooter,
+} from "./review-output-footer-lifecycle.ts";
 import {
 	createReviewFindingsTodo,
 	getReviewSummaryText,
@@ -1113,6 +1118,9 @@ type ReviewPresetValue =
 	| typeof TOGGLE_CUSTOM_INSTRUCTIONS_VALUE;
 
 export default function reviewExtension(pi: ExtensionAPI) {
+	const reviewPromptFooterState = createReviewPromptFooterState();
+	registerReviewPromptFooterLifecycle(pi, reviewPromptFooterState);
+
 	function persistReviewSettings() {
 		pi.appendEntry(REVIEW_SETTINGS_TYPE, {
 			loopFixingEnabled: reviewLoopFixingEnabled,
@@ -1757,7 +1765,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const modeHint = useFreshSession ? " (fresh session)" : "";
 		const profileLabel = REVIEW_PROFILE_OPTIONS.find((option) => option.id === profile)?.label ?? profile;
 		ctx.ui.notify(`Starting ${profileLabel}: ${hint}${modeHint}`, "info");
-		pi.sendUserMessage(fullPrompt);
+		sendReviewPromptWithFooter(pi, reviewPromptFooterState, fullPrompt, profile);
 	}
 
 	/**
