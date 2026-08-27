@@ -159,6 +159,27 @@ async function showAutoCountdown(ctx: ExtensionCommandContext): Promise<boolean>
 	});
 }
 
+type ResolvedGenerationAuth = Extract<
+	Awaited<ReturnType<ExtensionContext["modelRegistry"]["getApiKeyAndHeaders"]>>,
+	{ ok: true }
+>;
+
+/**
+ * Resolve request auth for the generation call. OAuth-backed providers such as
+ * Kimi Code subscriptions authenticate with headers only, so an API key is not
+ * required when headers are present.
+ */
+export async function resolveGenerationAuth(ctx: ExtensionCommandContext): Promise<ResolvedGenerationAuth> {
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+	if (!auth.ok) {
+		throw new Error(auth.error);
+	}
+	if (!auth.apiKey && !auth.headers) {
+		throw new Error(`No API key for ${ctx.model!.provider}`);
+	}
+	return auth;
+}
+
 const defaultDependencies: HandoffDependencies = {
 	loadSettings: loadHandoffSettings,
 	showAutoCountdown,
@@ -174,10 +195,7 @@ const defaultDependencies: HandoffDependencies = {
 			const loader = new BorderedLoader(tui, theme, "Generating handoff prompt...");
 			loader.onAbort = () => done(null);
 			const generate = async () => {
-				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-				if (!auth.ok || !auth.apiKey) {
-					throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error);
-				}
+				const auth = await resolveGenerationAuth(ctx);
 				const userMessage: Message = {
 					role: "user",
 					content: [{
