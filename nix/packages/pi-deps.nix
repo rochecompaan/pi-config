@@ -118,16 +118,16 @@ else
 
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
-      rev = "v0.40.0";
-      sha256 = "sha256-LNm4h9OxoljQNXZKmg+P3MUHEWDO6H2x0qMx/gHQwkY=";
+      rev = "v0.58.0";
+      sha256 = "sha256-cpgU6h8L1ISZT/S6NaGei5w9wVjq4yW/bowy/binkHM=";
     };
 
     piSubagents = pkgs.buildNpmPackage {
       pname = "pi-subagents";
-      version = "0.40.0";
+      version = "0.58.0";
       src = piSubagentsSrc;
 
-      npmDepsHash = "sha256-MS8MWvOQ/rX1px7952kcNOqZkYdy35/XoSKt6LP8jGY=";
+      npmDepsHash = "sha256-BixrOUy1n+Xa4H88FP7lV08d2DfO0fhfGZBrg030MA0=";
 
       dontNpmBuild = true;
       npmInstallFlags = [ "--omit=dev" ];
