@@ -209,6 +209,7 @@
             test_home="$2"
             for resource in \
               AGENTS.md \
+              claude-bridge.json \
               mcp.json \
               agents \
               extensions \
@@ -226,6 +227,9 @@
             test_home="$1"
             test_repo="$2"
             agent_dir="$3"
+            assert_link_target \
+              "$test_repo/.pi/claude-bridge.json" \
+              "${self'.packages.pi-config}/claude-bridge.json"
             (
               export HOME="$test_home"
               export PI_CODING_AGENT_DIR="$agent_dir"

@@ -73,11 +73,14 @@ let
 
   mcpJson = "${package}/mcp.json";
 
+  claudeBridgeJson = "${package}/claude-bridge.json";
+
   resourcesPackage = pkgs.runCommand "roche-pi-resources" { } ''
     mkdir -p "$out"
     ln -s ${package}/AGENTS.md "$out/AGENTS.md"
     ln -s ${settingsJson} "$out/settings.json"
     ln -s ${mcpJson} "$out/mcp.json"
+    ln -s ${claudeBridgeJson} "$out/claude-bridge.json"
     ln -s ${extensions} "$out/extensions"
     ln -s ${package}/agents "$out/agents"
     ln -s ${multiModelPlanningTeams} "$out/multi-model-planning-teams"
@@ -88,6 +91,7 @@ let
 in
 {
   inherit
+    claudeBridgeJson
     dashboardConfigJson
     extensions
     mcpJson

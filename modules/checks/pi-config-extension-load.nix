@@ -29,6 +29,7 @@
             ln -s ${piConfig}/AGENTS.md "$agent_dir/AGENTS.md"
             ln -s ${piConfig}/settings.json "$agent_dir/settings.json"
             ln -s ${piConfig}/mcp.json "$agent_dir/mcp.json"
+            ln -s ${piConfig}/claude-bridge.json "$agent_dir/claude-bridge.json"
             ln -s ${piConfig}/extensions "$agent_dir/extensions"
             ln -s ${piConfig}/agents "$agent_dir/agents"
             ln -s ${piConfig}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"
@@ -96,6 +97,26 @@
               --no-tools \
               --extension ${probeExtension} \
               -p /write-skillset-probe
+
+            run_probe ask-claude \
+              ${pkgs.coreutils}/bin/env \
+              PI_TOOLSET_PROBE_OUTPUT="$TMPDIR/ask-claude-tools.json" \
+              ${selectablePi}/bin/pi \
+              --no-session \
+              --no-builtin-tools \
+              --extension ${probeExtension} \
+              -p /write-toolset-probe
+
+            python3 - "$TMPDIR/ask-claude-tools.json" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as f:
+                tools = json.load(f)
+
+            assert "AskClaude" in tools["all"], tools
+            assert "AskClaude" in tools["active"], tools
+            PY
 
             set +e
             ${pkgs.coreutils}/bin/env \

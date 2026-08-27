@@ -85,6 +85,7 @@
         cp ${../../AGENTS.md} "$out/AGENTS.md"
         cp ${settingsJson} "$out/settings.json"
         cp ${mcpJson} "$out/mcp.json"
+        cp ${../../claude-bridge.json} "$out/claude-bridge.json"
 
         cp -r ${../../extensions} "$out/extensions"
         cp -r ${../../skills} "$out/skills"

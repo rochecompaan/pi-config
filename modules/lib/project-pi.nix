@@ -45,6 +45,7 @@
           ln -sfnT ${piConfigPackage}/agents .pi/agents
           ln -sfnT ${piConfigPackage}/multi-model-planning-teams .pi/multi-model-planning-teams
           ln -sfnT ${piConfigPackage}/mcp.json .pi/mcp.json
+          ln -sfnT ${piConfigPackage}/claude-bridge.json .pi/claude-bridge.json
           cat > .pi/settings.json <<'EOF'
           ${builtins.toJSON settings}
           EOF
@@ -55,6 +56,7 @@
 
             ln -sfnT ${piConfigPackage}/AGENTS.md "$agent_dir/AGENTS.md"
             ln -sfnT ${piConfigPackage}/mcp.json "$agent_dir/mcp.json"
+            ln -sfnT ${piConfigPackage}/claude-bridge.json "$agent_dir/claude-bridge.json"
             ln -sfnT ${piConfigPackage}/agents "$agent_dir/agents"
             ln -sfnT ${piConfigPackage}/extensions "$agent_dir/extensions"
             ln -sfnT ${piConfigPackage}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"

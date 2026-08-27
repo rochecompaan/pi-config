@@ -56,6 +56,32 @@ else
       '';
     };
 
+    piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
+
+    piClaudeBridgeSrc = pkgs.fetchzip {
+      url = "https://registry.npmjs.org/pi-claude-bridge/-/pi-claude-bridge-0.7.0.tgz";
+      hash = "sha256-M3eNmab9AZJWVkPFYXrVLDMEmXIqsGnQM9KRbffq+dk=";
+    };
+
+    piClaudeBridge = pkgs.buildNpmPackage {
+      pname = "pi-claude-bridge";
+      version = "0.7.0";
+      src = piClaudeBridgeSrc;
+
+      npmDepsHash = "sha256-F9gvUefKU10yaCDVaCjdB/e5tCUybpNs1koZ2HSrURE=";
+
+      dontNpmBuild = true;
+      makeCacheWritable = true;
+      npmInstallFlags = [
+        "--omit=dev"
+        "--omit=peer"
+      ];
+
+      postPatch = ''
+        cp ${piClaudeBridgePackageLock} package-lock.json
+      '';
+    };
+
     matrixSdkCryptoNodeFile = "matrix-sdk-crypto.linux-x64-gnu.node";
 
     matrixSdkCryptoNode = pkgs.fetchurl {
@@ -218,6 +244,7 @@ else
       mattPocockSkills
       mattPocockSkillsSrc
       piCodegraph
+      piClaudeBridge
       piListen
       piMessengerBridge
       piRemote
@@ -229,6 +256,7 @@ else
 
     packagePaths = [
       "${contextMode}/lib/node_modules/context-mode"
+      "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"
       "${piListen}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"

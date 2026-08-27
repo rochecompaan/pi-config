@@ -6,6 +6,7 @@ const STOP_MARKER = "PI_SKILLSET_PROBE_STOP";
 
 export default function (pi: ExtensionAPI) {
   const bootstrapOutput = process.env.PI_SUPERPOWERS_BOOTSTRAP_OUTPUT;
+  const toolsetOutput = process.env.PI_TOOLSET_PROBE_OUTPUT;
 
   pi.registerCommand("write-skillset-probe", {
     description: "Write loaded skill-set resources for a Nix runtime check",
@@ -26,6 +27,23 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("write-toolset-probe", {
+    description: "Write registered and active tools for a Nix runtime check",
+    handler: async () => {
+      if (!toolsetOutput) {
+        throw new Error("PI_TOOLSET_PROBE_OUTPUT is required");
+      }
+
+      writeFileSync(
+        toolsetOutput,
+        JSON.stringify({
+          all: pi.getAllTools().map((tool) => tool.name).sort(),
+          active: pi.getActiveTools().sort(),
+        }),
+      );
+    },
+  });
+
   pi.on("context", async (event) => {
     if (bootstrapOutput && event.messages.some(messageContainsBootstrap)) {
       writeFileSync(bootstrapOutput, `${BOOTSTRAP_MARKER}\n`);
@@ -33,7 +51,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", () => {
-    if (bootstrapOutput) {
+    if (bootstrapOutput || toolsetOutput) {
       throw new Error(STOP_MARKER);
     }
   });

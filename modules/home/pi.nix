@@ -88,6 +88,10 @@ let
             force = true;
             source = piResources.mcpJson;
           };
+          ".pi/agent/claude-bridge.json" = {
+            force = true;
+            source = piResources.claudeBridgeJson;
+          };
           ".pi/agent/extensions".source = piResources.extensions;
           ".pi/agent/agents".source = piResources.agents;
           ".pi/agent/multi-model-planning-teams".source = piResources.multiModelPlanningTeams;
