@@ -71,12 +71,14 @@ let
 
   skills = "${package}/skills";
 
+  subagentProfiles = "${package}/profiles/pi-subagents";
+
   mcpJson = "${package}/mcp.json";
 
   claudeBridgeJson = "${package}/claude-bridge.json";
 
   resourcesPackage = pkgs.runCommand "roche-pi-resources" { } ''
-    mkdir -p "$out"
+    mkdir -p "$out" "$out/profiles"
     ln -s ${package}/AGENTS.md "$out/AGENTS.md"
     ln -s ${settingsJson} "$out/settings.json"
     ln -s ${mcpJson} "$out/mcp.json"
@@ -87,6 +89,7 @@ let
     ln -s ${skills} "$out/skills"
     ln -s ${themes} "$out/themes"
     ln -s ${package}/node_modules "$out/node_modules"
+    ln -s ${package}/profiles/pi-subagents "$out/profiles/pi-subagents"
   '';
 in
 {
@@ -99,6 +102,7 @@ in
     resourcesPackage
     settingsJson
     skills
+    subagentProfiles
     themes
     ;
 

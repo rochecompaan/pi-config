@@ -93,6 +93,9 @@
         cp -r ${../../agents} "$out/agents"
         cp -r ${../../multi-model-planning-teams} "$out/multi-model-planning-teams"
 
+        mkdir -p "$out/profiles"
+        cp -r ${../../profiles}/pi-subagents "$out/profiles/pi-subagents"
+
         chmod u+w "$out/extensions" "$out/skills"
         ln -s ${piIntervals} "$out/extensions/pi-intervals"
         ln -s ${piIntervals}/skills/intervals-time-entries "$out/skills/intervals-time-entries"
