@@ -53,6 +53,9 @@ function getFindingsSectionLines(summaryText: string): string[] {
 	for (let index = firstContentIndex; index < lines.length; index++) {
 		const heading = parseHeading(lines[index]);
 		if (heading?.level === 2) {
+			if (lines[index] !== `## ${heading.title}`) {
+				throw new Error(`Review summary contains malformed section heading: ${lines[index].trim()}`);
+			}
 			currentSection = heading.title;
 			if (!REVIEW_SUMMARY_SECTION_ORDER.includes(currentSection as (typeof REVIEW_SUMMARY_SECTION_ORDER)[number])) {
 				throw new Error(`Review summary contains unexpected section: ${currentSection}`);
@@ -81,7 +84,7 @@ function getFindingsSectionLines(summaryText: string): string[] {
 	}
 
 	const verdictLines = sections.get("Verdict")!.filter((line) => line.trim());
-	if (verdictLines.length !== 1 || !/^- (?:correct|needs attention)$/.test(verdictLines[0])) {
+	if (verdictLines.length !== 1 || !/^(?:- )?(?:correct|needs attention)$/.test(verdictLines[0])) {
 		throw new Error("Review summary has a malformed Verdict section");
 	}
 

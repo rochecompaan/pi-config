@@ -119,6 +119,13 @@ ${SUMMARY}`),
 	);
 });
 
+test("extractReviewFindings rejects nonexact section headings", () => {
+	assert.throws(
+		() => extractReviewFindings(SUMMARY.replace("## Verdict", "## Verdict   ")),
+		/malformed section heading/,
+	);
+});
+
 test("extractReviewFindings rejects truncated summaries without the required envelope", () => {
 	assert.throws(
 		() =>

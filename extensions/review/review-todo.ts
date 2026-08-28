@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { unwrapPiBranchReviewSummary } from "./review-summary-transport.ts";
 
 const TODO_DIR_NAME = ".pi/todos";
 const TODO_PATH_ENV = "PI_TODO_PATH";
@@ -12,12 +13,14 @@ const MAX_TITLE_LENGTH = 96;
 type NavigateTreeSummaryResult = {
 	summaryEntry?: {
 		summary?: unknown;
+		details?: unknown;
 	};
 };
 
 type BranchSummaryEntry = {
 	type?: unknown;
 	summary?: unknown;
+	details?: unknown;
 };
 
 export type ReviewTodoRecord = {
@@ -107,20 +110,22 @@ export function deriveReviewTodoTitle(summary: string): string {
 	return `${DEFAULT_REVIEW_TODO_TITLE}: ${truncateTitle(scope)}`;
 }
 
-function normalizeReviewSummaryText(summary: unknown): string | null {
+function getNonemptyReviewSummaryText(summary: unknown): string | null {
 	if (typeof summary !== "string") return null;
-	const trimmed = summary.trim();
-	return trimmed || null;
+	return summary.trim() ? summary : null;
 }
 
 export function getReviewSummaryText(result: unknown, persistedSummaryEntry?: unknown): string | null {
-	const resultSummary = (result as NavigateTreeSummaryResult | null | undefined)?.summaryEntry?.summary;
-	const normalizedResultSummary = normalizeReviewSummaryText(resultSummary);
-	if (normalizedResultSummary) return normalizedResultSummary;
+	const resultEntry = (result as NavigateTreeSummaryResult | null | undefined)?.summaryEntry;
+	const persistedEntry = persistedSummaryEntry as BranchSummaryEntry | undefined;
+	const trustedDetails = persistedEntry?.type === "branch_summary" ? persistedEntry.details : resultEntry?.details;
 
-	const entry = persistedSummaryEntry as BranchSummaryEntry | undefined;
-	if (entry?.type !== "branch_summary") return null;
-	return normalizeReviewSummaryText(entry.summary);
+	const resultSummary = getNonemptyReviewSummaryText(resultEntry?.summary);
+	if (resultSummary) return unwrapPiBranchReviewSummary(resultSummary, trustedDetails);
+
+	if (persistedEntry?.type !== "branch_summary") return null;
+	const persistedSummary = getNonemptyReviewSummaryText(persistedEntry.summary);
+	return persistedSummary ? unwrapPiBranchReviewSummary(persistedSummary, persistedEntry.details) : null;
 }
 
 export function serializeReviewTodo(todo: ReviewTodoRecord): string {
