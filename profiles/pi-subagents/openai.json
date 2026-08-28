@@ -1,0 +1,14 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "scout": { "model": "openai-codex/gpt-5.6-luna", "thinking": "low" },
+      "delegate": { "model": "openai-codex/gpt-5.6-luna", "thinking": "low" },
+      "researcher": { "model": "openai-codex/gpt-5.6-terra", "thinking": "medium" },
+      "context-builder": { "model": "openai-codex/gpt-5.6-terra", "thinking": "medium" },
+      "planner": { "model": "openai-codex/gpt-5.6-sol", "thinking": "xhigh" },
+      "worker": { "model": "openai-codex/gpt-5.6-terra", "thinking": "high" },
+      "reviewer": { "model": "openai-codex/gpt-5.6-sol", "thinking": "xhigh" },
+      "oracle": { "model": "openai-codex/gpt-5.6-sol", "thinking": "high" }
+    }
+  }
+}

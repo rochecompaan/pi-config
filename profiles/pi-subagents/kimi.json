@@ -1,0 +1,16 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "advisor": { "model": "kimi-coding/k3", "thinking": "high" },
+      "context-builder": { "model": "kimi-coding/k3", "thinking": "high" },
+      "delegate": { "model": "kimi-coding/k3-256k", "thinking": "low" },
+      "mechanical-worker": { "model": "kimi-coding/k3-256k", "thinking": "low" },
+      "oracle": { "model": "kimi-coding/k3", "thinking": "high" },
+      "planner": { "model": "kimi-coding/k3", "thinking": "max" },
+      "researcher": { "model": "kimi-coding/k3-256k", "thinking": "high" },
+      "reviewer": { "model": "kimi-coding/k3", "thinking": "max" },
+      "scout": { "model": "kimi-coding/k3-256k", "thinking": "low" },
+      "worker": { "model": "kimi-coding/k3", "thinking": "high" }
+    }
+  }
+}
