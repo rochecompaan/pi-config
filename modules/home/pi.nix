@@ -95,7 +95,11 @@ let
           ".pi/agent/extensions".source = piResources.extensions;
           ".pi/agent/agents".source = piResources.agents;
           ".pi/agent/multi-model-planning-teams".source = piResources.multiModelPlanningTeams;
-          ".pi/agent/profiles/pi-subagents".source = piResources.subagentProfiles;
+          # Manage the profile files, not the directory: pi-subagents creates
+          # ~/.pi/agent/profiles/pi-subagents/ as a real directory at runtime,
+          # and Home Manager cannot replace a real directory with a symlink.
+          ".pi/agent/profiles/pi-subagents/openai.json".source = "${piResources.subagentProfiles}/openai.json";
+          ".pi/agent/profiles/pi-subagents/kimi.json".source = "${piResources.subagentProfiles}/kimi.json";
           ".pi/agent/skills".source = piResources.skills;
           ".pi/agent/themes".source = piResources.themes;
           ".pi/agent/node_modules".source = piResources.nodeModules;

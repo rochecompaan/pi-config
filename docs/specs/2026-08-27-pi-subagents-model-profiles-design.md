@@ -89,8 +89,8 @@ The Kimi profile covers ten roles: the eight builtin roles from the baseline plu
 
 - `nix/lib/pi-resources.nix`: add `subagentProfiles = "${package}/profiles/pi-subagents"`, export it, and link it as `profiles/pi-subagents` in `resourcesPackage` so the packaged layout matches the Home Manager layout.
 - `modules/packages/pi-config.nix`: copy the repository `profiles/pi-subagents` directory into the package. The package build copies each resource directory explicitly, and `profiles/` is not copied today.
-- `modules/home/pi.nix`: add a `home.file` entry that links `.pi/agent/profiles/pi-subagents` to `piResources.subagentProfiles`.
-- `modules/home/jailed-pi.nix`: add the corresponding link in the jailed activation script so jailed sessions see the same profiles.
+- `modules/home/pi.nix`: add `home.file` entries for `.pi/agent/profiles/pi-subagents/openai.json` and `.pi/agent/profiles/pi-subagents/kimi.json`. Manage the files, not the directory: pi-subagents creates `~/.pi/agent/profiles/pi-subagents/` as a real directory at runtime, and Home Manager cannot replace a real directory with a symlink. File-level entries also let unmanaged profiles coexist in the same directory.
+- `modules/home/jailed-pi.nix`: add the corresponding per-file links in the jailed activation script, for the same reason (`ln -sfnT` cannot overwrite a real directory).
 - `nix/packages/pi-deps.nix`: no changes.
 
 No other settings or wiring change.

@@ -256,8 +256,11 @@ let
           ln -sfnT ${piResources.package}/agents "$agent_dir/agents"
           ln -sfnT ${piResources.package}/extensions "$agent_dir/extensions"
           ln -sfnT ${piResources.package}/multi-model-planning-teams "$agent_dir/multi-model-planning-teams"
-          mkdir -p "$agent_dir/profiles"
-          ln -sfnT ${piResources.package}/profiles/pi-subagents "$agent_dir/profiles/pi-subagents"
+          # Link the profile files, not the directory: pi-subagents may create
+          # the profiles directory at runtime, and ln cannot overwrite a real directory.
+          mkdir -p "$agent_dir/profiles/pi-subagents"
+          ln -sfnT ${piResources.package}/profiles/pi-subagents/openai.json "$agent_dir/profiles/pi-subagents/openai.json"
+          ln -sfnT ${piResources.package}/profiles/pi-subagents/kimi.json "$agent_dir/profiles/pi-subagents/kimi.json"
           ln -sfnT ${piResources.package}/node_modules "$agent_dir/node_modules"
           ln -sfnT ${piResources.package}/skills "$agent_dir/skills"
           ln -sfnT ${piResources.package}/themes "$agent_dir/themes"
