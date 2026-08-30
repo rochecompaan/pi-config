@@ -68,6 +68,9 @@ else
       version = "0.7.0";
       src = piClaudeBridgeSrc;
 
+      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+
       npmDepsHash = "sha256-F9gvUefKU10yaCDVaCjdB/e5tCUybpNs1koZ2HSrURE=";
 
       dontNpmBuild = true;
@@ -79,6 +82,13 @@ else
 
       postPatch = ''
         cp ${piClaudeBridgePackageLock} package-lock.json
+      '';
+
+      doInstallCheck = true;
+      installCheckPhase = ''
+        claude="$out/lib/node_modules/pi-claude-bridge/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+        claudeVersion="$("$claude" --version)" || exit $?
+        test "$claudeVersion" = "2.1.141 (Claude Code)"
       '';
     };
 
