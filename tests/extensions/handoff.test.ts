@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	registerHandoffExtension,
-	resolveGenerationAuth,
 	type HandoffDependencies,
 } from "../../extensions/handoff.ts";
 
@@ -444,42 +443,3 @@ for (const scenario of automaticErrorCases) {
 		assert.equal(harness.sentMessages.length, 1);
 	});
 }
-
-function createAuthContext(resolution: unknown) {
-	return {
-		model: { provider: "kimi-coding", id: "kimi-for-coding" },
-		modelRegistry: {
-			async getApiKeyAndHeaders() {
-				return resolution;
-			},
-		},
-	} as any;
-}
-
-test("generation auth accepts headers-only OAuth credentials", async () => {
-	const ctx = createAuthContext({
-		ok: true,
-		headers: { Authorization: "Bearer oauth-token" },
-		env: { KIMI_ENV: "value" },
-	});
-	const auth = await resolveGenerationAuth(ctx);
-	assert.equal(auth.apiKey, undefined);
-	assert.deepEqual(auth.headers, { Authorization: "Bearer oauth-token" });
-	assert.deepEqual(auth.env, { KIMI_ENV: "value" });
-});
-
-test("generation auth passes through API key credentials", async () => {
-	const ctx = createAuthContext({ ok: true, apiKey: "sk-test", headers: undefined });
-	const auth = await resolveGenerationAuth(ctx);
-	assert.equal(auth.apiKey, "sk-test");
-});
-
-test("generation auth surfaces registry errors", async () => {
-	const ctx = createAuthContext({ ok: false, error: "token refresh failed" });
-	await assert.rejects(() => resolveGenerationAuth(ctx), /token refresh failed/);
-});
-
-test("generation auth rejects when no credentials resolve", async () => {
-	const ctx = createAuthContext({ ok: true });
-	await assert.rejects(() => resolveGenerationAuth(ctx), /No API key for kimi-coding/);
-});

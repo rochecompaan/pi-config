@@ -13,7 +13,6 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-ai/compat";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -33,28 +32,6 @@ import {
 	type AutoHandoffState,
 	type HandoffSettingsSources,
 } from "./handoff-auto.ts";
-
-const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
-
-1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
-2. Lists any relevant files that were discussed or modified
-3. Clearly states the next task based on the user's goal
-4. Is self-contained - the new thread should be able to proceed without the old conversation
-
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
-
-Example output format:
-## Context
-We've been working on X. Key decisions:
-- Decision 1
-- Decision 2
-
-Files involved:
-- path/to/file1.ts
-- path/to/file2.ts
-
-## Task
-[Clear description of what to do next based on user's goal]`;
 
 export type HandoffDependencies = {
 	generatePrompt: (input: {
@@ -159,75 +136,12 @@ async function showAutoCountdown(ctx: ExtensionCommandContext): Promise<boolean>
 	});
 }
 
-type ResolvedGenerationAuth = Extract<
-	Awaited<ReturnType<ExtensionContext["modelRegistry"]["getApiKeyAndHeaders"]>>,
-	{ ok: true }
->;
-
-/**
- * Resolve request auth for the generation call. OAuth-backed providers such as
- * Kimi Code subscriptions authenticate with headers only, so an API key is not
- * required when headers are present.
- */
-export async function resolveGenerationAuth(ctx: ExtensionCommandContext): Promise<ResolvedGenerationAuth> {
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-	if (!auth.ok) {
-		throw new Error(auth.error);
-	}
-	if (!auth.apiKey && !auth.headers) {
-		throw new Error(`No API key for ${ctx.model!.provider}`);
-	}
-	return auth;
-}
-
 const defaultDependencies: HandoffDependencies = {
 	loadSettings: loadHandoffSettings,
 	showAutoCountdown,
-	generatePrompt: async ({ ctx, messages, goal }) => {
-		const [{ uuidv7 }, { complete }, { BorderedLoader, convertToLlm, serializeConversation }] =
-			await Promise.all([
-				import("@earendil-works/pi-ai"),
-				import("@earendil-works/pi-ai/compat"),
-				import("@earendil-works/pi-coding-agent"),
-			]);
-		const conversationText = serializeConversation(convertToLlm(messages));
-		return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-			const loader = new BorderedLoader(tui, theme, "Generating handoff prompt...");
-			loader.onAbort = () => done(null);
-			const generate = async () => {
-				const auth = await resolveGenerationAuth(ctx);
-				const userMessage: Message = {
-					role: "user",
-					content: [{
-						type: "text",
-						text: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
-					}],
-					timestamp: Date.now(),
-				};
-				const response = await complete(
-					ctx.model!,
-					{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-					{
-						apiKey: auth.apiKey,
-						headers: auth.headers,
-						env: auth.env,
-						signal: loader.signal,
-						cacheRetention: "none",
-						sessionId: uuidv7(),
-					},
-				);
-				if (response.stopReason === "aborted") return null;
-				return response.content
-					.filter((part): part is { type: "text"; text: string } => part.type === "text")
-					.map((part) => part.text)
-					.join("\n");
-			};
-			generate().then(done).catch((error) => {
-				console.error("Handoff generation failed:", error);
-				done(null);
-			});
-			return loader;
-		});
+	generatePrompt: async (input) => {
+		const { generateHandoffPrompt } = await import("./handoff-generation.ts");
+		return generateHandoffPrompt(input);
 	},
 };
 
