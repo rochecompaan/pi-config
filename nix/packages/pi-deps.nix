@@ -243,6 +243,14 @@ else
 
       postPatch = ''
         cp ${../../context-mode-package-lock.json} package-lock.json
+
+        # The Pi adapter runs inside Pi's Bun executable and spawns its MCP
+        # server through a runtime discovered on PATH. Pin that child to the
+        # Node runtime used to build better-sqlite3 so their ABIs stay aligned.
+        substituteInPlace build/adapters/pi/mcp-bridge.js \
+          --replace-fail \
+            'const detect = deps.detect ?? (() => detectRuntimes());' \
+            'const detect = deps.detect ?? (() => ({ javascript: "${pkgs.nodejs}/bin/node" }));'
       '';
     };
   in
