@@ -17,6 +17,10 @@ export type HandoffGenerationRuntime = {
 
 export type LoadHandoffGenerationRuntime = () => Promise<HandoffGenerationRuntime>;
 
+type HandoffGenerationOutcome =
+	| { kind: "completed"; value: string | null }
+	| { kind: "failed"; error: unknown };
+
 const HANDOFF_SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
 1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
@@ -50,11 +54,27 @@ export async function completeHandoffPrompt(
 		{ systemPrompt: HANDOFF_SYSTEM_PROMPT, messages: [userMessage] },
 		{ signal, cacheRetention: "none", sessionId },
 	);
-	if (response.stopReason === "aborted") return null;
-	return response.content
+	switch (response.stopReason) {
+		case "aborted":
+			return null;
+		case "error":
+			throw new Error(response.errorMessage || "Handoff generation failed");
+		case "length":
+			throw new Error("Handoff generation was truncated");
+		case "stop":
+			break;
+		default:
+			throw new Error(`Handoff generation was incomplete (${response.stopReason})`);
+	}
+
+	const prompt = response.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
+	if (prompt.trim().length === 0) {
+		throw new Error("Handoff generation returned an empty prompt");
+	}
+	return prompt;
 }
 
 const loadDefaultRuntime: LoadHandoffGenerationRuntime = async () => {
@@ -76,9 +96,9 @@ export async function generateHandoffPrompt(
 ): Promise<string | null> {
 	const { uuidv7, BorderedLoader, convertToLlm, serializeConversation } = await loadRuntime();
 	const conversationText = serializeConversation(convertToLlm(messages));
-	return ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
+	const outcome = await ctx.ui.custom<HandoffGenerationOutcome>((tui, theme, _keybindings, done) => {
 		const loader = new BorderedLoader(tui, theme, "Generating handoff prompt...");
-		loader.onAbort = () => done(null);
+		loader.onAbort = () => done({ kind: "completed", value: null });
 		const generate = async () => {
 			const userMessage: Message = {
 				role: "user",
@@ -90,12 +110,15 @@ export async function generateHandoffPrompt(
 			};
 			return completeHandoffPrompt(ctx, userMessage, loader.signal, uuidv7());
 		};
-		generate().then(done).catch((error) => {
-			console.error("Handoff generation failed:", error);
-			done(null);
-		});
+		generate()
+			.then((value) => done({ kind: "completed", value }))
+			.catch((error) => done({ kind: "failed", error }));
 		return loader;
 	});
+	if (outcome.kind === "failed") {
+		throw outcome.error;
+	}
+	return outcome.value;
 }
 
 export default function handoffGenerationExtension(): void {}

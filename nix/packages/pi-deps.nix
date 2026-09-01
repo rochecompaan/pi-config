@@ -57,6 +57,8 @@ else
     };
 
     piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
+    piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
+    piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
 
     piClaudeBridgeSrc = pkgs.fetchzip {
       url = "https://registry.npmjs.org/pi-claude-bridge/-/pi-claude-bridge-0.7.0.tgz";
@@ -82,6 +84,7 @@ else
 
       postPatch = ''
         cp ${piClaudeBridgePackageLock} package-lock.json
+        patch -p1 < ${piClaudeBridgePatch}
       '';
 
       doInstallCheck = true;
@@ -89,6 +92,11 @@ else
         claude="$out/lib/node_modules/pi-claude-bridge/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
         claudeVersion="$("$claude" --version)" || exit $?
         test "$claudeVersion" = "2.1.141 (Claude Code)"
+        bridgeHistoryModule="$TMPDIR/history-reconstruction.ts"
+        cp "$out/lib/node_modules/pi-claude-bridge/src/history-reconstruction.ts" "$bridgeHistoryModule"
+        BRIDGE_HISTORY_MODULE="$bridgeHistoryModule" \
+          ${pkgs.nodejs}/bin/node --test --experimental-strip-types \
+          ${piClaudeBridgeHistoryReconstructionTest}
       '';
     };
 

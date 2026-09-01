@@ -120,6 +120,36 @@ test("manual handoff reviews the generated prompt before staging the edit", asyn
 	assert.deepEqual(harness.sentMessages, []);
 });
 
+test("manual handoff rejects empty generation before opening the editor", async () => {
+	const harness = createHarness({
+		generatePrompt: async () => "  \n",
+	});
+	const command = createCommandContext();
+
+	await harness.commandHandler("continue phase one", command.ctx);
+
+	assert.equal(command.getManualEditorCalls(), 0);
+	assert.equal(command.sessionOptions.length, 0);
+	assert.equal(command.notices.at(-1)?.level, "error");
+	assert.match(command.notices.at(-1)?.message ?? "", /empty prompt/i);
+});
+
+test("manual handoff propagates generation errors without opening the editor", async () => {
+	const harness = createHarness({
+		generatePrompt: async () => {
+			throw new Error("Claude session reconstruction failed");
+		},
+	});
+	const command = createCommandContext();
+
+	await assert.rejects(
+		harness.commandHandler("continue phase one", command.ctx),
+		/Claude session reconstruction failed/,
+	);
+	assert.equal(command.getManualEditorCalls(), 0);
+	assert.equal(command.sessionOptions.length, 0);
+});
+
 test("manual editor cancellation keeps the current session", async () => {
 	const harness = createHarness();
 	const command = createCommandContext();
@@ -437,6 +467,11 @@ for (const scenario of automaticErrorCases) {
 		await harness.events.get("session_start")?.({}, command.ctx);
 		await harness.events.get("agent_settled")?.({}, command.ctx);
 		await harness.commandHandler("--auto", command.ctx);
+		if (scenario.name === "prompt generation throws" || scenario.name === "prompt generation is empty") {
+			assert.equal(command.getManualEditorCalls(), 0);
+			assert.equal(command.sessionOptions.length, 0);
+			assert.deepEqual(command.replacementUserMessages, []);
+		}
 		await harness.commandHandler("auto status", command.ctx);
 		assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
 		await harness.events.get("agent_settled")?.({}, command.ctx);

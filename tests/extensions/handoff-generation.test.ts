@@ -65,6 +65,83 @@ test("returns null when the model registry reports an aborted response", async (
 	assert.equal(result, null);
 });
 
+const completionUserMessage = {
+	role: "user",
+	content: [{ type: "text", text: "handoff context" }],
+	timestamp: 1,
+} as any;
+
+function completionContext(response: Record<string, unknown>) {
+	return {
+		model: { provider: "custom-bridge", id: "custom-model", api: "custom-stream-api" },
+		modelRegistry: {
+			async complete() {
+				return response;
+			},
+		},
+	} as any;
+}
+
+test("throws the provider error message when completion stops with an error", async () => {
+	await assert.rejects(
+		completeHandoffPrompt(
+			completionContext({
+				stopReason: "error",
+				content: [],
+				errorMessage: "Claude session reconstruction failed",
+			}),
+			completionUserMessage,
+			new AbortController().signal,
+			"handoff-session",
+		),
+		/Claude session reconstruction failed/,
+	);
+});
+
+test("rejects a truncated handoff prompt", async () => {
+	await assert.rejects(
+		completeHandoffPrompt(
+			completionContext({
+				stopReason: "length",
+				content: [{ type: "text", text: "partial prompt" }],
+			}),
+			completionUserMessage,
+			new AbortController().signal,
+			"handoff-session",
+		),
+		/truncated/i,
+	);
+});
+
+for (const [name, content] of [
+	["no text blocks", []],
+	["whitespace-only text", [{ type: "text", text: "  \n" }]],
+] as const) {
+	test(`rejects successful handoff output with ${name}`, async () => {
+		await assert.rejects(
+			completeHandoffPrompt(
+				completionContext({ stopReason: "stop", content }),
+				completionUserMessage,
+				new AbortController().signal,
+				"handoff-session",
+			),
+			/empty prompt/i,
+		);
+	});
+}
+
+test("rejects an incomplete nonterminal stop reason", async () => {
+	await assert.rejects(
+		completeHandoffPrompt(
+			completionContext({ stopReason: "toolUse", content: [] }),
+			completionUserMessage,
+			new AbortController().signal,
+			"handoff-session",
+		),
+		/incomplete/i,
+	);
+});
+
 test("assembles the handoff request and returns registry text", async () => {
 	const generation = await import("../../extensions/handoff-generation.ts");
 	assert.equal(typeof (generation as any).generateHandoffPrompt, "function");
@@ -122,10 +199,9 @@ test("assembles the handoff request and returns registry text", async () => {
 	].join("\n"));
 });
 
-test("returns null when generation fails inside the loader", async (t) => {
+test("propagates generation failures after the loader closes", async () => {
 	const generation = await import("../../extensions/handoff-generation.ts");
 	assert.equal(typeof (generation as any).generateHandoffPrompt, "function");
-	t.mock.method(console, "error", () => {});
 
 	const ctx = {
 		model: { provider: "custom-bridge", id: "custom-model", api: "custom-stream-api" },
@@ -153,14 +229,15 @@ test("returns null when generation fails inside the loader", async (t) => {
 		serializeConversation: () => "serialized conversation",
 	} as any;
 
-	const result = await (generation as any).generateHandoffPrompt(
-		{
-			ctx,
-			messages: [{ role: "user", content: "current task", timestamp: 1 }],
-			goal: "continue in a fresh session",
-		},
-		async () => runtime,
+	await assert.rejects(
+		(generation as any).generateHandoffPrompt(
+			{
+				ctx,
+				messages: [{ role: "user", content: "current task", timestamp: 1 }],
+				goal: "continue in a fresh session",
+			},
+			async () => runtime,
+		),
+		/provider failed/,
 	);
-
-	assert.equal(result, null);
 });

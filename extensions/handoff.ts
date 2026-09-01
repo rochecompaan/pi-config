@@ -195,8 +195,12 @@ export function registerHandoffExtension(
 			else ctx.ui.notify("Cancelled", "info");
 			return;
 		}
-		if (automatic && generatedPrompt.trim().length === 0) {
-			disableAutomatic(ctx, "Handoff generation returned an empty prompt.");
+		if (generatedPrompt.trim().length === 0) {
+			if (automatic) {
+				disableAutomatic(ctx, "Handoff generation returned an empty prompt.");
+			} else {
+				ctx.ui.notify("Handoff generation returned an empty prompt.", "error");
+			}
 			return;
 		}
 		const editedPrompt = automatic

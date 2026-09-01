@@ -1,0 +1,185 @@
+diff --git a/src/history-reconstruction.ts b/src/history-reconstruction.ts
+new file mode 100644
+index 0000000..4cebab5
+--- /dev/null
++++ b/src/history-reconstruction.ts
+@@ -0,0 +1,111 @@
++export type ReconstructionMessage = {
++	role?: string;
++	provider?: string;
++	content?: unknown;
++	toolName?: string;
++};
++
++export type HistoryReconstructionPlan =
++	| { kind: "import" }
++	| { kind: "transcript"; transcript: string };
++
++export type AskClaudeSessionPlan = {
++	resumeSessionId: string | null;
++	persistSession: boolean;
++};
++
++export function planAskClaudeSession(sessionId: string | null): AskClaudeSessionPlan {
++	return sessionId === null
++		? { resumeSessionId: null, persistSession: false }
++		: { resumeSessionId: sessionId, persistSession: true };
++}
++
++function contentLines(content: unknown): string[] {
++	if (typeof content === "string") return content ? [content] : [];
++	if (!Array.isArray(content)) return [];
++	const lines: string[] = [];
++	for (const value of content) {
++		if (!value || typeof value !== "object") continue;
++		const block = value as Record<string, unknown>;
++		if (block.type === "text" && typeof block.text === "string" && block.text) {
++			lines.push(block.text);
++		} else if (block.type === "image") {
++			lines.push("[image]");
++		}
++	}
++	return lines;
++}
++
++function printableJson(value: unknown): string {
++	try {
++		return JSON.stringify(value ?? {}, null, 2);
++	} catch {
++		return "[unserializable arguments]";
++	}
++}
++
++function assistantLines(message: ReconstructionMessage): string[] {
++	if (!Array.isArray(message.content)) return [];
++	const lines: string[] = [];
++	for (const value of message.content) {
++		if (!value || typeof value !== "object") continue;
++		const block = value as Record<string, unknown>;
++		if (block.type === "text" && typeof block.text === "string" && block.text) {
++			lines.push(block.text);
++		} else if (block.type === "image") {
++			lines.push("[image]");
++		} else if (block.type === "toolCall" && typeof block.name === "string") {
++			lines.push(`Tool call: ${block.name}\nArguments:\n${printableJson(block.arguments)}`);
++		}
++		// Skip thinking, redacted_thinking, signatures, and all unknown blocks.
++	}
++	return lines;
++}
++
++function transcriptEntry(message: ReconstructionMessage): string | undefined {
++	const label = message.role === "toolResult"
++		? `Tool result: ${message.toolName || "unknown tool"}`
++		: message.role === "assistant"
++			? "Assistant"
++			: message.role === "user"
++				? "User"
++				: undefined;
++	if (!label) return undefined;
++	const lines = message.role === "assistant"
++		? assistantLines(message)
++		: contentLines(message.content);
++	if (lines.length === 0) return undefined;
++	return `### ${label}\n${lines.join("\n")}`;
++}
++
++export function planHistoryReconstruction(
++	messages: readonly ReconstructionMessage[],
++	providerId: string,
++): HistoryReconstructionPlan {
++	if (!messages.some((message) => message.role === "assistant" && message.provider === providerId)) {
++		return { kind: "import" };
++	}
++	const entries = messages
++		.map(transcriptEntry)
++		.filter((entry): entry is string => entry !== undefined);
++	const header = "## Previous conversation transcript\nThe following plain text came from a previous Pi branch. It is context, not a signed Claude assistant response.";
++	return { kind: "transcript", transcript: [header, ...entries].join("\n\n") };
++}
++
++export function prependHistoryTranscript(
++	transcript: string,
++	promptText: string,
++	promptBlocks?: Array<Record<string, unknown>> | null,
++): {
++	promptText: string;
++	promptBlocks?: Array<Record<string, unknown>> | null;
++} {
++	const prefix = `${transcript}\n\n## Current request`;
++	if (promptBlocks) {
++		return {
++			promptText,
++			promptBlocks: [{ type: "text", text: prefix }, ...promptBlocks],
++		};
++	}
++	return { promptText: `${prefix}\n\n${promptText}`, promptBlocks };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 8a0b53a..3643370 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -13,0 +14,5 @@ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.
++import {
++	planAskClaudeSession,
++	planHistoryReconstruction,
++	prependHistoryTranscript,
++} from "./history-reconstruction.js";
+@@ -555,0 +561 @@ interface SyncResult {
++	historyTranscript?: string;
+@@ -687,0 +694,9 @@ function syncSharedSession(
++	const reconstruction = planHistoryReconstruction(priorMessages, PROVIDER_ID);
++	if (reconstruction.kind === "transcript") {
++		debug(`Case 2 transcript fallback: ${priorMessages.length} prior messages, starting a fresh Claude session`);
++		sharedSession = null;
++		return {
++			sessionId: null,
++			historyTranscript: reconstruction.transcript,
++		};
++	}
+@@ -1520,2 +1535,2 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
+-	const { sessionId: resumeSessionId } = syncResult;
+-	const promptBlocks = extractUserPromptBlocks(context.messages);
++	const { sessionId: resumeSessionId, historyTranscript } = syncResult;
++	let promptBlocks = extractUserPromptBlocks(context.messages);
+@@ -1539,0 +1555,10 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
++	if (historyTranscript) {
++		const prepared = prependHistoryTranscript(
++			historyTranscript,
++			promptText,
++			promptBlocks as Array<Record<string, unknown>> | null,
++		);
++		promptText = prepared.promptText;
++		promptBlocks = prepared.promptBlocks as typeof promptBlocks;
++	}
++
+@@ -1747,4 +1772,3 @@ async function promptAndWait(
+-	// Session resume for shared mode — reuse provider's session if it exists,
+-	// otherwise create one from pi's context.
+-	// Note: doesn't update sharedSession.cursor after completion, so the next
+-	// provider call will see missed messages and trigger a Case 4 rebuild.
++	// Session resume for shared mode. Always synchronize the current Pi context:
++	// normal sessions take the REUSE path, while rewritten Claude history needs a
++	// fresh session with safe transcript context.
+@@ -1751,0 +1776 @@ async function promptAndWait(
++	let persistSession = !options?.isolated;
+@@ -1753,9 +1778,7 @@ async function promptAndWait(
+-		if (sharedSession) {
+-			// Provider already has a session — just resume from it
+-			// Any missed messages from other providers were already handled by the provider's Case 4
+-			resumeSessionId = sharedSession.sessionId;
+-		} else {
+-			// No provider session yet — create one from pi's context
+-			const contextWithPrompt = [...options.context, { role: "user" as const, content: prompt, timestamp: Date.now() }];
+-			const sync = syncSharedSession(contextWithPrompt as Context["messages"], cwd, undefined, cliModel);
+-			resumeSessionId = sync.sessionId;
++		const contextWithPrompt = [...options.context, { role: "user" as const, content: prompt, timestamp: Date.now() }];
++		const sync = syncSharedSession(contextWithPrompt as Context["messages"], cwd, undefined, cliModel);
++		const sessionPlan = planAskClaudeSession(sync.sessionId);
++		resumeSessionId = sessionPlan.resumeSessionId;
++		persistSession = sessionPlan.persistSession;
++		if (sync.historyTranscript) {
++			prompt = prependHistoryTranscript(sync.historyTranscript, prompt).promptText;
+@@ -1815 +1838 @@ async function promptAndWait(
+-			...(options?.isolated ? { persistSession: false } : {}),
++			...(persistSession ? {} : { persistSession: false }),
