@@ -59,6 +59,7 @@ else
     piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
     piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
     piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
+    piClaudeBridgeDirectCompletionTest = ./pi-claude-bridge-direct-completion.test.mjs;
 
     piClaudeBridgeSrc = pkgs.fetchzip {
       url = "https://registry.npmjs.org/pi-claude-bridge/-/pi-claude-bridge-0.7.0.tgz";
@@ -93,10 +94,14 @@ else
         claudeVersion="$("$claude" --version)" || exit $?
         test "$claudeVersion" = "2.1.141 (Claude Code)"
         bridgeHistoryModule="$TMPDIR/history-reconstruction.ts"
+        bridgeDirectCompletionModule="$TMPDIR/request-router.ts"
         cp "$out/lib/node_modules/pi-claude-bridge/src/history-reconstruction.ts" "$bridgeHistoryModule"
+        cp "$out/lib/node_modules/pi-claude-bridge/src/request-router.ts" "$bridgeDirectCompletionModule"
         BRIDGE_HISTORY_MODULE="$bridgeHistoryModule" \
+          BRIDGE_DIRECT_COMPLETION_MODULE="$bridgeDirectCompletionModule" \
           ${pkgs.nodejs}/bin/node --test --experimental-strip-types \
-          ${piClaudeBridgeHistoryReconstructionTest}
+          ${piClaudeBridgeHistoryReconstructionTest} \
+          ${piClaudeBridgeDirectCompletionTest}
       '';
     };
 

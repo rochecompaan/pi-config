@@ -115,16 +115,36 @@ index 0000000..4cebab5
 +	}
 +	return { promptText: `${prefix}\n\n${promptText}`, promptBlocks };
 +}
+diff --git a/src/request-router.ts b/src/request-router.ts
+new file mode 100644
+index 0000000..3430485
+--- /dev/null
++++ b/src/request-router.ts
+@@ -0,0 +1,13 @@
++export type BridgeRequestHandlers<TContext, TResult> = {
++	isolated: (context: TContext) => TResult;
++	agent: (context: TContext) => TResult;
++};
++
++export function routeBridgeRequest<TContext extends { tools?: unknown }, TResult>(
++	context: TContext,
++	handlers: BridgeRequestHandlers<TContext, TResult>,
++): TResult {
++	return context.tools === undefined
++		? handlers.isolated(context)
++		: handlers.agent(context);
++}
 diff --git a/src/index.ts b/src/index.ts
-index 8a0b53a..3643370 100644
+index 8a0b53a..53677af 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -13,0 +14,5 @@ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.
+@@ -13,0 +14,6 @@ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.
 +import {
 +	planAskClaudeSession,
 +	planHistoryReconstruction,
 +	prependHistoryTranscript,
 +} from "./history-reconstruction.js";
++import { routeBridgeRequest } from "./request-router.js";
 @@ -555,0 +561 @@ interface SyncResult {
 +	historyTranscript?: string;
 @@ -687,0 +694,9 @@ function syncSharedSession(
@@ -137,12 +157,22 @@ index 8a0b53a..3643370 100644
 +			historyTranscript: reconstruction.transcript,
 +		};
 +	}
-@@ -1520,2 +1535,2 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
+@@ -1434 +1450,8 @@ function drainForAbort(c: QueryContext, promptStream: PromptStream): void {
+-function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
++function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
++	return routeBridgeRequest(context, {
++		isolated: (requestContext) => isolatedStreamFn(model, requestContext, options),
++		agent: (requestContext) => streamClaudeAgentRequest(model, requestContext, options),
++	});
++}
++
++function streamClaudeAgentRequest(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
+@@ -1520,2 +1543,2 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
 -	const { sessionId: resumeSessionId } = syncResult;
 -	const promptBlocks = extractUserPromptBlocks(context.messages);
 +	const { sessionId: resumeSessionId, historyTranscript } = syncResult;
 +	let promptBlocks = extractUserPromptBlocks(context.messages);
-@@ -1539,0 +1555,10 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
+@@ -1539,0 +1563,10 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
 +	if (historyTranscript) {
 +		const prepared = prependHistoryTranscript(
 +			historyTranscript,
@@ -153,7 +183,7 @@ index 8a0b53a..3643370 100644
 +		promptBlocks = prepared.promptBlocks as typeof promptBlocks;
 +	}
 +
-@@ -1747,4 +1772,3 @@ async function promptAndWait(
+@@ -1747,4 +1780,3 @@ async function promptAndWait(
 -	// Session resume for shared mode — reuse provider's session if it exists,
 -	// otherwise create one from pi's context.
 -	// Note: doesn't update sharedSession.cursor after completion, so the next
@@ -161,9 +191,9 @@ index 8a0b53a..3643370 100644
 +	// Session resume for shared mode. Always synchronize the current Pi context:
 +	// normal sessions take the REUSE path, while rewritten Claude history needs a
 +	// fresh session with safe transcript context.
-@@ -1751,0 +1776 @@ async function promptAndWait(
+@@ -1751,0 +1784 @@ async function promptAndWait(
 +	let persistSession = !options?.isolated;
-@@ -1753,9 +1778,7 @@ async function promptAndWait(
+@@ -1753,9 +1786,7 @@ async function promptAndWait(
 -		if (sharedSession) {
 -			// Provider already has a session — just resume from it
 -			// Any missed messages from other providers were already handled by the provider's Case 4
@@ -180,6 +210,6 @@ index 8a0b53a..3643370 100644
 +		persistSession = sessionPlan.persistSession;
 +		if (sync.historyTranscript) {
 +			prompt = prependHistoryTranscript(sync.historyTranscript, prompt).promptText;
-@@ -1815 +1838 @@ async function promptAndWait(
+@@ -1815 +1846 @@ async function promptAndWait(
 -			...(options?.isolated ? { persistSession: false } : {}),
 +			...(persistSession ? {} : { persistSession: false }),
