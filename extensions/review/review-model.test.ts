@@ -112,8 +112,7 @@ test("pickReviewModel reports an empty available-model snapshot", async () => {
 	assert.deepEqual(result, { kind: "unavailable" });
 });
 
-test("pickReviewModel reuses Pi's selector with current model and registry", async () => {
-	const settingsManager = { source: "in-memory" };
+test("pickReviewModel passes Pi's model runtime in the current selector position", async () => {
 	const registry = {
 		getAvailable: () => [currentModel, reviewModel],
 		find: () => undefined,
@@ -125,8 +124,10 @@ test("pickReviewModel reuses Pi's selector with current model and registry", asy
 	class FakeModelSelectorComponent {
 		constructor(...args: any[]) {
 			constructorArgs = args;
-			const onSelect = args[5] as (model: any) => void;
-			onSelect(reviewModel);
+			const modelRuntime = args[2];
+			const onSelect = args[4] as (model: any) => void;
+			const availableModels = modelRuntime.getAvailableSnapshot();
+			onSelect(availableModels[1]);
 		}
 	}
 
@@ -147,22 +148,20 @@ test("pickReviewModel reuses Pi's selector with current model and registry", asy
 
 	const result = await pickReviewModel(ctx, async () => ({
 		ModelSelectorComponent: FakeModelSelectorComponent as any,
-		SettingsManager: { inMemory: () => settingsManager } as any,
 	}));
 
 	assert.deepEqual(result, { kind: "alternate", model: reviewModel });
 	assert.ok(constructorArgs);
 	assert.equal(constructorArgs[1], currentModel);
-	assert.equal(constructorArgs[2], settingsManager);
-	assert.notEqual(constructorArgs[3], registry);
-	assert.deepEqual(constructorArgs[3].getAvailableSnapshot(), [currentModel, reviewModel]);
-	assert.deepEqual(constructorArgs[4], []);
+	assert.notEqual(constructorArgs[2], registry);
+	assert.deepEqual(constructorArgs[2].getAvailableSnapshot(), [currentModel, reviewModel]);
+	assert.deepEqual(constructorArgs[3], []);
 });
 
 test("pickReviewModel maps Pi selector cancellation to cancellation", async () => {
 	class CancellingModelSelectorComponent {
 		constructor(...args: any[]) {
-			const onCancel = args[6] as () => void;
+			const onCancel = args[5] as () => void;
 			onCancel();
 		}
 	}
@@ -184,7 +183,6 @@ test("pickReviewModel maps Pi selector cancellation to cancellation", async () =
 
 	const result = await pickReviewModel(ctx, async () => ({
 		ModelSelectorComponent: CancellingModelSelectorComponent as any,
-		SettingsManager: { inMemory: () => ({}) } as any,
 	}));
 	assert.deepEqual(result, { kind: "cancelled" });
 });

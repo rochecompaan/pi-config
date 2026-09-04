@@ -9,10 +9,7 @@ export type ReviewModelSelection =
 
 export type SelectedReviewModel = Extract<ReviewModelSelection, { kind: "current" | "alternate" }>;
 
-type ModelSelectorModule = Pick<
-	typeof import("@mariozechner/pi-coding-agent"),
-	"ModelSelectorComponent" | "SettingsManager"
->;
+type ModelSelectorModule = Pick<typeof import("@mariozechner/pi-coding-agent"), "ModelSelectorComponent">;
 
 export type LoadModelSelectorModule = () => Promise<ModelSelectorModule>;
 
@@ -70,8 +67,7 @@ export async function pickReviewModel(
 	if (!ctx.hasUI) return { kind: "cancelled" };
 	if (ctx.modelRegistry.getAvailable().length === 0) return { kind: "unavailable" };
 
-	const { ModelSelectorComponent, SettingsManager } = await loadSelectorModule();
-	const settingsManager = SettingsManager.inMemory();
+	const { ModelSelectorComponent } = await loadSelectorModule();
 	const modelRuntime = createReviewModelRuntimeAdapter(ctx.modelRegistry);
 	const scopedModels: Array<{ model: Model<any>; thinkingLevel: string }> = [];
 
@@ -79,7 +75,6 @@ export async function pickReviewModel(
 		const selector = new ModelSelectorComponent(
 			tui,
 			ctx.model,
-			settingsManager,
 			modelRuntime as any,
 			scopedModels as any,
 			(model) => done(model),
