@@ -156,6 +156,31 @@ else
       npmInstallFlags = [ "--omit=dev" ];
     };
 
+    remotePiExtensionSrc = pkgs.fetchzip {
+      url = "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz";
+      hash = "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=";
+    };
+
+    remotePiExtension = pkgs.buildNpmPackage {
+      pname = "remote-pi";
+      version = "0.7.0";
+      src = remotePiExtensionSrc;
+
+      npmDepsHash = "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=";
+
+      dontNpmBuild = true;
+      makeCacheWritable = true;
+      npmInstallFlags = [ "--omit=dev" ];
+
+      postPatch = ''
+        cp ${./remote-pi-package-lock.json} package-lock.json
+      '';
+
+      postInstall = ''
+        rm -rf "$out/bin"
+      '';
+    };
+
     simpleEnglishSrc = pkgs.fetchgit {
       url = "https://github.com/AminBlg/SimpleEnglish.git";
       rev = "v1.2.0";
@@ -281,6 +306,7 @@ else
       piRemote
       piSubagents
       piVim
+      remotePiExtension
       simpleEnglishSrc
       superpowersSrc
       ;
@@ -293,6 +319,7 @@ else
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${piVim}/lib/node_modules/pi-vim"
+      "${remotePiExtension}/lib/node_modules/remote-pi"
     ];
 
     nodeModulePaths = {
