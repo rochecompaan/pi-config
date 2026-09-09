@@ -11,7 +11,7 @@ type AssistantEntry = {
 	content: unknown;
 };
 
-export type CopyItemKind = "message" | "pipe-message" | "code" | "inline";
+export type CopyItemKind = "message" | "quote" | "pipe-message" | "code" | "inline";
 export type CopyAction = "copy" | "insert";
 
 export type CopyItem = {
@@ -36,6 +36,7 @@ export type CopySelection = {
 
 const COPY_ITEM_KIND_LABELS: Record<CopyItemKind, string> = {
 	message: "message",
+	quote: "quote",
 	"pipe-message": "pipe message",
 	code: "code",
 	inline: "inline",

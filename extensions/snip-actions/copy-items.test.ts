@@ -13,7 +13,7 @@ const newer = {
 	type: "message",
 	id: "newer",
 	timestamp: "2026-09-05T10:00:00.000Z",
-	message: { role: "assistant", content: "| Hello,\n| world\nUse `main`." },
+	message: { role: "assistant", content: "> Keep this quote\n| Hello,\n| world\nUse `main`." },
 };
 
 test("joins assistant text blocks and ignores non-text blocks", () => {
@@ -32,7 +32,8 @@ test("collects newest messages first with the full message before extracts", () 
 	assert.deepEqual(
 		items.map((item) => [item.messageId, item.kind, item.content]),
 		[
-			["newer", "message", "| Hello,\n| world\nUse `main`."],
+			["newer", "message", "> Keep this quote\n| Hello,\n| world\nUse `main`."],
+			["newer", "quote", "Keep this quote"],
 			["newer", "pipe-message", "Hello,world"],
 			["newer", "inline", "main"],
 			["older", "message", "```sh\necho old\n```"],

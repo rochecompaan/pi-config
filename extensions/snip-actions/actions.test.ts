@@ -27,7 +27,7 @@ function context(existing = "") {
 }
 
 test("copies every item type through the clipboard dependency", async () => {
-	for (const kind of ["message", "pipe-message", "code", "inline"] as const) {
+	for (const kind of ["message", "quote", "pipe-message", "code", "inline"] as const) {
 		const { ctx, state } = context();
 		const copied: string[] = [];
 		await performCopyAction(ctx, { item: item(kind, kind), action: "copy" }, async (text) => {
@@ -49,8 +49,8 @@ test("inserts code and inline items into empty and non-empty editors", async () 
 	}
 });
 
-test("rejects insertion for message and pipe-message items without changing the editor", async () => {
-	for (const kind of ["message", "pipe-message"] as const) {
+test("rejects insertion for message, quote, and pipe-message items without changing the editor", async () => {
+	for (const kind of ["message", "quote", "pipe-message"] as const) {
 		const { ctx, state } = context("existing");
 		await performCopyAction(ctx, { item: item(kind), action: "insert" }, async () => {});
 		assert.equal(state.editor, "existing");

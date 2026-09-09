@@ -15,9 +15,12 @@ import {
 	type CopyItem,
 	type CopySelection,
 } from "./copy-items.ts";
-import { buildSearchIndex, rankedFilterItems } from "./search.ts";
+import { PickerController, type PickerListAdapter } from "./picker-controller.ts";
+import { limitPreviewLines } from "./preview.ts";
+import { buildSearchIndex } from "./search.ts";
 
 const PREVIEW_WIDTH = 52;
+const PREVIEW_MAX_LINES = 10;
 
 function compactPreview(content: string): string {
 	const preview = content.replace(/\s+/g, " ").trim();
@@ -69,96 +72,100 @@ export async function pickCopyItem(
 			noMatch: (text) => theme.fg("warning", text),
 		});
 		container.addChild(list);
+		container.addChild(new DynamicBorder((text: string) => theme.fg("borderAccent", text)));
 
-		let filter = "";
-		let filteredItems = selectItems;
+		const previewText = new Text("", 1, 0);
+		container.addChild({
+			render: (width: number) => limitPreviewLines(previewText.render(width), PREVIEW_MAX_LINES),
+			invalidate: () => previewText.invalidate(),
+		});
+
 		const help = new Text("", 1, 0);
-		const updateHelp = (): void => {
-			help.setText(theme.fg(
-				"dim",
-				`Filter: ${filter || "(none)"} · ${keyHint("tui.select.confirm", "copy")} · Right insert code · ${keyHint("tui.select.cancel", "cancel")}`,
-			));
+		const listAdapter: PickerListAdapter = {
+			getSelectedItem: () => list.getSelectedItem(),
+			replaceItems: (items) => {
+				const state = list as unknown as { filteredItems: SelectItem[]; selectedIndex: number };
+				state.filteredItems = items;
+				state.selectedIndex = 0;
+			},
+			setSelectedIndex: (index) => list.setSelectedIndex(index),
+			handleInput: (data) => list.handleInput(data),
+			invalidate: () => list.invalidate(),
 		};
-		const updateFilter = (next: string): void => {
-			filter = next;
-			const state = list as unknown as { filteredItems: SelectItem[]; selectedIndex: number };
-			filteredItems = rankedFilterItems(filter, selectItems, searchIndex);
-			state.filteredItems = filteredItems;
-			state.selectedIndex = 0;
-			updateHelp();
-			list.invalidate();
-			tui.requestRender();
-		};
-		const selectedIndex = (): number | undefined => {
-			const selected = list.getSelectedItem();
-			if (!selected) return undefined;
-			const index = Number.parseInt(selected.value, 10);
-			return Number.isNaN(index) ? undefined : index;
-		};
-		const moveSelection = (offset: number, wrap: boolean): void => {
-			if (filteredItems.length === 0) return;
-			const selected = list.getSelectedItem();
-			const currentIndex = selected ? Math.max(filteredItems.indexOf(selected), 0) : 0;
-			const nextIndex = wrap
-				? (currentIndex + offset + filteredItems.length) % filteredItems.length
-				: currentIndex + offset;
-			list.setSelectedIndex(nextIndex);
-			tui.requestRender();
-		};
+		const controller = new PickerController({
+			copyItems,
+			selectItems,
+			searchIndex,
+			list: listAdapter,
+			showPreview: (preview) => {
+				previewText.setText(`${theme.fg("accent", theme.bold(preview.title))}\n${preview.content}`);
+			},
+			showFilter: (filter) => {
+				help.setText(theme.fg(
+					"dim",
+					`Filter: ${filter || "(none)"} · ${keyHint("tui.select.confirm", "copy")} · Right insert code · ${keyHint("tui.select.cancel", "cancel")}`,
+				));
+			},
+			requestRender: () => tui.requestRender(),
+		});
 
 		list.onSelect = (selected) => done(`copy:${selected.value}`);
 		list.onCancel = () => done(null);
-		updateHelp();
+		controller.initialize();
 		container.addChild(help);
 		container.addChild(new DynamicBorder((text: string) => theme.fg("borderAccent", text)));
 
 		return {
 			render: (width: number) => container.render(width),
-			invalidate: () => container.invalidate(),
+			invalidate: () => {
+				container.invalidate();
+				controller.refresh();
+			},
 			handleInput: (data: string) => {
 				if (keybindings.matches(data, "tui.select.cancel")) {
 					done(null);
 					return;
 				}
 				if (keybindings.matches(data, "tui.select.confirm")) {
-					const index = selectedIndex();
+					const index = controller.selectedCopyItemIndex();
 					if (index !== undefined) done(`copy:${index}`);
 					return;
 				}
 				if (matchesKey(data, "right")) {
-					const index = selectedIndex();
+					const index = controller.selectedCopyItemIndex();
 					if (index !== undefined && isInsertableCopyItem(copyItems[index]!)) {
 						done(`insert:${index}`);
 					}
 					return;
 				}
 				if (matchesKey(data, "backspace")) {
-					if (filter.length > 0) updateFilter(filter.slice(0, -1));
+					if (controller.filter.length > 0) {
+						controller.updateFilter(controller.filter.slice(0, -1));
+					}
 					return;
 				}
 				if (keybindings.matches(data, "tui.select.up")) {
-					moveSelection(-1, true);
+					controller.moveSelection(-1, true);
 					return;
 				}
 				if (keybindings.matches(data, "tui.select.down")) {
-					moveSelection(1, true);
+					controller.moveSelection(1, true);
 					return;
 				}
 				if (keybindings.matches(data, "tui.select.pageUp")) {
-					moveSelection(-maxVisible, false);
+					controller.moveSelection(-maxVisible, false);
 					return;
 				}
 				if (keybindings.matches(data, "tui.select.pageDown")) {
-					moveSelection(maxVisible, false);
+					controller.moveSelection(maxVisible, false);
 					return;
 				}
 				const printable = printableInput(data);
 				if (printable) {
-					updateFilter(filter + printable);
+					controller.updateFilter(controller.filter + printable);
 					return;
 				}
-				list.handleInput(data);
-				tui.requestRender();
+				controller.handleListInput(data);
 			},
 		};
 	});

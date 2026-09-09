@@ -34,6 +34,29 @@ test("does not extract inline or pipe items inside fenced code", () => {
 	]);
 });
 
+test("extracts Markdown quote blocks and preserves their line breaks", () => {
+	const items = extractCopyItems("Intro\n> First line\n>\n> Second line\nBreak\n> Another quote");
+	assert.deepEqual(
+		items.filter((item) => item.kind === "quote").map((item) => item.content),
+		["First line\n\nSecond line", "Another quote"],
+	);
+});
+
+test("does not extract Markdown quotes inside fenced code", () => {
+	const items = extractCopyItems("```md\n> hidden\n```\n> visible");
+	assert.deepEqual(items.map(({ kind, content }) => ({ kind, content })), [
+		{ kind: "code", content: "> hidden" },
+		{ kind: "quote", content: "visible" },
+	]);
+});
+
+test("keeps a fenced code block inside its Markdown quote", () => {
+	const items = extractCopyItems("> ```ts\n>   const x = 1;\n> ```");
+	assert.deepEqual(items.map(({ kind, content }) => ({ kind, content })), [
+		{ kind: "quote", content: "```ts\n  const x = 1;\n```" },
+	]);
+});
+
 test("groups consecutive pipe lines and removes newlines without replacement", () => {
 	const items = extractCopyItems("Intro\n| Hello,\n| world\nBreak\n| Again");
 	assert.deepEqual(

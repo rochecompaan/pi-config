@@ -10,7 +10,7 @@ function isInsideRanges(position: number, ranges: readonly SourceRange[]): boole
 export function extractCopyItems(text: string): ExtractedCopyItem[] {
 	const items: ExtractedCopyItem[] = [];
 	const fencedRanges: SourceRange[] = [];
-	const fencedPattern = /```([^\n`]*)\r?\n([\s\S]*?)```/g;
+	const fencedPattern = /^```([^\n`]*)\r?\n([\s\S]*?)^```[ \t]*(?=\r?$)/gm;
 	let match: RegExpExecArray | null;
 
 	while ((match = fencedPattern.exec(text)) !== null) {
@@ -38,6 +38,19 @@ export function extractCopyItems(text: string): ExtractedCopyItem[] {
 		}
 	}
 
+	let quoteStart = -1;
+	let quoteParts: string[] = [];
+	const flushQuoteBlock = (): void => {
+		if (quoteStart >= 0) {
+			const content = quoteParts.join("\n");
+			if (content.trim().length > 0) {
+				items.push({ kind: "quote", content, sourcePosition: quoteStart });
+			}
+		}
+		quoteStart = -1;
+		quoteParts = [];
+	};
+
 	let pipeStart = -1;
 	let pipeParts: string[] = [];
 	const flushPipeBlock = (): void => {
@@ -55,13 +68,22 @@ export function extractCopyItems(text: string): ExtractedCopyItem[] {
 	while ((match = linePattern.exec(text)) !== null) {
 		if (match[0].length === 0) break;
 		const line = match[1] ?? "";
-		if (!isInsideRanges(match.index, fencedRanges) && line.startsWith("| ")) {
-			if (pipeStart < 0) pipeStart = match.index;
-			pipeParts.push(line.slice(2));
-		} else {
+		const insideFence = isInsideRanges(match.index, fencedRanges);
+		if (!insideFence && line.startsWith(">")) {
 			flushPipeBlock();
+			if (quoteStart < 0) quoteStart = match.index;
+			quoteParts.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
+		} else {
+			flushQuoteBlock();
+			if (!insideFence && line.startsWith("| ")) {
+				if (pipeStart < 0) pipeStart = match.index;
+				pipeParts.push(line.slice(2));
+			} else {
+				flushPipeBlock();
+			}
 		}
 	}
+	flushQuoteBlock();
 	flushPipeBlock();
 
 	return items.sort((left, right) => left.sourcePosition - right.sourcePosition);
