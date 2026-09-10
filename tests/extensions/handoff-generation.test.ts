@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Message } from "@earendil-works/pi-ai";
-import { completeHandoffPrompt } from "../../extensions/handoff-generation.ts";
+import {
+	completeHandoffPrompt,
+	generateHandoffPrompt,
+} from "../../extensions/handoff-generation.ts";
 
 test("routes a custom API model through the active model registry", async () => {
 	const model = {
@@ -181,7 +184,7 @@ for (const [name, text] of [
 	});
 }
 
-test("distinguishes a manual goal from automatic rollover policy", async () => {
+test("distinguishes current and legacy manual goals from automatic rollover policy", async () => {
 	const generation = await import("../../extensions/handoff-generation.ts");
 	assert.equal(typeof (generation as any).generateHandoffPrompt, "function");
 
@@ -222,6 +225,7 @@ test("distinguishes a manual goal from automatic rollover policy", async () => {
 			ctx,
 			messages: [{ role: "user", content: "current task", timestamp: 1 }],
 			intent: { kind: "manual", goal: "review the completed work" },
+			goal: "stale legacy goal",
 		},
 		async () => runtime,
 	);
@@ -233,9 +237,15 @@ test("distinguishes a manual goal from automatic rollover policy", async () => {
 		},
 		async () => runtime,
 	);
+	const legacyManualResult = await generateHandoffPrompt({
+		ctx,
+		messages: [{ role: "user", content: "current task", timestamp: 1 }],
+		goal: "review the completed work",
+	}, async () => runtime) as string | null;
 
 	assert.deepEqual(manualResult, { action: "continue", prompt: "focused handoff" });
 	assert.deepEqual(automaticResult, { action: "continue", prompt: "focused handoff" });
+	assert.equal(legacyManualResult?.trim(), "focused handoff");
 	assert.equal(receivedRequests[0].messages[0].content[0].text, [
 		"## Conversation History",
 		"",
@@ -260,6 +270,60 @@ test("distinguishes a manual goal from automatic rollover policy", async () => {
 		"",
 		"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the conversation.",
 	].join("\n"));
+	assert.equal(receivedRequests[2].messages[0].content[0].text, [
+		"## Conversation History",
+		"",
+		"serialized conversation",
+		"",
+		"## Handoff Mode",
+		"",
+		"MANUAL",
+		"",
+		"## User's Goal for New Thread",
+		"",
+		"review the completed work",
+	].join("\n"));
+});
+
+test("fails closed for a legacy automatic call across an activation", async () => {
+	let completionCalls = 0;
+	const ctx = {
+		model: { provider: "custom-bridge", id: "custom-model", api: "custom-stream-api" },
+		modelRegistry: {
+			async complete() {
+				completionCalls += 1;
+				return {
+					stopReason: "stop",
+					content: [{ type: "text", text: "HANDOFF_ACTION: WAIT\n\ncheckpoint" }],
+				};
+			},
+		},
+		ui: {
+			custom(factory: Function) {
+				return new Promise((resolve) => factory({}, {}, {}, resolve));
+			},
+		},
+	} as any;
+	class FakeLoader {
+		readonly signal = new AbortController().signal;
+		onAbort?: () => void;
+	}
+	const runtime = {
+		uuidv7: () => "handoff-session",
+		BorderedLoader: FakeLoader,
+		convertToLlm: (messages: unknown[]) => messages,
+		serializeConversation: () => "serialized conversation",
+	} as any;
+
+	const result = await generateHandoffPrompt({
+		ctx,
+		messages: [{ role: "user", content: "current task", timestamp: 1 }],
+		goal: "Continue the current task in a fresh session. Preserve the current objective, decisions, progress, blockers, and concrete next steps.",
+	} as any, async () => runtime) as string | null;
+
+	if (result !== null) result.trim();
+	assert.equal(result, null);
+	assert.equal(completionCalls, 0);
 });
 
 test("propagates generation failures after the loader closes", async () => {

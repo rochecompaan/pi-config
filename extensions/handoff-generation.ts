@@ -2,15 +2,19 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-export type HandoffGenerationInput = {
+type HandoffGenerationContext = {
 	ctx: ExtensionCommandContext;
 	messages: AgentMessage[];
-	intent: HandoffIntent;
 };
 
 export type HandoffIntent =
 	| { kind: "manual"; goal: string }
 	| { kind: "automatic" };
+
+export type HandoffGenerationInput = HandoffGenerationContext & (
+	| { intent: HandoffIntent; goal?: never }
+	| { intent?: never; goal: string }
+);
 
 export type HandoffAction = "continue" | "wait";
 
@@ -31,6 +35,9 @@ export type LoadHandoffGenerationRuntime = () => Promise<HandoffGenerationRuntim
 type HandoffGenerationOutcome =
 	| { kind: "completed"; value: GeneratedHandoff | null }
 	| { kind: "failed"; error: unknown };
+
+const LEGACY_AUTOMATIC_HANDOFF_GOAL =
+	"Continue the current task in a fresh session. Preserve the current objective, decisions, progress, blockers, and concrete next steps.";
 
 const HANDOFF_SYSTEM_PROMPT = `Create a faithful context handoff for a replacement coding-agent session.
 
@@ -75,6 +82,13 @@ Wait for the user. Do not run tools or change repository state until the user as
 Example: If the conversation ends with "Completed", passing tests, a clean worktree, and nothing pushed, choose WAIT. Preserve those facts, but do not ask the replacement agent to verify them or perform a branch-completion action.
 
 Do not include a preamble.`;
+
+function resolveHandoffIntent(input: HandoffGenerationInput): HandoffIntent {
+	if ("intent" in input) return input.intent;
+	return input.goal === LEGACY_AUTOMATIC_HANDOFF_GOAL
+		? { kind: "automatic" }
+		: { kind: "manual", goal: input.goal };
+}
 
 function buildHandoffRequest(conversationText: string, intent: HandoffIntent): string {
 	const handoffMode = intent.kind === "manual"
@@ -163,10 +177,22 @@ const loadDefaultRuntime: LoadHandoffGenerationRuntime = async () => {
 	};
 };
 
+export function generateHandoffPrompt(
+	input: HandoffGenerationContext & { intent: HandoffIntent },
+	loadRuntime?: LoadHandoffGenerationRuntime,
+): Promise<GeneratedHandoff | null>;
+export function generateHandoffPrompt(
+	input: HandoffGenerationContext & { goal: string },
+	loadRuntime?: LoadHandoffGenerationRuntime,
+): Promise<string | null>;
 export async function generateHandoffPrompt(
-	{ ctx, messages, intent }: HandoffGenerationInput,
+	input: HandoffGenerationInput,
 	loadRuntime: LoadHandoffGenerationRuntime = loadDefaultRuntime,
-): Promise<GeneratedHandoff | null> {
+): Promise<GeneratedHandoff | string | null> {
+	const { ctx, messages } = input;
+	const legacyCall = !("intent" in input);
+	const intent = resolveHandoffIntent(input);
+	if (legacyCall && intent.kind === "automatic") return null;
 	const { uuidv7, BorderedLoader, convertToLlm, serializeConversation } = await loadRuntime();
 	const conversationText = serializeConversation(convertToLlm(messages));
 	const outcome = await ctx.ui.custom<HandoffGenerationOutcome>((tui, theme, _keybindings, done) => {
@@ -191,7 +217,7 @@ export async function generateHandoffPrompt(
 	if (outcome.kind === "failed") {
 		throw outcome.error;
 	}
-	return outcome.value;
+	return legacyCall && outcome.value !== null ? outcome.value.prompt : outcome.value;
 }
 
 export default function handoffGenerationExtension(): void {}

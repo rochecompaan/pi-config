@@ -31,7 +31,11 @@ import {
 	type AutoHandoffState,
 	type HandoffSettingsSources,
 } from "./handoff-auto.ts";
-import type { GeneratedHandoff, HandoffIntent } from "./handoff-generation.ts";
+import {
+	generateHandoffPrompt,
+	type GeneratedHandoff,
+	type HandoffIntent,
+} from "./handoff-generation.ts";
 
 export type HandoffDependencies = {
 	generatePrompt: (input: {
@@ -146,10 +150,7 @@ async function showAutoCountdown(ctx: ExtensionCommandContext): Promise<boolean>
 const defaultDependencies: HandoffDependencies = {
 	loadSettings: loadHandoffSettings,
 	showAutoCountdown,
-	generatePrompt: async (input) => {
-		const { generateHandoffPrompt } = await import("./handoff-generation.ts");
-		return generateHandoffPrompt(input);
-	},
+	generatePrompt: generateHandoffPrompt,
 };
 
 export function registerHandoffExtension(
