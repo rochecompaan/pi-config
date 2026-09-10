@@ -2,14 +2,14 @@
  * Handoff extension - transfer context to a new focused session
  *
  * Instead of compacting (which is lossy), handoff extracts what matters
- * for your next task and creates a new session with a generated prompt.
+ * and creates a new session with a generated checkpoint.
  *
  * Usage:
  *   /handoff now implement this for teams as well
  *   /handoff execute phase one of the plan
  *   /handoff check other places that need this fix
  *
- * Manual handoffs stage an editable draft; automatic handoffs submit and continue.
+ * Manual handoffs stage an editable draft. Automatic handoffs continue only unfinished work.
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -23,7 +23,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	AUTO_HANDOFF_COUNTDOWN_SECONDS,
-	AUTO_HANDOFF_GOAL,
 	DEFAULT_AUTO_THRESHOLD_TOKENS,
 	parseHandoffCommand,
 	resolveAutoThresholdTokens,
@@ -32,16 +31,24 @@ import {
 	type AutoHandoffState,
 	type HandoffSettingsSources,
 } from "./handoff-auto.ts";
+import type { GeneratedHandoff, HandoffIntent } from "./handoff-generation.ts";
 
 export type HandoffDependencies = {
 	generatePrompt: (input: {
 		ctx: ExtensionCommandContext;
 		messages: AgentMessage[];
-		goal: string;
-	}) => Promise<string | null>;
+		intent: HandoffIntent;
+	}) => Promise<GeneratedHandoff | null>;
 	loadSettings: (ctx: ExtensionContext) => Promise<HandoffSettingsSources>;
 	showAutoCountdown: (ctx: ExtensionCommandContext) => Promise<boolean>;
 };
+
+function isGeneratedHandoff(value: unknown): value is GeneratedHandoff {
+	if (typeof value !== "object" || value === null) return false;
+	const candidate = value as Partial<GeneratedHandoff>;
+	return (candidate.action === "continue" || candidate.action === "wait") &&
+		typeof candidate.prompt === "string";
+}
 
 function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
 	if (entry.type === "message") {
@@ -161,10 +168,10 @@ export function registerHandoffExtension(
 	};
 
 	const performHandoff = async (
-		goal: string,
-		automatic: boolean,
+		intent: HandoffIntent,
 		ctx: ExtensionCommandContext,
 	): Promise<void> => {
+		const automatic = intent.kind === "automatic";
 		if (!ctx.model) {
 			if (automatic) disableAutomatic(ctx, "No model selected.");
 			else ctx.ui.notify("No model selected", "error");
@@ -177,9 +184,9 @@ export function registerHandoffExtension(
 			return;
 		}
 		const currentSessionFile = ctx.sessionManager.getSessionFile();
-		let generatedPrompt: string | null;
+		let generatedResult: Awaited<ReturnType<HandoffDependencies["generatePrompt"]>>;
 		try {
-			generatedPrompt = await dependencies.generatePrompt({ ctx, messages, goal });
+			generatedResult = await dependencies.generatePrompt({ ctx, messages, intent });
 		} catch (error) {
 			if (automatic) {
 				disableAutomatic(
@@ -190,11 +197,17 @@ export function registerHandoffExtension(
 			}
 			throw error;
 		}
-		if (generatedPrompt === null) {
+		if (generatedResult === null) {
 			if (automatic) disableAutomatic(ctx, "Handoff generation cancelled.", "info");
 			else ctx.ui.notify("Cancelled", "info");
 			return;
 		}
+		if (!isGeneratedHandoff(generatedResult)) {
+			if (automatic) disableAutomatic(ctx, "Handoff generation returned an invalid action.");
+			else ctx.ui.notify("Handoff generation returned an invalid action.", "error");
+			return;
+		}
+		const { action: handoffAction, prompt: generatedPrompt } = generatedResult;
 		if (generatedPrompt.trim().length === 0) {
 			if (automatic) {
 				disableAutomatic(ctx, "Handoff generation returned an empty prompt.");
@@ -218,6 +231,22 @@ export function registerHandoffExtension(
 				parentSession,
 				withSession: async (replacementCtx) => {
 					if (automatic) {
+						if (handoffAction === "wait") {
+							try {
+								await replacementCtx.sendMessage({
+									customType: "handoff-context",
+									content: stagedPrompt,
+									display: true,
+								}, { triggerTurn: false });
+							} catch (error) {
+								replacementCtx.ui.setEditorText(stagedPrompt);
+								replacementCtx.ui.notify(
+									`Automatic handoff context injection failed: ${error instanceof Error ? error.message : String(error)}. Checkpoint staged; no agent turn was started.`,
+									"error",
+								);
+							}
+							return;
+						}
 						try {
 							await replacementCtx.sendUserMessage(stagedPrompt);
 						} catch (error) {
@@ -337,14 +366,14 @@ export function registerHandoffExtension(
 					ctx.ui.notify("Automatic handoff cancelled. Run /handoff auto on to re-enable it.", "info");
 					return;
 				}
-				await performHandoff(AUTO_HANDOFF_GOAL, true, ctx);
+				await performHandoff({ kind: "automatic" }, ctx);
 				return;
 			}
 			if (command.kind === "missing-goal") {
 				ctx.ui.notify("Usage: /handoff <goal for new thread>", "error");
 				return;
 			}
-			await performHandoff(command.goal, false, ctx);
+			await performHandoff({ kind: "manual", goal: command.goal }, ctx);
 		},
 	});
 }

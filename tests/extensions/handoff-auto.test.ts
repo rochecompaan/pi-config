@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	AUTO_HANDOFF_GOAL,
 	DEFAULT_AUTO_THRESHOLD_TOKENS,
 	parseHandoffCommand,
 	resolveAutoThresholdTokens,
@@ -114,13 +113,5 @@ test("applies every approved state transition", () => {
 			thresholdTokens: 150_000,
 		}),
 		"running",
-	);
-});
-
-test("exports the approved default and automatic goal", () => {
-	assert.equal(DEFAULT_AUTO_THRESHOLD_TOKENS, 150_000);
-	assert.equal(
-		AUTO_HANDOFF_GOAL,
-		"Continue the current task in a fresh session. Preserve the current objective, decisions, progress, blockers, and concrete next steps.",
 	);
 });

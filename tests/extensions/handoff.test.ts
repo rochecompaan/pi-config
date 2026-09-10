@@ -16,7 +16,7 @@ function createHarness(
 	const events = new Map<string, EventHandler>();
 	const sentMessages: Array<{ content: string; options: unknown }> = [];
 	const dependencies: HandoffDependencies = {
-		generatePrompt: async () => "generated prompt",
+		generatePrompt: async () => ({ action: "continue", prompt: "generated prompt" }),
 		loadSettings: async () => ({ globalSettings: {}, projectTrusted: false }),
 		showAutoCountdown: async () => true,
 		...overrides,
@@ -46,6 +46,7 @@ function createCommandContext(options: {
 } = {}) {
 	const notices: Array<{ message: string; level: string }> = [];
 	const replacementEditor: string[] = [];
+	const replacementMessages: Array<{ message: unknown; options: unknown }> = [];
 	const replacementUserMessages: string[] = [];
 	const sessionOptions: any[] = [];
 	let manualEditorCalls = 0;
@@ -53,6 +54,9 @@ function createCommandContext(options: {
 		ui: {
 			setEditorText(text: string) { replacementEditor.push(text); },
 			notify(message: string, level: string) { notices.push({ message, level }); },
+		},
+		async sendMessage(message: unknown, sendOptions: unknown) {
+			replacementMessages.push({ message, options: sendOptions });
 		},
 		async sendUserMessage(content: string) { replacementUserMessages.push(content); },
 	};
@@ -87,6 +91,7 @@ function createCommandContext(options: {
 		ctx,
 		notices,
 		replacementEditor,
+		replacementMessages,
 		replacementUserMessages,
 		sessionOptions,
 		getManualEditorCalls: () => manualEditorCalls,
@@ -102,17 +107,17 @@ test("manual handoff still requires a goal", async () => {
 });
 
 test("manual handoff reviews the generated prompt before staging the edit", async () => {
-	let receivedGoal = "";
+	let receivedIntent: unknown;
 	const harness = createHarness({
-		generatePrompt: async ({ goal }) => {
-			receivedGoal = goal;
-			return "generated prompt";
+		generatePrompt: async ({ intent }) => {
+			receivedIntent = intent;
+			return { action: "continue", prompt: "generated prompt" };
 		},
 	});
 	const command = createCommandContext({ editedPrompt: "reviewed prompt" });
 	await harness.commandHandler("continue phase one", command.ctx);
 
-	assert.equal(receivedGoal, "continue phase one");
+	assert.deepEqual(receivedIntent, { kind: "manual", goal: "continue phase one" });
 	assert.equal(command.getManualEditorCalls(), 1);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
 	assert.deepEqual(command.replacementEditor, ["reviewed prompt"]);
@@ -122,7 +127,7 @@ test("manual handoff reviews the generated prompt before staging the edit", asyn
 
 test("manual handoff rejects empty generation before opening the editor", async () => {
 	const harness = createHarness({
-		generatePrompt: async () => "  \n",
+		generatePrompt: async () => ({ action: "continue", prompt: "  \n" }),
 	});
 	const command = createCommandContext();
 
@@ -322,6 +327,68 @@ test("automatic countdown completion skips the manual editor and submits the gen
 	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 });
 
+test("automatic waiting handoff preserves context without starting an agent turn", async () => {
+	let receivedIntent: unknown;
+	const harness = createHarness({
+		generatePrompt: async ({ intent }) => {
+			receivedIntent = intent;
+			return { action: "wait", prompt: "completed checkpoint" };
+		},
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("--auto", command.ctx);
+
+	assert.deepEqual(receivedIntent, { kind: "automatic" });
+	assert.deepEqual(command.replacementUserMessages, []);
+	assert.deepEqual(command.replacementMessages, [{
+		message: {
+			customType: "handoff-context",
+			content: "completed checkpoint",
+			display: true,
+		},
+		options: { triggerTurn: false },
+	}]);
+});
+
+test("automatic waiting handoff stages the checkpoint when context injection fails", async () => {
+	const harness = createHarness({
+		generatePrompt: async () => ({ action: "wait", prompt: "completed checkpoint" }),
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+	let oldContextStale = false;
+	command.ctx.ui.notify = () => {
+		if (oldContextStale) throw new Error("stale old context accessed");
+	};
+	command.ctx.newSession = async (newSessionOptions: any) => {
+		command.sessionOptions.push(newSessionOptions);
+		oldContextStale = true;
+		await newSessionOptions.withSession({
+			ui: {
+				setEditorText(text: string) { command.replacementEditor.push(text); },
+				notify(message: string, level: string) {
+					command.notices.push({ message, level });
+				},
+			},
+			async sendMessage() { throw new Error("injection failed"); },
+			async sendUserMessage(content: string) {
+				command.replacementUserMessages.push(content);
+			},
+		});
+		return { cancelled: false };
+	};
+
+	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
+
+	assert.deepEqual(command.replacementEditor, ["completed checkpoint"]);
+	assert.deepEqual(command.replacementUserMessages, []);
+	assert.match(command.notices.at(-1)?.message ?? "", /injection failed/);
+	assert.equal(command.notices.at(-1)?.level, "error");
+});
+
 test("automatic replacement records the parent and continues without Enter", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
@@ -439,7 +506,11 @@ const automaticErrorCases: Array<{
 	},
 	{
 		name: "prompt generation is empty",
-		dependencies: { generatePrompt: async () => "  \n" },
+		dependencies: { generatePrompt: async () => ({ action: "continue", prompt: "  \n" }) },
+	},
+	{
+		name: "prompt generation has no action",
+		dependencies: { generatePrompt: async () => "generated prompt" as any },
 	},
 	{
 		name: "session switch is cancelled",
@@ -467,7 +538,11 @@ for (const scenario of automaticErrorCases) {
 		await harness.events.get("session_start")?.({}, command.ctx);
 		await harness.events.get("agent_settled")?.({}, command.ctx);
 		await harness.commandHandler("--auto", command.ctx);
-		if (scenario.name === "prompt generation throws" || scenario.name === "prompt generation is empty") {
+		if (
+			scenario.name === "prompt generation throws" ||
+			scenario.name === "prompt generation is empty" ||
+			scenario.name === "prompt generation has no action"
+		) {
 			assert.equal(command.getManualEditorCalls(), 0);
 			assert.equal(command.sessionOptions.length, 0);
 			assert.deepEqual(command.replacementUserMessages, []);

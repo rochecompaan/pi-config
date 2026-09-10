@@ -1,7 +1,5 @@
 export const DEFAULT_AUTO_THRESHOLD_TOKENS = 150_000;
 export const AUTO_HANDOFF_COUNTDOWN_SECONDS = 5;
-export const AUTO_HANDOFF_GOAL =
-	"Continue the current task in a fresh session. Preserve the current objective, decisions, progress, blockers, and concrete next steps.";
 
 export type AutoHandoffState = "armed" | "running" | "disabled";
 

@@ -5,7 +5,18 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 export type HandoffGenerationInput = {
 	ctx: ExtensionCommandContext;
 	messages: AgentMessage[];
-	goal: string;
+	intent: HandoffIntent;
+};
+
+export type HandoffIntent =
+	| { kind: "manual"; goal: string }
+	| { kind: "automatic" };
+
+export type HandoffAction = "continue" | "wait";
+
+export type GeneratedHandoff = {
+	action: HandoffAction;
+	prompt: string;
 };
 
 export type HandoffGenerationRuntime = {
@@ -18,37 +29,86 @@ export type HandoffGenerationRuntime = {
 export type LoadHandoffGenerationRuntime = () => Promise<HandoffGenerationRuntime>;
 
 type HandoffGenerationOutcome =
-	| { kind: "completed"; value: string | null }
+	| { kind: "completed"; value: GeneratedHandoff | null }
 	| { kind: "failed"; error: unknown };
 
-const HANDOFF_SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
+const HANDOFF_SYSTEM_PROMPT = `Create a faithful context handoff for a replacement coding-agent session.
 
-1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)
-2. Lists any relevant files that were discussed or modified
-3. Clearly states the next task based on the user's goal
-4. Is self-contained - the new thread should be able to proceed without the old conversation
+Never create work that the user did not request.
 
-Format your response as a prompt the user can send to start the new thread. Be concise but include all necessary context. Do not include any preamble like "Here's the prompt" - just output the prompt itself.
+First decide whether the replacement agent must CONTINUE or WAIT.
 
-Example output format:
+Choose CONTINUE only when an explicit user request remains unfinished and the agent can make progress without more user input.
+
+Choose WAIT when the latest requested work is complete, work needs user input, work is blocked, no explicit unfinished request exists, or the state is unclear.
+
+The input identifies the handoff mode:
+- A MANUAL goal is an explicit user request for the new session.
+- An AUTOMATIC rollover is extension policy, not a user request. Infer work only from unfinished user requests in the conversation.
+
+Use the latest relevant messages as the current state. A completion report is terminal unless a later user message requests more work.
+
+Passing tests, a clean worktree, unpushed commits, residual risks, possible follow-ups, and constraints are state information. They are not pending tasks. Do not turn them into instructions to verify, review, push, merge, clean up, or perform branch-completion work.
+
+Do not add tools, skills, workflows, checks, constraints, or next steps that do not appear in the conversation or the manual goal.
+
+Start the response with exactly one of these lines:
+HANDOFF_ACTION: CONTINUE
+HANDOFF_ACTION: WAIT
+
+Then write a concise, self-contained prompt with the relevant decisions, progress, files, verification results, blockers, and constraints.
+
+For CONTINUE, use these sections:
 ## Context
-We've been working on X. Key decisions:
-- Decision 1
-- Decision 2
+## Unfinished User Request
+## Current State
+## Next Action
 
-Files involved:
-- path/to/file1.ts
-- path/to/file2.ts
+For WAIT, use these sections:
+## Context
+## Current State
+## Pending User-Requested Work
+None.
+## Instruction
+Wait for the user. Do not run tools or change repository state until the user asks.
 
-## Task
-[Clear description of what to do next based on user's goal]`;
+Example: If the conversation ends with "Completed", passing tests, a clean worktree, and nothing pushed, choose WAIT. Preserve those facts, but do not ask the replacement agent to verify them or perform a branch-completion action.
+
+Do not include a preamble.`;
+
+function buildHandoffRequest(conversationText: string, intent: HandoffIntent): string {
+	const handoffMode = intent.kind === "manual"
+		? [
+			"## Handoff Mode",
+			"",
+			"MANUAL",
+			"",
+			"## User's Goal for New Thread",
+			"",
+			intent.goal,
+		]
+		: [
+			"## Handoff Mode",
+			"",
+			"AUTOMATIC",
+			"",
+			"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the conversation.",
+		];
+	return [
+		"## Conversation History",
+		"",
+		conversationText,
+		"",
+		...handoffMode,
+	].join("\n");
+}
 
 export async function completeHandoffPrompt(
 	ctx: ExtensionCommandContext,
 	userMessage: Message,
 	signal: AbortSignal,
 	sessionId: string,
-): Promise<string | null> {
+): Promise<GeneratedHandoff | null> {
 	const response = await ctx.modelRegistry.complete(
 		ctx.model!,
 		{ systemPrompt: HANDOFF_SYSTEM_PROMPT, messages: [userMessage] },
@@ -67,14 +127,27 @@ export async function completeHandoffPrompt(
 			throw new Error(`Handoff generation was incomplete (${response.stopReason})`);
 	}
 
-	const prompt = response.content
+	const output = response.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
-	if (prompt.trim().length === 0) {
+	if (output.trim().length === 0) {
 		throw new Error("Handoff generation returned an empty prompt");
 	}
-	return prompt;
+
+	const [actionLine, ...promptLines] = output.trim().split(/\r?\n/);
+	const action =
+		actionLine === "HANDOFF_ACTION: CONTINUE" ? "continue"
+		: actionLine === "HANDOFF_ACTION: WAIT" ? "wait"
+		: undefined;
+	if (!action) {
+		throw new Error("Handoff generation returned an invalid action");
+	}
+	const prompt = promptLines.join("\n").trim();
+	if (prompt.length === 0) {
+		throw new Error("Handoff generation returned an empty prompt");
+	}
+	return { action, prompt };
 }
 
 const loadDefaultRuntime: LoadHandoffGenerationRuntime = async () => {
@@ -91,9 +164,9 @@ const loadDefaultRuntime: LoadHandoffGenerationRuntime = async () => {
 };
 
 export async function generateHandoffPrompt(
-	{ ctx, messages, goal }: HandoffGenerationInput,
+	{ ctx, messages, intent }: HandoffGenerationInput,
 	loadRuntime: LoadHandoffGenerationRuntime = loadDefaultRuntime,
-): Promise<string | null> {
+): Promise<GeneratedHandoff | null> {
 	const { uuidv7, BorderedLoader, convertToLlm, serializeConversation } = await loadRuntime();
 	const conversationText = serializeConversation(convertToLlm(messages));
 	const outcome = await ctx.ui.custom<HandoffGenerationOutcome>((tui, theme, _keybindings, done) => {
@@ -104,7 +177,7 @@ export async function generateHandoffPrompt(
 				role: "user",
 				content: [{
 					type: "text",
-					text: `## Conversation History\n\n${conversationText}\n\n## User's Goal for New Thread\n\n${goal}`,
+					text: buildHandoffRequest(conversationText, intent),
 				}],
 				timestamp: Date.now(),
 			};
