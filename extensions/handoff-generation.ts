@@ -57,6 +57,8 @@ Use the latest relevant messages as the current state. A completion report is te
 
 Passing tests, a clean worktree, unpushed commits, residual risks, possible follow-ups, and constraints are state information. They are not pending tasks. Do not turn them into instructions to verify, review, push, merge, clean up, or perform branch-completion work.
 
+Explicit recommendations or offers the assistant put to the user are open recommendations while the user has neither accepted nor declined them. Later questions and answers do not close them. List every open recommendation under Open Recommendations, complete and close to the original wording; write None. when there are none. Open recommendations are not pending work: the replacement agent must not act on them unless the user asks, but it may re-surface them when the user asks for direction.
+
 Do not add tools, skills, workflows, checks, constraints, or next steps that do not appear in the conversation or the manual goal.
 
 Start the response with exactly one of these lines:
@@ -70,16 +72,20 @@ For CONTINUE, use these sections:
 ## Unfinished User Request
 ## Current State
 ## Next Action
+## Open Recommendations
 
 For WAIT, use these sections:
 ## Context
 ## Current State
+## Open Recommendations
 ## Pending User-Requested Work
 None.
 ## Instruction
 Wait for the user. Do not run tools or change repository state until the user asks.
 
 Example: If the conversation ends with "Completed", passing tests, a clean worktree, and nothing pushed, choose WAIT. Preserve those facts, but do not ask the replacement agent to verify them or perform a branch-completion action.
+
+Example: If the assistant recommended next steps that the user never accepted or declined, choose WAIT and list those recommendations under Open Recommendations.
 
 Do not include a preamble.`;
 
