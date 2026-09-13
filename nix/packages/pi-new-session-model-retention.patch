@@ -1,0 +1,42 @@
+--- a/dist/core/agent-session-runtime.js
++++ b/dist/core/agent-session-runtime.js
+@@ -149,6 +149,8 @@
+         if (beforeResult.cancelled) {
+             return beforeResult;
+         }
++        const model = this.session.model;
++        const thinkingLevel = model ? this.session.thinkingLevel : undefined;
+         const previousSessionFile = this.session.sessionFile;
+         const sessionDir = this.session.sessionManager.getSessionDir();
+         const sessionManager = this.session.sessionManager.isPersisted()
+@@ -163,6 +165,8 @@
+             agentDir: this.services.agentDir,
+             sessionManager,
+             sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
++            model,
++            thinkingLevel,
+         }));
+         if (options?.setup) {
+             await options.setup(this.session.sessionManager);
+--- a/dist/main.js
++++ b/dist/main.js
+@@ -567,7 +567,7 @@
+     const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
+     const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
+     const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
+-    const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext, }) => {
++    const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext, model, thinkingLevel, }) => {
+         const isInitialRuntime = sessionStartEvent === undefined;
+         const projectTrustDiagnostics = [];
+         const cachedProjectTrust = projectTrustByCwd.get(cwd);
+@@ -654,8 +654,8 @@
+             services,
+             sessionManager,
+             sessionStartEvent,
+-            model: sessionOptions.model,
+-            thinkingLevel: sessionOptions.thinkingLevel,
++            model: model ?? sessionOptions.model,
++            thinkingLevel: model ? thinkingLevel : sessionOptions.thinkingLevel,
+             scopedModels: sessionOptions.scopedModels,
+             tools: sessionOptions.tools,
+             excludeTools: sessionOptions.excludeTools,

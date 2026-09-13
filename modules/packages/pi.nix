@@ -8,7 +8,15 @@
       ...
     }:
     let
-      upstreamPi = inputs.llm-agents.packages.${system}.pi;
+      upstreamPi = inputs.llm-agents.packages.${system}.pi.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ../../nix/packages/pi-new-session-model-retention.patch ];
+        preInstall = ''
+          PI_DIST_DIR="$PWD/dist" ${pkgs.nodejs}/bin/node --test \
+            ${../../nix/packages/pi-new-session-model-retention-rpc.test.mjs} \
+            ${../../nix/packages/pi-new-session-model-retention.test.mjs}
+        ''
+        + (old.preInstall or "");
+      });
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs;
         piRemote = self'.packages.pi-remote;
