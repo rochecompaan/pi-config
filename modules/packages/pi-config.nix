@@ -12,6 +12,11 @@
       piPackage = inputs.llm-agents.packages.${system}.pi;
       piIntervals = self'.packages."pi-intervals";
 
+      # Current Claude Code CLI for pi-claude-bridge: the Agent SDK bundled in
+      # the bridge ships 2.1.141, which the API rejects for claude-fable-5-1
+      # (needs >= 2.1.251). The bridge spawns this executable instead.
+      claudeCode = inputs.llm-agents.packages.${system}.claude-code;
+
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs piRemote;
       };
@@ -55,6 +60,12 @@
       stylixTheme = themeLib.mkStylixTheme fallbackPalette;
 
       settingsJson = pkgs.writeText "settings.json" (builtins.toJSON settings);
+
+      claudeBridgeJson = pkgs.writeText "claude-bridge.json" (builtins.toJSON (
+        pkgs.lib.recursiveUpdate (builtins.fromJSON (builtins.readFile ../../claude-bridge.json)) {
+          provider.pathToClaudeCodeExecutable = "${claudeCode}/bin/claude";
+        }
+      ));
       mcpJson = pkgs.writeText "mcp.json" (
         builtins.toJSON {
           mcpServers = {
@@ -85,7 +96,7 @@
         cp ${../../AGENTS.md} "$out/AGENTS.md"
         cp ${settingsJson} "$out/settings.json"
         cp ${mcpJson} "$out/mcp.json"
-        cp ${../../claude-bridge.json} "$out/claude-bridge.json"
+        cp ${claudeBridgeJson} "$out/claude-bridge.json"
 
         cp -r ${../../extensions} "$out/extensions"
         cp -r ${../../skills} "$out/skills"

@@ -1,6 +1,3 @@
-diff --git a/src/history-reconstruction.ts b/src/history-reconstruction.ts
-new file mode 100644
-index 0000000..4cebab5
 --- /dev/null
 +++ b/src/history-reconstruction.ts
 @@ -0,0 +1,111 @@
@@ -115,9 +112,6 @@ index 0000000..4cebab5
 +	}
 +	return { promptText: `${prefix}\n\n${promptText}`, promptBlocks };
 +}
-diff --git a/src/request-router.ts b/src/request-router.ts
-new file mode 100644
-index 0000000..3430485
 --- /dev/null
 +++ b/src/request-router.ts
 @@ -0,0 +1,13 @@
@@ -134,20 +128,33 @@ index 0000000..3430485
 +		? handlers.isolated(context)
 +		: handlers.agent(context);
 +}
-diff --git a/src/index.ts b/src/index.ts
-index 8a0b53a..53677af 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -13,0 +14,6 @@ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.
+@@ -11,6 +11,12 @@
+ import { homedir } from "os";
+ import { dirname, join } from "path";
+ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.js";
 +import {
 +	planAskClaudeSession,
 +	planHistoryReconstruction,
 +	prependHistoryTranscript,
 +} from "./history-reconstruction.js";
 +import { routeBridgeRequest } from "./request-router.js";
-@@ -555,0 +561 @@ interface SyncResult {
+ import { applyLongContext, buildModels, claudeCodeModelId, type LongContextSettings, resolveModel as _resolveModel } from "./models.js";
+ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, renderSkillsBlock } from "./skills.js";
+ import { verifyWrittenSession as _verifyWrittenSession } from "./session-verify.js";
+@@ -571,6 +577,7 @@
+ interface SyncResult {
+ 	sessionId: string | null;
+ 	preserveSharedSession?: boolean;
 +	historyTranscript?: string;
-@@ -687,0 +694,9 @@ function syncSharedSession(
+ }
+ 
+ /**
+@@ -685,6 +692,15 @@
+ 	// overwrites — the parent's session. The non-isolated AskClaude path reaches it
+ 	// the same way.
+ 	//
 +	const reconstruction = planHistoryReconstruction(priorMessages, PROVIDER_ID);
 +	if (reconstruction.kind === "transcript") {
 +		debug(`Case 2 transcript fallback: ${priorMessages.length} prior messages, starting a fresh Claude session`);
@@ -157,9 +164,13 @@ index 8a0b53a..53677af 100644
 +			historyTranscript: reconstruction.transcript,
 +		};
 +	}
-@@ -1434 +1450,8 @@ function drainForAbort(c: QueryContext, promptStream: PromptStream): void {
--function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
-+function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
+ 	// It is NOT, despite an earlier comment here, the isolated compact-summary
+ 	// path: runIsolatedSummary never calls syncSharedSession at all.
+ 	//
+@@ -1477,6 +1493,13 @@
+ /** Provider entry point. Pi calls this for each new prompt and each tool result.
+  *  Two cases: tool result delivery (active query) or fresh query. */
+ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
 +	return routeBridgeRequest(context, {
 +		isolated: (requestContext) => isolatedStreamFn(model, requestContext, options),
 +		agent: (requestContext) => streamClaudeAgentRequest(model, requestContext, options),
@@ -167,12 +178,24 @@ index 8a0b53a..53677af 100644
 +}
 +
 +function streamClaudeAgentRequest(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
-@@ -1520,2 +1543,2 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 	showStartupNoticeOnce();
+ 	const stream = newAssistantMessageEventStream();
+ 
+@@ -1577,8 +1600,8 @@
+ 	// pi-registered id. Log cliModel so debug lines reflect what CC actually received.
+ 	const cliModel = claudeCodeModelId(model, longContextSettings);
+ 	const syncResult = syncSharedSession(context.messages, cwd, customToolNameToSdk, cliModel);
 -	const { sessionId: resumeSessionId } = syncResult;
 -	const promptBlocks = extractUserPromptBlocks(context.messages);
 +	const { sessionId: resumeSessionId, historyTranscript } = syncResult;
 +	let promptBlocks = extractUserPromptBlocks(context.messages);
-@@ -1539,0 +1563,10 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 	let promptText = extractUserPrompt(context.messages) ?? "";
+ 
+ 	// Guard: empty prompt means the last context message isn't a user message.
+@@ -1597,6 +1620,16 @@
+ 		promptText = "[continue]";
+ 	}
+ 
 +	if (historyTranscript) {
 +		const prepared = prependHistoryTranscript(
 +			historyTranscript,
@@ -183,7 +206,13 @@ index 8a0b53a..53677af 100644
 +		promptBlocks = prepared.promptBlocks as typeof promptBlocks;
 +	}
 +
-@@ -1747,4 +1780,3 @@ async function promptAndWait(
+ 	// Always stream the prompt rather than passing a string: a parked input
+ 	// generator is what lets us write steers to CC's stdin mid-turn. The cost is
+ 	// that `isSingleUserTurn` is false, so the SDK no longer closes stdin on the
+@@ -1817,21 +1850,19 @@
+ 	const modelId = model?.id ?? requestedModel;
+ 	const cliModel = model ? claudeCodeModelId(model, longContextSettings) : modelId;
+ 
 -	// Session resume for shared mode — reuse provider's session if it exists,
 -	// otherwise create one from pi's context.
 -	// Note: doesn't update sharedSession.cursor after completion, so the next
@@ -191,9 +220,9 @@ index 8a0b53a..53677af 100644
 +	// Session resume for shared mode. Always synchronize the current Pi context:
 +	// normal sessions take the REUSE path, while rewritten Claude history needs a
 +	// fresh session with safe transcript context.
-@@ -1751,0 +1784 @@ async function promptAndWait(
+ 	let resumeSessionId: string | null = null;
 +	let persistSession = !options?.isolated;
-@@ -1753,9 +1786,7 @@ async function promptAndWait(
+ 	if (!options?.isolated && options?.context?.length) {
 -		if (sharedSession) {
 -			// Provider already has a session — just resume from it
 -			// Any missed messages from other providers were already handled by the provider's Case 4
@@ -210,6 +239,15 @@ index 8a0b53a..53677af 100644
 +		persistSession = sessionPlan.persistSession;
 +		if (sync.historyTranscript) {
 +			prompt = prependHistoryTranscript(sync.historyTranscript, prompt).promptText;
-@@ -1815 +1846 @@ async function promptAndWait(
+ 		}
+ 	}
+ 
+@@ -1892,7 +1923,7 @@
+ 			settingSources: ["user", "project"] as SettingSource[],
+ 			extraArgs,
+ 			...(resumeSessionId ? { resume: resumeSessionId } : {}),
 -			...(options?.isolated ? { persistSession: false } : {}),
 +			...(persistSession ? {} : { persistSession: false }),
+ 			...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
+ 			...makeCliDebugOptions("askclaude"),
+ 		},

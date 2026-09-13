@@ -56,25 +56,33 @@ else
       '';
     };
 
-    piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
     piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
+    # main's package-lock.json omits integrity for three nested dev-only
+    # @earendil-works entries, which crashes the npm-deps fetcher
+    # ("non-git dependencies should have associated integrity"). Add them back.
+    piClaudeBridgeLockIntegrityPatch = ./pi-claude-bridge-lock-integrity.patch;
     piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
     piClaudeBridgeDirectCompletionTest = ./pi-claude-bridge-direct-completion.test.mjs;
 
-    piClaudeBridgeSrc = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/pi-claude-bridge/-/pi-claude-bridge-0.7.0.tgz";
-      hash = "sha256-M3eNmab9AZJWVkPFYXrVLDMEmXIqsGnQM9KRbffq+dk=";
+    # GitHub main snapshot (unreleased): PR #80 adds claude-fable-5-1 to the
+    # picker and derives catalog rows missing from pi-ai's snapshot. Revert to
+    # the npm tarball once a release > 0.7.0 ships with it.
+    piClaudeBridgeSrc = pkgs.fetchFromGitHub {
+      owner = "elidickinson";
+      repo = "pi-claude-bridge";
+      rev = "4a7920ac4f4449b546307b3a53d4a4867f8b6cb5";
+      hash = "sha256-dZEbRahk9Eu6mieVn+Zn5OZDvHRrcuMfsy5Kxa5aHIg=";
     };
 
     piClaudeBridge = pkgs.buildNpmPackage {
       pname = "pi-claude-bridge";
-      version = "0.7.0";
+      version = "0.7.0-unstable-2026-09-08";
       src = piClaudeBridgeSrc;
 
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
       buildInputs = [ pkgs.stdenv.cc.cc.lib ];
 
-      npmDepsHash = "sha256-F9gvUefKU10yaCDVaCjdB/e5tCUybpNs1koZ2HSrURE=";
+      npmDepsHash = "sha256-OeVRTuYJlJV065FCcbmH6OYXyv8SqnKoj0CSFes++tw=";
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -84,7 +92,7 @@ else
       ];
 
       postPatch = ''
-        cp ${piClaudeBridgePackageLock} package-lock.json
+        patch -p1 < ${piClaudeBridgeLockIntegrityPatch}
         patch -p1 < ${piClaudeBridgePatch}
       '';
 
