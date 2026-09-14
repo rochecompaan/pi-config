@@ -31,7 +31,7 @@ test("classifies non-global agent directories as LOCAL", () => {
 	for (const agentDir of [
 		".pi/local-agent",
 		"/workspace/project/.pi/local-agent",
-		"~/.pi/agent-jailed",
+		"~/.pi/local-agent",
 	]) {
 		assert.equal(classifyAuthScope(environment(agentDir)), "LOCAL", agentDir);
 	}
