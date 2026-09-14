@@ -1,12 +1,13 @@
 export const DEFAULT_AUTO_THRESHOLD_TOKENS = 150_000;
 export const AUTO_HANDOFF_COUNTDOWN_SECONDS = 5;
 
-export type AutoHandoffState = "armed" | "running" | "disabled";
+export type AutoHandoffState = "armed" | "countdown" | "preparing" | "finalizing" | "disabled";
 
 export type ParsedHandoffCommand =
 	| { kind: "missing-goal" }
 	| { kind: "manual"; goal: string }
 	| { kind: "internal-auto" }
+	| { kind: "internal-auto-finalize" }
 	| { kind: "auto-control"; action: "on" | "off" | "status" };
 
 export type HandoffSettingsSources = {
@@ -26,6 +27,8 @@ export type AutoHandoffTriggerInput = {
 export type AutoHandoffEvent =
 	| { type: "session-start" }
 	| { type: "threshold-reached" }
+	| { type: "preparation-started" }
+	| { type: "preparation-settled" }
 	| { type: "auto-off" }
 	| { type: "attempt-failed" }
 	| { type: "auto-on"; usageTokens: number | undefined; thresholdTokens: number };
@@ -60,6 +63,7 @@ export function parseHandoffCommand(args: string): ParsedHandoffCommand {
 	const value = args.trim();
 	if (!value) return { kind: "missing-goal" };
 	if (value === "--auto") return { kind: "internal-auto" };
+	if (value === "--auto-finalize") return { kind: "internal-auto-finalize" };
 	if (value === "auto on") return { kind: "auto-control", action: "on" };
 	if (value === "auto off") return { kind: "auto-control", action: "off" };
 	if (value === "auto status") return { kind: "auto-control", action: "status" };
@@ -79,13 +83,17 @@ export function transitionAutoHandoffState(_state: AutoHandoffState, event: Auto
 		case "session-start":
 			return "armed";
 		case "threshold-reached":
-			return "running";
+			return "countdown";
+		case "preparation-started":
+			return "preparing";
+		case "preparation-settled":
+			return "finalizing";
 		case "auto-off":
 		case "attempt-failed":
 			return "disabled";
 		case "auto-on":
 			return event.usageTokens !== undefined && event.usageTokens >= event.thresholdTokens
-				? "running"
+				? "countdown"
 				: "armed";
 	}
 }

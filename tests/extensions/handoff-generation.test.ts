@@ -149,6 +149,7 @@ test("rejects an incomplete nonterminal stop reason", async () => {
 
 for (const [label, marker, action] of [
 	["continuing", "CONTINUE", "continue"],
+	["recommendation offer", "OFFER", "offer"],
 	["waiting", "WAIT", "wait"],
 ] as const) {
 	test(`parses a ${label} handoff action separately from its prompt`, async () => {
@@ -217,7 +218,8 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 		uuidv7: () => "handoff-session",
 		BorderedLoader: FakeLoader,
 		convertToLlm: (messages: unknown[]) => messages,
-		serializeConversation: () => "serialized conversation",
+		serializeConversation: (messages: Array<{ content?: string }>) =>
+			messages.map((message) => message.content).join(" | "),
 	} as any;
 
 	const manualResult = await (generation as any).generateHandoffPrompt(
@@ -233,6 +235,11 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 		{
 			ctx,
 			messages: [{ role: "user", content: "current task", timestamp: 1 }],
+			preparationMessages: [{
+				role: "assistant",
+				content: "Updated TODO-a1b2c3d4",
+				timestamp: 2,
+			}],
 			intent: { kind: "automatic" },
 		},
 		async () => runtime,
@@ -249,7 +256,7 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 	assert.equal(receivedRequests[0].messages[0].content[0].text, [
 		"## Conversation History",
 		"",
-		"serialized conversation",
+		"current task",
 		"",
 		"## Handoff Mode",
 		"",
@@ -260,20 +267,24 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 		"review the completed work",
 	].join("\n"));
 	assert.equal(receivedRequests[1].messages[0].content[0].text, [
-		"## Conversation History",
+		"## User Conversation",
 		"",
-		"serialized conversation",
+		"current task",
+		"",
+		"## Automatic Handoff Preparation",
+		"",
+		"Updated TODO-a1b2c3d4",
 		"",
 		"## Handoff Mode",
 		"",
 		"AUTOMATIC",
 		"",
-		"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the conversation.",
+		"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the User Conversation.",
 	].join("\n"));
 	assert.equal(receivedRequests[2].messages[0].content[0].text, [
 		"## Conversation History",
 		"",
-		"serialized conversation",
+		"current task",
 		"",
 		"## Handoff Mode",
 		"",
@@ -283,6 +294,13 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 		"",
 		"review the completed work",
 	].join("\n"));
+	assert.doesNotMatch(receivedRequests[0].systemPrompt, /Continuity Todos|HANDOFF_ACTION: OFFER/);
+	assert.doesNotMatch(receivedRequests[2].systemPrompt, /Continuity Todos|HANDOFF_ACTION: OFFER/);
+	assert.match(receivedRequests[1].systemPrompt, /## Continuity Todos/);
+	assert.doesNotMatch(
+		receivedRequests[1].systemPrompt,
+		/do not appear in the user conversation, preparation transcript, or manual goal/,
+	);
 });
 
 test("fails closed for a legacy automatic call across an activation", async () => {

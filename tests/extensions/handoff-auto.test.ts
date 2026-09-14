@@ -62,6 +62,7 @@ test("uses the default for invalid effective values", () => {
 
 test("parses internal, control, missing, and manual command forms", () => {
 	assert.deepEqual(parseHandoffCommand("--auto"), { kind: "internal-auto" });
+	assert.deepEqual(parseHandoffCommand("--auto-finalize"), { kind: "internal-auto-finalize" });
 	assert.deepEqual(parseHandoffCommand("auto on"), { kind: "auto-control", action: "on" });
 	assert.deepEqual(parseHandoffCommand("auto off"), { kind: "auto-control", action: "off" });
 	assert.deepEqual(parseHandoffCommand("auto status"), { kind: "auto-control", action: "status" });
@@ -89,15 +90,19 @@ test("triggers only for an armed idle TUI at or above the threshold", () => {
 	assert.equal(shouldTriggerAutoHandoff({ ...ready, usageTokens: undefined }), false);
 	assert.equal(shouldTriggerAutoHandoff({ ...ready, mode: "print" }), false);
 	assert.equal(shouldTriggerAutoHandoff({ ...ready, idle: false }), false);
-	assert.equal(shouldTriggerAutoHandoff({ ...ready, state: "running" }), false);
+	assert.equal(shouldTriggerAutoHandoff({ ...ready, state: "countdown" }), false);
+	assert.equal(shouldTriggerAutoHandoff({ ...ready, state: "preparing" }), false);
+	assert.equal(shouldTriggerAutoHandoff({ ...ready, state: "finalizing" }), false);
 	assert.equal(shouldTriggerAutoHandoff({ ...ready, state: "disabled" }), false);
 });
 
-test("applies every approved state transition", () => {
+test("applies every approved automatic phase transition", () => {
 	assert.equal(transitionAutoHandoffState("disabled", { type: "session-start" }), "armed");
-	assert.equal(transitionAutoHandoffState("armed", { type: "threshold-reached" }), "running");
-	assert.equal(transitionAutoHandoffState("armed", { type: "auto-off" }), "disabled");
-	assert.equal(transitionAutoHandoffState("running", { type: "attempt-failed" }), "disabled");
+	assert.equal(transitionAutoHandoffState("armed", { type: "threshold-reached" }), "countdown");
+	assert.equal(transitionAutoHandoffState("countdown", { type: "preparation-started" }), "preparing");
+	assert.equal(transitionAutoHandoffState("preparing", { type: "preparation-settled" }), "finalizing");
+	assert.equal(transitionAutoHandoffState("preparing", { type: "auto-off" }), "disabled");
+	assert.equal(transitionAutoHandoffState("finalizing", { type: "attempt-failed" }), "disabled");
 	assert.equal(
 		transitionAutoHandoffState("disabled", {
 			type: "auto-on",
@@ -112,6 +117,6 @@ test("applies every approved state transition", () => {
 			usageTokens: 150_000,
 			thresholdTokens: 150_000,
 		}),
-		"running",
+		"countdown",
 	);
 });

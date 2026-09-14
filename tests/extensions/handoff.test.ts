@@ -10,11 +10,12 @@ type EventHandler = (event: any, ctx: any) => Promise<void> | void;
 
 function createHarness(
 	overrides: Partial<HandoffDependencies> = {},
-	harnessOptions: { sendError?: Error } = {},
+	harnessOptions: { sendError?: Error; sendErrorFor?: string; customSendError?: Error } = {},
 ) {
 	let commandHandler: CommandHandler | undefined;
 	const events = new Map<string, EventHandler>();
 	const sentMessages: Array<{ content: string; options: unknown }> = [];
+	const customMessages: Array<{ message: unknown; options: unknown }> = [];
 	const dependencies: HandoffDependencies = {
 		generatePrompt: async () => ({ action: "continue", prompt: "generated prompt" }),
 		loadSettings: async () => ({ globalSettings: {}, projectTrusted: false }),
@@ -30,20 +31,31 @@ function createHarness(
 			events.set(name, handler);
 		},
 		sendUserMessage(content: string, options: unknown) {
-			if (harnessOptions.sendError) throw harnessOptions.sendError;
+			if (
+				harnessOptions.sendError &&
+				(!harnessOptions.sendErrorFor || harnessOptions.sendErrorFor === content)
+			) throw harnessOptions.sendError;
 			sentMessages.push({ content, options });
+		},
+		sendMessage(message: unknown, options: unknown) {
+			if (harnessOptions.customSendError) throw harnessOptions.customSendError;
+			customMessages.push({ message, options });
 		},
 	};
 	registerHandoffExtension(pi as any, dependencies);
 	assert.ok(commandHandler);
-	return { commandHandler, events, sentMessages };
+	return { commandHandler, events, sentMessages, customMessages };
 }
 
 function createCommandContext(options: {
 	usageTokens?: number | null;
 	editedPrompt?: string;
 	newSessionCancelled?: boolean;
+	branch?: any[];
 } = {}) {
+	const branch = options.branch ?? [
+		{ type: "message", id: "source-user", message: { role: "user", content: "current task" } },
+	];
 	const notices: Array<{ message: string; level: string }> = [];
 	const replacementEditor: string[] = [];
 	const replacementMessages: Array<{ message: unknown; options: unknown }> = [];
@@ -67,10 +79,12 @@ function createCommandContext(options: {
 		modelRegistry: {},
 		cwd: "/project",
 		isIdle: () => true,
+		hasPendingMessages: () => false,
 		isProjectTrusted: () => false,
 		getContextUsage: () => options.usageTokens === undefined ? undefined : { tokens: options.usageTokens },
 		sessionManager: {
-			getBranch: () => [{ type: "message", message: { role: "user", content: "current task" } }],
+			getBranch: () => branch,
+			getLeafId: () => branch.at(-1)?.id,
 			getSessionFile: () => "/sessions/old.jsonl",
 		},
 		ui: {
@@ -89,6 +103,7 @@ function createCommandContext(options: {
 	};
 	return {
 		ctx,
+		branch,
 		notices,
 		replacementEditor,
 		replacementMessages,
@@ -96,6 +111,29 @@ function createCommandContext(options: {
 		sessionOptions,
 		getManualEditorCalls: () => manualEditorCalls,
 	};
+}
+
+async function beginAutomaticHandoff(
+	harness: ReturnType<typeof createHarness>,
+	command: ReturnType<typeof createCommandContext>,
+): Promise<void> {
+	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("--auto", command.ctx);
+}
+
+async function finalizeAutomaticHandoff(
+	harness: ReturnType<typeof createHarness>,
+	command: ReturnType<typeof createCommandContext>,
+	preparationContent = "No continuity todo was warranted.",
+): Promise<void> {
+	command.branch.push({
+		type: "message",
+		id: `preparation-assistant-${command.branch.length}`,
+		message: { role: "assistant", content: preparationContent },
+	});
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("--auto-finalize", command.ctx);
 }
 
 test("manual handoff still requires a goal", async () => {
@@ -123,6 +161,7 @@ test("manual handoff reviews the generated prompt before staging the edit", asyn
 	assert.deepEqual(command.replacementEditor, ["reviewed prompt"]);
 	assert.deepEqual(command.replacementUserMessages, []);
 	assert.deepEqual(harness.sentMessages, []);
+	assert.deepEqual(harness.customMessages, []);
 });
 
 test("manual handoff rejects empty generation before opening the editor", async () => {
@@ -316,12 +355,313 @@ test("automatic countdown errors disable later attempts", async () => {
 	assert.equal(harness.sentMessages.length, 1);
 });
 
+test("automatic handoff prepares todos before generating the prompt", async () => {
+	let generated = false;
+	let generationInput: any;
+	const harness = createHarness({
+		showAutoCountdown: async () => true,
+		generatePrompt: async (input: any) => {
+			generated = true;
+			generationInput = input;
+			return { action: "continue", prompt: "generated prompt" };
+		},
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+
+	await beginAutomaticHandoff(harness, command);
+
+	assert.equal(generated, false);
+	assert.equal(command.sessionOptions.length, 0);
+	assert.deepEqual(harness.customMessages.map((entry) => entry.options), [
+		{ triggerTurn: true },
+	]);
+	assert.deepEqual(harness.customMessages.map((entry: any) => entry.message.customType), [
+		"handoff-preparation",
+	]);
+
+	command.branch.push({
+		type: "custom_message",
+		id: "preparation-instruction",
+		customType: "handoff-preparation",
+		content: "internal instruction",
+		display: true,
+	});
+	command.branch.push({
+		type: "message",
+		id: "preparation-assistant",
+		message: { role: "assistant", content: "Updated TODO-a1b2c3d4" },
+	});
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+
+	assert.equal(generated, false);
+	assert.equal(harness.sentMessages.at(-1)?.content, "/handoff --auto-finalize");
+	await harness.commandHandler("--auto-finalize", command.ctx);
+
+	assert.equal(generated, true);
+	assert.deepEqual(generationInput.messages, [
+		{ role: "user", content: "current task" },
+	]);
+	assert.deepEqual(generationInput.preparationMessages, [
+		{ role: "assistant", content: "Updated TODO-a1b2c3d4" },
+	]);
+	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
+});
+
+test("preparation settlement waits for a correlated assistant result and finalizes once", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+
+	command.branch.push({
+		type: "message",
+		id: "preparation-assistant",
+		message: { role: "assistant", content: "No continuity todo was warranted." },
+	});
+	let hasPendingMessages = true;
+	command.ctx.hasPendingMessages = () => hasPendingMessages;
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+
+	hasPendingMessages = false;
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		1,
+	);
+});
+
+test("a user message during preparation disables stale automatic finalization", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	command.branch.push({
+		type: "message",
+		id: "intervening-user",
+		message: { role: "user", content: "Stop and inspect the parser first." },
+	});
+	command.branch.push({
+		type: "message",
+		id: "intervening-assistant",
+		message: { role: "assistant", content: "I inspected it." },
+	});
+
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("auto status", command.ctx);
+
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+});
+
+test("a user message queued after preparation settlement cancels finalization", async () => {
+	let generated = false;
+	const harness = createHarness({
+		showAutoCountdown: async () => true,
+		generatePrompt: async () => {
+			generated = true;
+			return { action: "continue", prompt: "generated prompt" };
+		},
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	command.branch.push({
+		type: "message",
+		id: "preparation-assistant",
+		message: { role: "assistant", content: "No continuity todo was warranted." },
+	});
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	command.branch.push({
+		type: "message",
+		id: "late-user",
+		message: { role: "user", content: "Wait, use a different approach." },
+	});
+
+	await harness.commandHandler("--auto-finalize", command.ctx);
+	await harness.commandHandler("auto status", command.ctx);
+
+	assert.equal(generated, false);
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(command.sessionOptions.length, 0);
+});
+
+test("a missing preparation boundary disables automatic finalization", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	command.branch.splice(0, command.branch.length,
+		{ type: "message", id: "other-user", message: { role: "user", content: "other branch" } },
+		{ type: "message", id: "other-assistant", message: { role: "assistant", content: "other response" } },
+	);
+
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("auto status", command.ctx);
+
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+});
+
+test("auto off during preparation clears the pending finalization", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	await harness.commandHandler("auto off", command.ctx);
+	command.branch.push({
+		type: "message",
+		id: "late-preparation-assistant",
+		message: { role: "assistant", content: "Updated TODO-a1b2c3d4" },
+	});
+
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+});
+
+test("an aborted preparation turn disables automatic handoff", async () => {
+	const harness = createHarness({ showAutoCountdown: async () => true });
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	command.branch.push({
+		type: "message",
+		id: "aborted-preparation-assistant",
+		message: {
+			role: "assistant",
+			content: "Partial preparation",
+			stopReason: "aborted",
+		},
+	});
+
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("auto status", command.ctx);
+
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(
+		harness.sentMessages.filter((message) => message.content === "/handoff --auto-finalize").length,
+		0,
+	);
+});
+
+test("automatic finalization proceeds when preparation needs no todo", async () => {
+	let receivedPreparation: unknown;
+	const harness = createHarness({
+		showAutoCountdown: async () => true,
+		generatePrompt: async (input: any) => {
+			receivedPreparation = input.preparationMessages;
+			return { action: "wait", prompt: "completed checkpoint" };
+		},
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+
+	await finalizeAutomaticHandoff(harness, command);
+
+	assert.deepEqual(receivedPreparation, [
+		{ role: "assistant", content: "No continuity todo was warranted." },
+	]);
+});
+
+test("preparation dispatch failure disables automatic handoff", async () => {
+	const harness = createHarness(
+		{ showAutoCountdown: async () => true },
+		{ customSendError: new Error("preparation send failed") },
+	);
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+
+	assert.match(command.notices.at(-1)?.message ?? "", /preparation send failed/);
+	await harness.commandHandler("auto status", command.ctx);
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(command.sessionOptions.length, 0);
+});
+
+test("auto on cannot start a second handoff during preparation or finalization", async () => {
+	for (const phase of ["preparing", "finalizing"] as const) {
+		const harness = createHarness({ showAutoCountdown: async () => true });
+		const command = createCommandContext({ usageTokens: 150_000 });
+		await beginAutomaticHandoff(harness, command);
+		if (phase === "finalizing") {
+			command.branch.push({
+				type: "message",
+				id: "preparation-assistant",
+				message: { role: "assistant", content: "No continuity todo was warranted." },
+			});
+			await harness.events.get("agent_settled")?.({}, command.ctx);
+		}
+
+		await harness.commandHandler("auto on", command.ctx);
+
+		assert.equal(
+			harness.sentMessages.filter((message) => message.content === "/handoff --auto").length,
+			1,
+		);
+		assert.equal(harness.customMessages.length, 1);
+	}
+});
+
+test("automatic finalization dispatch failure disables automatic handoff", async () => {
+	const harness = createHarness(
+		{ showAutoCountdown: async () => true },
+		{
+			sendError: new Error("finalization send failed"),
+			sendErrorFor: "/handoff --auto-finalize",
+		},
+	);
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	command.branch.push({
+		type: "message",
+		id: "preparation-assistant",
+		message: { role: "assistant", content: "No continuity todo was warranted." },
+	});
+	await harness.events.get("agent_settled")?.({}, command.ctx);
+
+	assert.match(command.notices.at(-1)?.message ?? "", /finalization send failed/);
+	await harness.commandHandler("auto status", command.ctx);
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+	assert.equal(command.sessionOptions.length, 0);
+});
+
+test("automatic offer asks in the replacement session", async () => {
+	const harness = createHarness({
+		showAutoCountdown: async () => true,
+		generatePrompt: async () => ({
+			action: "offer",
+			prompt: "Please choose one of the open recommendations.",
+		}),
+	});
+	const command = createCommandContext({ usageTokens: 150_000 });
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
+
+	assert.deepEqual(command.replacementUserMessages, [
+		"Please choose one of the open recommendations.",
+	]);
+	assert.deepEqual(command.replacementMessages, []);
+});
+
 test("automatic countdown completion skips the manual editor and submits the generated prompt", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await harness.commandHandler("--auto", command.ctx);
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
 	assert.equal(command.getManualEditorCalls(), 0);
 	assert.deepEqual(command.replacementEditor, []);
 	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
@@ -336,9 +676,8 @@ test("automatic waiting handoff preserves context without starting an agent turn
 		},
 	});
 	const command = createCommandContext({ usageTokens: 150_000 });
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await harness.commandHandler("--auto", command.ctx);
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
 
 	assert.deepEqual(receivedIntent, { kind: "automatic" });
 	assert.deepEqual(command.replacementUserMessages, []);
@@ -379,9 +718,8 @@ test("automatic waiting handoff stages the checkpoint when context injection fai
 		return { cancelled: false };
 	};
 
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
+	await beginAutomaticHandoff(harness, command);
+	await assert.doesNotReject(() => finalizeAutomaticHandoff(harness, command));
 
 	assert.deepEqual(command.replacementEditor, ["completed checkpoint"]);
 	assert.deepEqual(command.replacementUserMessages, []);
@@ -392,16 +730,21 @@ test("automatic waiting handoff stages the checkpoint when context injection fai
 test("automatic replacement records the parent and continues without Enter", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => true });
 	const command = createCommandContext({ usageTokens: 150_000 });
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await harness.commandHandler("--auto", command.ctx);
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
 	assert.equal(command.sessionOptions[0].parentSession, "/sessions/old.jsonl");
 	assert.deepEqual(command.replacementEditor, []);
 	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
-	assert.deepEqual(harness.sentMessages, [{
-		content: "/handoff --auto",
-		options: { expandPromptTemplates: true },
-	}]);
+	assert.deepEqual(harness.sentMessages, [
+		{
+			content: "/handoff --auto",
+			options: { expandPromptTemplates: true },
+		},
+		{
+			content: "/handoff --auto-finalize",
+			options: { expandPromptTemplates: true },
+		},
+	]);
 	assert.equal(command.getManualEditorCalls(), 0);
 });
 
@@ -429,58 +772,66 @@ test("successful replacement uses only replacementCtx", async () => {
 		});
 		return { cancelled: false };
 	};
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
+	await beginAutomaticHandoff(harness, command);
+	await assert.doesNotReject(() => finalizeAutomaticHandoff(harness, command));
 	assert.deepEqual(command.replacementEditor, []);
 	assert.deepEqual(command.replacementUserMessages, ["generated prompt"]);
 });
 
-test("automatic submission failure stays on the replacement context and preserves the prompt", async () => {
-	const harness = createHarness({ showAutoCountdown: async () => true });
-	const command = createCommandContext({ usageTokens: 150_000 });
-	let oldContextStale = false;
-	let signalSendStarted: () => void = () => {};
-	let rejectSubmission: (reason?: unknown) => void = () => {};
-	const sendStarted = new Promise<void>((resolve) => { signalSendStarted = resolve; });
-	const submission = new Promise<void>((_resolve, reject) => { rejectSubmission = reject; });
-	command.ctx.ui.notify = () => {
-		if (oldContextStale) throw new Error("stale old context accessed");
-	};
-	command.ctx.newSession = async (newSessionOptions: any) => {
-		command.sessionOptions.push(newSessionOptions);
-		oldContextStale = true;
-		await newSessionOptions.withSession({
-			ui: {
-				setEditorText(text: string) { command.replacementEditor.push(text); },
-				notify(message: string, level: string) {
-					command.notices.push({ message, level });
-				},
-			},
-			sendUserMessage() {
-				signalSendStarted();
-				return submission;
-			},
+for (const action of ["continue", "offer"] as const) {
+	test(`automatic ${action} submission failure stays on the replacement context and preserves the prompt`, async () => {
+		const harness = createHarness({
+			showAutoCountdown: async () => true,
+			generatePrompt: async () => ({ action, prompt: "generated prompt" }),
 		});
-		return { cancelled: false };
-	};
-	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	let handlerSettled = false;
-	const handoff = harness.commandHandler("--auto", command.ctx);
-	void handoff.then(
-		() => { handlerSettled = true; },
-		() => { handlerSettled = true; },
-	);
-	const noRejection = assert.doesNotReject(handoff);
-	await sendStarted;
-	assert.equal(handlerSettled, false);
-	rejectSubmission(new Error("submission failed"));
-	await noRejection;
-	assert.deepEqual(command.replacementEditor, ["generated prompt"]);
-	assert.match(command.notices.at(-1)?.message ?? "", /submission failed/);
-	assert.equal(command.notices.at(-1)?.level, "error");
-});
+		const command = createCommandContext({ usageTokens: 150_000 });
+		let oldContextStale = false;
+		let signalSendStarted: () => void = () => {};
+		let rejectSubmission: (reason?: unknown) => void = () => {};
+		const sendStarted = new Promise<void>((resolve) => { signalSendStarted = resolve; });
+		const submission = new Promise<void>((_resolve, reject) => { rejectSubmission = reject; });
+		command.ctx.ui.notify = () => {
+			if (oldContextStale) throw new Error("stale old context accessed");
+		};
+		command.ctx.newSession = async (newSessionOptions: any) => {
+			command.sessionOptions.push(newSessionOptions);
+			oldContextStale = true;
+			await newSessionOptions.withSession({
+				ui: {
+					setEditorText(text: string) { command.replacementEditor.push(text); },
+					notify(message: string, level: string) {
+						command.notices.push({ message, level });
+					},
+				},
+				sendUserMessage() {
+					signalSendStarted();
+					return submission;
+				},
+			});
+			return { cancelled: false };
+		};
+		await beginAutomaticHandoff(harness, command);
+		command.branch.push({
+			type: "message",
+			message: { role: "assistant", content: "No continuity todo was warranted." },
+		});
+		await harness.events.get("agent_settled")?.({}, command.ctx);
+		let handlerSettled = false;
+		const handoff = harness.commandHandler("--auto-finalize", command.ctx);
+		void handoff.then(
+			() => { handlerSettled = true; },
+			() => { handlerSettled = true; },
+		);
+		const noRejection = assert.doesNotReject(handoff);
+		await sendStarted;
+		assert.equal(handlerSettled, false);
+		rejectSubmission(new Error("submission failed"));
+		await noRejection;
+		assert.deepEqual(command.replacementEditor, ["generated prompt"]);
+		assert.match(command.notices.at(-1)?.message ?? "", /submission failed/);
+		assert.equal(command.notices.at(-1)?.level, "error");
+	});
+}
 
 const automaticErrorCases: Array<{
 	name: string;
@@ -535,9 +886,12 @@ for (const scenario of automaticErrorCases) {
 			...scenario.contextOptions,
 		});
 		scenario.prepare?.(command.ctx);
-		await harness.events.get("session_start")?.({}, command.ctx);
-		await harness.events.get("agent_settled")?.({}, command.ctx);
-		await harness.commandHandler("--auto", command.ctx);
+		await beginAutomaticHandoff(harness, command);
+		const failsBeforePreparation =
+			scenario.name === "no selected model" || scenario.name === "no handoff messages";
+		if (!failsBeforePreparation) {
+			await finalizeAutomaticHandoff(harness, command);
+		}
 		if (
 			scenario.name === "prompt generation throws" ||
 			scenario.name === "prompt generation is empty" ||
@@ -550,6 +904,6 @@ for (const scenario of automaticErrorCases) {
 		await harness.commandHandler("auto status", command.ctx);
 		assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
 		await harness.events.get("agent_settled")?.({}, command.ctx);
-		assert.equal(harness.sentMessages.length, 1);
+		assert.equal(harness.sentMessages.length, failsBeforePreparation ? 1 : 2);
 	});
 }

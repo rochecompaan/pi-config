@@ -5,6 +5,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 type HandoffGenerationContext = {
 	ctx: ExtensionCommandContext;
 	messages: AgentMessage[];
+	preparationMessages?: AgentMessage[];
 };
 
 export type HandoffIntent =
@@ -16,7 +17,7 @@ export type HandoffGenerationInput = HandoffGenerationContext & (
 	| { intent?: never; goal: string }
 );
 
-export type HandoffAction = "continue" | "wait";
+export type HandoffAction = "continue" | "offer" | "wait";
 
 export type GeneratedHandoff = {
 	action: HandoffAction;
@@ -39,7 +40,7 @@ type HandoffGenerationOutcome =
 const LEGACY_AUTOMATIC_HANDOFF_GOAL =
 	"Continue the current task in a fresh session. Preserve the current objective, decisions, progress, blockers, and concrete next steps.";
 
-const HANDOFF_SYSTEM_PROMPT = `Create a faithful context handoff for a replacement coding-agent session.
+const MANUAL_HANDOFF_SYSTEM_PROMPT = `Create a faithful context handoff for a replacement coding-agent session.
 
 Never create work that the user did not request.
 
@@ -89,6 +90,77 @@ Example: If the assistant recommended next steps that the user never accepted or
 
 Do not include a preamble.`;
 
+const AUTOMATIC_HANDOFF_SYSTEM_PROMPT = `Create a faithful context handoff for a replacement coding-agent session.
+
+Never create work that the user did not request.
+
+First decide whether the replacement agent must CONTINUE, OFFER, or WAIT. Apply this priority:
+1. Choose CONTINUE only when an explicit user request remains unfinished and the agent can make progress without more user input.
+2. Otherwise choose OFFER when at least one assistant recommendation or offer still needs the user's response.
+3. Otherwise choose WAIT.
+
+Choose WAIT when the latest requested work is complete, work needs user input for a reason other than an open recommendation, work is blocked, no explicit unfinished request exists, or the state is unclear.
+
+The input identifies the handoff mode:
+- A MANUAL goal is an explicit user request for the new session.
+- An AUTOMATIC rollover is extension policy, not a user request.
+
+For AUTOMATIC rollover, use only User Conversation to infer unfinished work, identify open recommendations, and decide recommendation recency. Automatic Handoff Preparation is internal extension work, not user intent. Use it only to preserve reported continuity todo IDs, continuity notes, and preparation failures. Never let preparation open, close, or age a recommendation.
+
+Use the latest relevant user-conversation messages as the current state. A completion report is terminal unless a later user message requests more work.
+
+Passing tests, a clean worktree, unpushed commits, residual risks, possible follow-ups, and constraints are state information. They are not pending tasks. Do not turn them into instructions to verify, review, push, merge, clean up, or perform branch-completion work.
+
+An explicit recommendation or offer from the assistant is open while the user has neither accepted nor declined it. Later unrelated questions and answers do not close it. Acceptance, rejection, selection of an incompatible alternative, or explicit withdrawal closes it. List every still-open recommendation under Open Recommendations, complete and close to the original wording; write None. when there are none. Open recommendations are not pending work, and the replacement agent must not act on them before the user accepts them.
+
+For OFFER, choose one presentation instruction:
+- Direct re-ask: when the open offer was the final assistant message and no user message followed it, immediately repeat the offer close to its original wording and ask for the user's choice.
+- Contextual reminder: when later unrelated user messages followed without resolving the offer, start with exactly one short sentence about only the latest relevant user topic, then remind the user of every open recommendation and ask for a response.
+
+Preserve every todo ID reported by Automatic Handoff Preparation under Continuity Todos. Explain that the replacement agent should read a listed todo when it needs the detailed requirements. Write None. when no todo was warranted. Never invent a todo ID.
+
+Do not add tools, skills, workflows, checks, constraints, or next steps that do not appear in the user conversation or manual goal.
+
+Start the response with exactly one of these lines:
+HANDOFF_ACTION: CONTINUE
+HANDOFF_ACTION: OFFER
+HANDOFF_ACTION: WAIT
+
+Then write a concise, self-contained prompt with the relevant decisions, progress, files, verification results, blockers, constraints, and continuity todos.
+
+For CONTINUE, use these sections:
+## Context
+## Unfinished User Request
+## Current State
+## Continuity Todos
+## Next Action
+## Open Recommendations
+
+For OFFER, use these sections:
+## Context
+## Current State
+## Continuity Todos
+## Open Recommendations
+## Instruction
+
+For WAIT, use these sections:
+## Context
+## Current State
+## Continuity Todos
+## Open Recommendations
+## Pending User-Requested Work
+None.
+## Instruction
+Wait for the user. Do not run tools or change repository state until the user asks.
+
+Example: If the conversation ends with "Completed", passing tests, a clean worktree, and nothing pushed, choose WAIT. Preserve those facts, but do not ask the replacement agent to verify them or perform a branch-completion action.
+
+Example: If the assistant's final message offered two next steps and the user did not reply, choose OFFER and tell the replacement agent to re-ask that choice immediately.
+
+Example: If the user discussed another topic after an unanswered offer without accepting or declining it, choose OFFER and tell the replacement agent to use a one-sentence latest-topic introduction before reminding the user of every open recommendation.
+
+Do not include a preamble.`;
+
 function resolveHandoffIntent(input: HandoffGenerationInput): HandoffIntent {
 	if ("intent" in input) return input.intent;
 	return input.goal === LEGACY_AUTOMATIC_HANDOFF_GOAL
@@ -96,9 +168,17 @@ function resolveHandoffIntent(input: HandoffGenerationInput): HandoffIntent {
 		: { kind: "manual", goal: input.goal };
 }
 
-function buildHandoffRequest(conversationText: string, intent: HandoffIntent): string {
-	const handoffMode = intent.kind === "manual"
-		? [
+function buildHandoffRequest(
+	conversationText: string,
+	preparationText: string,
+	intent: HandoffIntent,
+): string {
+	if (intent.kind === "manual") {
+		return [
+			"## Conversation History",
+			"",
+			conversationText,
+			"",
 			"## Handoff Mode",
 			"",
 			"MANUAL",
@@ -106,20 +186,22 @@ function buildHandoffRequest(conversationText: string, intent: HandoffIntent): s
 			"## User's Goal for New Thread",
 			"",
 			intent.goal,
-		]
-		: [
-			"## Handoff Mode",
-			"",
-			"AUTOMATIC",
-			"",
-			"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the conversation.",
-		];
+		].join("\n");
+	}
 	return [
-		"## Conversation History",
+		"## User Conversation",
 		"",
 		conversationText,
 		"",
-		...handoffMode,
+		"## Automatic Handoff Preparation",
+		"",
+		preparationText,
+		"",
+		"## Handoff Mode",
+		"",
+		"AUTOMATIC",
+		"",
+		"No new user goal was provided. Determine continuation only from explicit unfinished user-requested work in the User Conversation.",
 	].join("\n");
 }
 
@@ -128,10 +210,11 @@ export async function completeHandoffPrompt(
 	userMessage: Message,
 	signal: AbortSignal,
 	sessionId: string,
+	systemPrompt: string = AUTOMATIC_HANDOFF_SYSTEM_PROMPT,
 ): Promise<GeneratedHandoff | null> {
 	const response = await ctx.modelRegistry.complete(
 		ctx.model!,
-		{ systemPrompt: HANDOFF_SYSTEM_PROMPT, messages: [userMessage] },
+		{ systemPrompt, messages: [userMessage] },
 		{ signal, cacheRetention: "none", sessionId },
 	);
 	switch (response.stopReason) {
@@ -158,6 +241,7 @@ export async function completeHandoffPrompt(
 	const [actionLine, ...promptLines] = output.trim().split(/\r?\n/);
 	const action =
 		actionLine === "HANDOFF_ACTION: CONTINUE" ? "continue"
+		: actionLine === "HANDOFF_ACTION: OFFER" ? "offer"
 		: actionLine === "HANDOFF_ACTION: WAIT" ? "wait"
 		: undefined;
 	if (!action) {
@@ -201,6 +285,9 @@ export async function generateHandoffPrompt(
 	if (legacyCall && intent.kind === "automatic") return null;
 	const { uuidv7, BorderedLoader, convertToLlm, serializeConversation } = await loadRuntime();
 	const conversationText = serializeConversation(convertToLlm(messages));
+	const preparationText = intent.kind === "automatic" && input.preparationMessages?.length
+		? serializeConversation(convertToLlm(input.preparationMessages))
+		: "None.";
 	const outcome = await ctx.ui.custom<HandoffGenerationOutcome>((tui, theme, _keybindings, done) => {
 		const loader = new BorderedLoader(tui, theme, "Generating handoff prompt...");
 		loader.onAbort = () => done({ kind: "completed", value: null });
@@ -209,11 +296,19 @@ export async function generateHandoffPrompt(
 				role: "user",
 				content: [{
 					type: "text",
-					text: buildHandoffRequest(conversationText, intent),
+					text: buildHandoffRequest(conversationText, preparationText, intent),
 				}],
 				timestamp: Date.now(),
 			};
-			return completeHandoffPrompt(ctx, userMessage, loader.signal, uuidv7());
+			return completeHandoffPrompt(
+				ctx,
+				userMessage,
+				loader.signal,
+				uuidv7(),
+				intent.kind === "manual"
+					? MANUAL_HANDOFF_SYSTEM_PROMPT
+					: AUTOMATIC_HANDOFF_SYSTEM_PROMPT,
+			);
 		};
 		generate()
 			.then((value) => done({ kind: "completed", value }))

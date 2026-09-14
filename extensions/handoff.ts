@@ -9,7 +9,7 @@
  *   /handoff execute phase one of the plan
  *   /handoff check other places that need this fix
  *
- * Manual handoffs stage an editable draft. Automatic handoffs continue only unfinished work.
+ * Manual handoffs stage an editable draft. Automatic handoffs preserve detailed context before rollover.
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -41,17 +41,41 @@ export type HandoffDependencies = {
 	generatePrompt: (input: {
 		ctx: ExtensionCommandContext;
 		messages: AgentMessage[];
+		preparationMessages?: AgentMessage[];
 		intent: HandoffIntent;
 	}) => Promise<GeneratedHandoff | null>;
 	loadSettings: (ctx: ExtensionContext) => Promise<HandoffSettingsSources>;
 	showAutoCountdown: (ctx: ExtensionCommandContext) => Promise<boolean>;
 };
 
+type AutomaticHandoffPreparation = {
+	sourceMessages: AgentMessage[];
+	preparationBoundaryEntryId: string;
+	parentSession: string | undefined;
+};
+
+type PreparedAutomaticHandoff = {
+	sourceMessages: AgentMessage[];
+	preparationMessages: AgentMessage[];
+	parentSession: string | undefined;
+};
+
+const AUTOMATIC_HANDOFF_PREPARATION_MESSAGE = `Prepare this session for automatic handoff. Do not continue implementation work and do not craft the final handoff prompt.
+
+1. Review the objective, detailed requirements, acceptance criteria, decisions, constraints, progress, relevant files, blockers, and next steps.
+2. Decide whether a concise handoff could safely preserve that information.
+3. Use the todo tool now to inspect relevant existing todos when needed and create, update, or append detailed continuity todos when durable storage is warranted.
+4. Do not create placeholder, duplicate, speculative, or unnecessary todos.
+5. Finish with a short report listing every created or updated todo ID, or state that no continuity todo was warranted.`;
+
 function isGeneratedHandoff(value: unknown): value is GeneratedHandoff {
 	if (typeof value !== "object" || value === null) return false;
 	const candidate = value as Partial<GeneratedHandoff>;
-	return (candidate.action === "continue" || candidate.action === "wait") &&
-		typeof candidate.prompt === "string";
+	return (
+		candidate.action === "continue" ||
+		candidate.action === "offer" ||
+		candidate.action === "wait"
+	) && typeof candidate.prompt === "string";
 }
 
 function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
@@ -67,6 +91,34 @@ function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
 		};
 	}
 	return undefined;
+}
+
+function getEntriesAfterBoundary(
+	branch: SessionEntry[],
+	boundaryEntryId: string,
+): SessionEntry[] | undefined {
+	const boundaryIndex = branch.findIndex((entry) => entry.id === boundaryEntryId);
+	return boundaryIndex >= 0 ? branch.slice(boundaryIndex + 1) : undefined;
+}
+
+function hasMessageRole(entries: SessionEntry[], role: "user"): boolean {
+	return entries.some((entry) => entry.type === "message" && entry.message.role === role);
+}
+
+function getPreparationAssistantStatus(
+	entries: SessionEntry[],
+): "missing" | "failed" | "completed" {
+	let lastStopReason: string | undefined;
+	let found = false;
+	for (const entry of entries) {
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+		found = true;
+		lastStopReason = entry.message.stopReason;
+	}
+	if (!found) return "missing";
+	return lastStopReason === "aborted" || lastStopReason === "error" || lastStopReason === "length"
+		? "failed"
+		: "completed";
 }
 
 function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
@@ -159,11 +211,13 @@ export function registerHandoffExtension(
 ): void {
 	let autoState: AutoHandoffState = "armed";
 	let autoThresholdTokens = DEFAULT_AUTO_THRESHOLD_TOKENS;
+	let automaticPreparation: AutomaticHandoffPreparation | undefined;
 	const disableAutomatic = (
-		ctx: ExtensionCommandContext,
+		ctx: ExtensionContext,
 		message: string,
 		level: "info" | "error" = "error",
 	): void => {
+		automaticPreparation = undefined;
 		autoState = transitionAutoHandoffState(autoState, { type: "attempt-failed" });
 		ctx.ui.notify(`${message} Run /handoff auto on to re-enable it.`, level);
 	};
@@ -171,6 +225,7 @@ export function registerHandoffExtension(
 	const performHandoff = async (
 		intent: HandoffIntent,
 		ctx: ExtensionCommandContext,
+		preparedAutomatic?: PreparedAutomaticHandoff,
 	): Promise<void> => {
 		const automatic = intent.kind === "automatic";
 		if (!ctx.model) {
@@ -178,16 +233,21 @@ export function registerHandoffExtension(
 			else ctx.ui.notify("No model selected", "error");
 			return;
 		}
-		const messages = getHandoffMessages(ctx.sessionManager.getBranch());
+		const messages = preparedAutomatic?.sourceMessages ?? getHandoffMessages(ctx.sessionManager.getBranch());
 		if (messages.length === 0) {
 			if (automatic) disableAutomatic(ctx, "No conversation to hand off.");
 			else ctx.ui.notify("No conversation to hand off", "error");
 			return;
 		}
-		const currentSessionFile = ctx.sessionManager.getSessionFile();
+		const currentSessionFile = preparedAutomatic?.parentSession ?? ctx.sessionManager.getSessionFile();
 		let generatedResult: Awaited<ReturnType<HandoffDependencies["generatePrompt"]>>;
 		try {
-			generatedResult = await dependencies.generatePrompt({ ctx, messages, intent });
+			generatedResult = await dependencies.generatePrompt({
+				ctx,
+				messages,
+				preparationMessages: preparedAutomatic?.preparationMessages,
+				intent,
+			});
 		} catch (error) {
 			if (automatic) {
 				disableAutomatic(
@@ -280,6 +340,42 @@ export function registerHandoffExtension(
 		}
 	};
 
+	const startAutomaticPreparation = (ctx: ExtensionCommandContext): void => {
+		if (!ctx.model) {
+			disableAutomatic(ctx, "No model selected.");
+			return;
+		}
+		const branch = ctx.sessionManager.getBranch();
+		const sourceMessages = getHandoffMessages(branch);
+		const preparationBoundaryEntryId = ctx.sessionManager.getLeafId();
+		if (sourceMessages.length === 0) {
+			disableAutomatic(ctx, "No conversation to hand off.");
+			return;
+		}
+		if (!preparationBoundaryEntryId) {
+			disableAutomatic(ctx, "Automatic handoff could not mark the preparation boundary.");
+			return;
+		}
+		automaticPreparation = {
+			sourceMessages,
+			preparationBoundaryEntryId,
+			parentSession: ctx.sessionManager.getSessionFile(),
+		};
+		autoState = transitionAutoHandoffState(autoState, { type: "preparation-started" });
+		try {
+			pi.sendMessage({
+				customType: "handoff-preparation",
+				content: AUTOMATIC_HANDOFF_PREPARATION_MESSAGE,
+				display: true,
+			}, { triggerTurn: true });
+		} catch (error) {
+			disableAutomatic(
+				ctx,
+				`Automatic handoff preparation failed: ${error instanceof Error ? error.message : String(error)}.`,
+			);
+		}
+	};
+
 	const dispatchAutomaticHandoff = (ctx: ExtensionContext): void => {
 		try {
 			pi.sendUserMessage("/handoff --auto", { expandPromptTemplates: true });
@@ -294,7 +390,19 @@ export function registerHandoffExtension(
 		}
 	};
 
+	const dispatchAutomaticFinalization = (ctx: ExtensionContext): void => {
+		try {
+			pi.sendUserMessage("/handoff --auto-finalize", { expandPromptTemplates: true });
+		} catch (error) {
+			disableAutomatic(
+				ctx,
+				`Automatic handoff finalization failed: ${error instanceof Error ? error.message : String(error)}.`,
+			);
+		}
+	};
+
 	pi.on("session_start", async (_event, ctx) => {
+		automaticPreparation = undefined;
 		autoState = transitionAutoHandoffState(autoState, { type: "session-start" });
 		autoThresholdTokens = DEFAULT_AUTO_THRESHOLD_TOKENS;
 		try {
@@ -306,6 +414,33 @@ export function registerHandoffExtension(
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {
+		if (autoState === "preparing") {
+			if (!automaticPreparation) {
+				disableAutomatic(ctx, "Automatic handoff lost its preparation state.");
+				return;
+			}
+			const preparationEntries = getEntriesAfterBoundary(
+				ctx.sessionManager.getBranch(),
+				automaticPreparation.preparationBoundaryEntryId,
+			);
+			if (!preparationEntries) {
+				disableAutomatic(ctx, "Automatic handoff preparation branch changed.");
+				return;
+			}
+			if (hasMessageRole(preparationEntries, "user")) {
+				disableAutomatic(ctx, "Automatic handoff stopped because a user message arrived during preparation.");
+				return;
+			}
+			const assistantStatus = getPreparationAssistantStatus(preparationEntries);
+			if (assistantStatus === "failed") {
+				disableAutomatic(ctx, "Automatic handoff preparation did not complete.");
+				return;
+			}
+			if (!ctx.isIdle() || ctx.hasPendingMessages() || assistantStatus === "missing") return;
+			autoState = transitionAutoHandoffState(autoState, { type: "preparation-settled" });
+			dispatchAutomaticFinalization(ctx);
+			return;
+		}
 		const usage = ctx.getContextUsage();
 		if (!shouldTriggerAutoHandoff({
 			mode: ctx.mode,
@@ -329,6 +464,7 @@ export function registerHandoffExtension(
 			const command = parseHandoffCommand(args);
 			if (command.kind === "auto-control") {
 				if (command.action === "off") {
+					automaticPreparation = undefined;
 					autoState = transitionAutoHandoffState(autoState, { type: "auto-off" });
 					ctx.ui.notify("Automatic handoff is disabled.", "info");
 					return;
@@ -340,6 +476,13 @@ export function registerHandoffExtension(
 					);
 					return;
 				}
+				if (autoState === "preparing" || autoState === "finalizing") {
+					ctx.ui.notify(
+						`Automatic handoff is already ${autoState}. Use /handoff auto off to cancel it.`,
+						"info",
+					);
+					return;
+				}
 				const usage = ctx.getContextUsage();
 				autoState = transitionAutoHandoffState(autoState, {
 					type: "auto-on",
@@ -347,11 +490,11 @@ export function registerHandoffExtension(
 					thresholdTokens: autoThresholdTokens,
 				});
 				ctx.ui.notify(`Automatic handoff is ${autoState}.`, "info");
-				if (autoState === "running") dispatchAutomaticHandoff(ctx);
+				if (autoState === "countdown") dispatchAutomaticHandoff(ctx);
 				return;
 			}
 			if (command.kind === "internal-auto") {
-				if (autoState !== "running") return;
+				if (autoState !== "countdown") return;
 				let continueHandoff: boolean;
 				try {
 					continueHandoff = await dependencies.showAutoCountdown(ctx);
@@ -367,7 +510,35 @@ export function registerHandoffExtension(
 					ctx.ui.notify("Automatic handoff cancelled. Run /handoff auto on to re-enable it.", "info");
 					return;
 				}
-				await performHandoff({ kind: "automatic" }, ctx);
+				startAutomaticPreparation(ctx);
+				return;
+			}
+			if (command.kind === "internal-auto-finalize") {
+				if (autoState !== "finalizing" || !automaticPreparation) return;
+				const capture = automaticPreparation;
+				const preparationEntries = getEntriesAfterBoundary(
+					ctx.sessionManager.getBranch(),
+					capture.preparationBoundaryEntryId,
+				);
+				if (!preparationEntries) {
+					disableAutomatic(ctx, "Automatic handoff preparation result is no longer available.");
+					return;
+				}
+				if (hasMessageRole(preparationEntries, "user")) {
+					disableAutomatic(ctx, "Automatic handoff stopped because a user message arrived during preparation.");
+					return;
+				}
+				if (getPreparationAssistantStatus(preparationEntries) !== "completed") {
+					disableAutomatic(ctx, "Automatic handoff preparation did not complete.");
+					return;
+				}
+				automaticPreparation = undefined;
+				const preparationMessages = getHandoffMessages(preparationEntries);
+				await performHandoff({ kind: "automatic" }, ctx, {
+					sourceMessages: capture.sourceMessages,
+					preparationMessages,
+					parentSession: capture.parentSession,
+				});
 				return;
 			}
 			if (command.kind === "missing-goal") {
