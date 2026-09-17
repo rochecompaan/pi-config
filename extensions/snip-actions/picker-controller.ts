@@ -6,12 +6,14 @@ export type PickerListItem = {
 	value: string;
 	label: string;
 	description?: string;
+	group?: { id: string; label: string };
 };
 
 export type PickerListAdapter = {
 	getSelectedItem(): PickerListItem | undefined;
 	replaceItems(items: PickerListItem[]): void;
 	setSelectedIndex(index: number): void;
+	pageSelection(direction: -1 | 1): void;
 	handleInput(data: string): void;
 	invalidate(): void;
 };
@@ -52,11 +54,13 @@ export class PickerController {
 
 	updateFilter(next: string): void {
 		this.filterValue = next;
-		this.filteredItems = rankedFilterItems(
+		const matches = new Set(rankedFilterItems(
 			next,
 			this.options.selectItems,
 			this.options.searchIndex,
-		);
+		));
+		// Keep messages newest-first and their snippets in source order, even in search results.
+		this.filteredItems = this.options.selectItems.filter((item) => matches.has(item));
 		this.options.list.replaceItems(this.filteredItems);
 		this.options.list.invalidate();
 		this.options.showFilter(this.filterValue);
@@ -73,6 +77,12 @@ export class PickerController {
 			? (candidate + this.filteredItems.length) % this.filteredItems.length
 			: Math.max(0, Math.min(candidate, this.filteredItems.length - 1));
 		this.options.list.setSelectedIndex(nextIndex);
+		this.updatePreview();
+		this.options.requestRender();
+	}
+
+	pageSelection(direction: -1 | 1): void {
+		this.options.list.pageSelection(direction);
 		this.updatePreview();
 		this.options.requestRender();
 	}

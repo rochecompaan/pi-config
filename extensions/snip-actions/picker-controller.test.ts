@@ -56,6 +56,10 @@ class FakeList {
 		this.selectedIndex = Math.max(0, Math.min(index, this.items.length - 1));
 	}
 
+	pageSelection(direction: -1 | 1): void {
+		this.setSelectedIndex(this.selectedIndex + direction * 12);
+	}
+
 	handleInput(data: string): void {
 		if (data === "end") this.selectedIndex = Math.max(0, this.items.length - 1);
 	}

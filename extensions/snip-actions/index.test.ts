@@ -24,11 +24,12 @@ await Promise.all([
 export async function copyToClipboard() {}
 export class DynamicBorder { render() { return []; } invalidate() {} }
 export function keyHint(_id, description) { return description; }
+export function keyText(id) { return id; }
 `),
 	writeStubPackage("@earendil-works/pi-tui", `
 export class Container { addChild() {} render() { return []; } invalidate() {} }
-export class SelectList {}
 export class Text { setText() {} }
+export function truncateToWidth(text) { return text; }
 export function decodeKittyPrintable() { return undefined; }
 export function matchesKey() { return false; }
 `),

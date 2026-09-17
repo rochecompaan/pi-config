@@ -1,39 +1,20 @@
 // Adapted from @signalridge/pi-code-actions. See NOTICE.
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, keyHint } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, keyHint, keyText } from "@earendil-works/pi-coding-agent";
 import {
-	Container,
 	decodeKittyPrintable,
 	matchesKey,
-	type SelectItem,
-	SelectList,
 	Text,
+	truncateToWidth,
 } from "@earendil-works/pi-tui";
-import {
-	copyItemKindLabel,
-	isInsertableCopyItem,
-	type CopyItem,
-	type CopySelection,
-} from "./copy-items.ts";
-import { PickerController, type PickerListAdapter } from "./picker-controller.ts";
-import { limitPreviewLines } from "./preview.ts";
+import type { CopyItem, CopySelection } from "./copy-items.ts";
+import { PickerController } from "./picker-controller.ts";
+import { buildPickerItems, GroupedPickerList } from "./picker-list.ts";
+import { handlePickerInput } from "./picker-input.ts";
+import { renderPickerLayout } from "./picker-layout.ts";
 import { buildSearchIndex } from "./search.ts";
 
-const PREVIEW_WIDTH = 52;
-const PREVIEW_MAX_LINES = 10;
-
-function compactPreview(content: string): string {
-	const preview = content.replace(/\s+/g, " ").trim();
-	if (preview.length === 0) return "(empty)";
-	return preview.length <= PREVIEW_WIDTH ? preview : `${preview.slice(0, PREVIEW_WIDTH - 1)}…`;
-}
-
-function buildItemLabel(item: CopyItem, index: number, indexWidth: number, timeWidth: number): string {
-	const number = String(index + 1).padStart(indexWidth, " ");
-	const time = item.sourceLabel.padEnd(timeWidth, " ");
-	const language = item.language ? ` (${item.language})` : "";
-	return `${number}. ${copyItemKindLabel(item.kind)} ${time}${language} ${compactPreview(item.content)}`;
-}
+const LIST_MAX_ROWS = 12;
 
 function printableInput(data: string): string | undefined {
 	const kittyPrintable = decodeKittyPrintable(data);
@@ -49,132 +30,71 @@ export async function pickCopyItem(
 	ctx: ExtensionCommandContext,
 	copyItems: CopyItem[],
 ): Promise<CopySelection | undefined> {
-	const indexWidth = String(copyItems.length).length;
-	const timeWidth = Math.max(...copyItems.map((item) => item.sourceLabel.length));
-	const maxVisible = Math.min(copyItems.length, 12);
-	const selectItems: SelectItem[] = copyItems.map((item, index) => ({
-		value: String(index),
-		label: buildItemLabel(item, index, indexWidth, timeWidth),
-		description: "",
-	}));
+	const selectItems = buildPickerItems(copyItems);
 	const searchIndex = buildSearchIndex(copyItems, selectItems);
 
-	const encoded = await ctx.ui.custom<string | null>((tui, theme, keybindings, done) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text: string) => theme.fg("borderAccent", text)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Copy message or code")), 1, 0));
-
-		const list = new SelectList(selectItems, maxVisible, {
-			selectedPrefix: (text) => theme.fg("accent", text),
-			selectedText: (text) => theme.fg("accent", text),
-			description: (text) => theme.fg("muted", text),
-			scrollInfo: (text) => theme.fg("dim", text),
-			noMatch: (text) => theme.fg("warning", text),
-		});
-		container.addChild(list);
-		container.addChild(new DynamicBorder((text: string) => theme.fg("borderAccent", text)));
-
+	return ctx.ui.custom<CopySelection | undefined>((tui, theme, keybindings, done) => {
+		const border = new DynamicBorder((text: string) => theme.fg("borderAccent", text));
+		let title = "";
+		let filterText = "";
+		const list = new GroupedPickerList(selectItems, LIST_MAX_ROWS);
 		const previewText = new Text("", 1, 0);
-		container.addChild({
-			render: (width: number) => limitPreviewLines(previewText.render(width), PREVIEW_MAX_LINES),
-			invalidate: () => previewText.invalidate(),
-		});
 
 		const help = new Text("", 1, 0);
-		const listAdapter: PickerListAdapter = {
-			getSelectedItem: () => list.getSelectedItem(),
-			replaceItems: (items) => {
-				const state = list as unknown as { filteredItems: SelectItem[]; selectedIndex: number };
-				state.filteredItems = items;
-				state.selectedIndex = 0;
-			},
-			setSelectedIndex: (index) => list.setSelectedIndex(index),
-			handleInput: (data) => list.handleInput(data),
-			invalidate: () => list.invalidate(),
-		};
 		const controller = new PickerController({
 			copyItems,
 			selectItems,
 			searchIndex,
-			list: listAdapter,
+			list,
 			showPreview: (preview) => {
-				previewText.setText(`${theme.fg("accent", theme.bold(preview.title))}\n${preview.content}`);
+				const heading = preview.item ? `${preview.title} · ${preview.item.sourceLabel}` : preview.title;
+				previewText.setText(`${theme.fg("accent", theme.bold(heading))}\n${preview.content}`);
 			},
 			showFilter: (filter) => {
+				title = theme.fg("accent", theme.bold(" Copy message or snippet"));
+				filterText = theme.fg("dim", ` Filter: ${filter || "(none)"}`);
 				help.setText(theme.fg(
 					"dim",
-					`Filter: ${filter || "(none)"} · ${keyHint("tui.select.confirm", "copy")} · Right insert code · ${keyHint("tui.select.cancel", "cancel")}`,
+					`${keyText("tui.select.up")}/${keyText("tui.select.down")} select · ${keyHint("tui.select.confirm", "copy")} · Right insert code · ${keyHint("tui.select.cancel", "cancel")}`,
 				));
 			},
 			requestRender: () => tui.requestRender(),
 		});
 
-		list.onSelect = (selected) => done(`copy:${selected.value}`);
-		list.onCancel = () => done(null);
 		controller.initialize();
-		container.addChild(help);
-		container.addChild(new DynamicBorder((text: string) => theme.fg("borderAccent", text)));
 
 		return {
-			render: (width: number) => container.render(width),
+			render: (width: number) => renderPickerLayout({
+				height: tui.terminal.rows || 24,
+				title: truncateToWidth(title, width),
+				filter: truncateToWidth(filterText, width),
+				border: border.render(width)[0]!,
+				help: help.render(width),
+				preview: previewText.render(width),
+				renderList: (maxRows) => {
+					list.setMaxRows(maxRows);
+					return list.renderRows().map((row) => {
+						const color = row.style === "header" ? "muted"
+							: row.style === "selected" ? "accent"
+								: row.style === "item" ? "text" : row.style;
+						const text = row.style === "header" ? `${row.text} ${"─".repeat(Math.max(0, width))}` : row.text;
+						return theme.fg(color, truncateToWidth(text, width, row.style === "header" ? "" : "…"));
+					});
+				},
+			}),
 			invalidate: () => {
-				container.invalidate();
+				previewText.invalidate();
+				help.invalidate();
 				controller.refresh();
 			},
 			handleInput: (data: string) => {
-				if (keybindings.matches(data, "tui.select.cancel")) {
-					done(null);
-					return;
-				}
-				if (keybindings.matches(data, "tui.select.confirm")) {
-					const index = controller.selectedCopyItemIndex();
-					if (index !== undefined) done(`copy:${index}`);
-					return;
-				}
-				if (matchesKey(data, "right")) {
-					const index = controller.selectedCopyItemIndex();
-					if (index !== undefined && isInsertableCopyItem(copyItems[index]!)) {
-						done(`insert:${index}`);
-					}
-					return;
-				}
-				if (matchesKey(data, "backspace")) {
-					if (controller.filter.length > 0) {
-						controller.updateFilter(controller.filter.slice(0, -1));
-					}
-					return;
-				}
-				if (keybindings.matches(data, "tui.select.up")) {
-					controller.moveSelection(-1, true);
-					return;
-				}
-				if (keybindings.matches(data, "tui.select.down")) {
-					controller.moveSelection(1, true);
-					return;
-				}
-				if (keybindings.matches(data, "tui.select.pageUp")) {
-					controller.moveSelection(-maxVisible, false);
-					return;
-				}
-				if (keybindings.matches(data, "tui.select.pageDown")) {
-					controller.moveSelection(maxVisible, false);
-					return;
-				}
-				const printable = printableInput(data);
-				if (printable) {
-					controller.updateFilter(controller.filter + printable);
-					return;
-				}
-				controller.handleListInput(data);
+				const selection = handlePickerInput(data, { controller, copyItems, keybindings, matchesKey, printableInput });
+				if (selection !== undefined) done(selection ?? undefined);
 			},
 		};
+	}, {
+		// Overlays own their height; editor replacements also have an unknown footer/widget height.
+		overlay: true,
+		overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
 	});
-
-	if (!encoded) return undefined;
-	const [action, rawIndex] = encoded.split(":");
-	const index = Number.parseInt(rawIndex ?? "", 10);
-	const item = copyItems[index];
-	if (!item || (action !== "copy" && action !== "insert")) return undefined;
-	if (action === "insert" && !isInsertableCopyItem(item)) return undefined;
-	return { item, action };
 }
