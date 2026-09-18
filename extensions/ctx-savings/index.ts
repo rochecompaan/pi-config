@@ -43,22 +43,6 @@ export async function buildSavingsReport(
 	return buildRenderedSavings({ contextMode, currentUsage, worktreeUsage });
 }
 
-async function refreshStatus(
-	ctx: ExtensionContext,
-	reportBuilder: SavingsReportBuilder,
-): Promise<void> {
-	if (!ctx.hasUI) return;
-	try {
-		const report = await reportBuilder(ctx, { includeWorktree: false });
-		ctx.ui.setStatus("ctx-savings", report.status ?? undefined);
-	} catch (error) {
-		ctx.ui.setStatus(
-			"ctx-savings",
-			error instanceof ContextModeDatabaseUnavailableError ? "ctx: unavailable" : undefined,
-		);
-	}
-}
-
 export default function registerCtxSavings(
 	pi: ExtensionAPI,
 	reportBuilder: SavingsReportBuilder = buildSavingsReport,
@@ -73,20 +57,10 @@ export default function registerCtxSavings(
 				if (!(error instanceof ContextModeDatabaseUnavailableError)) throw error;
 				report = SQLITE_UNAVAILABLE_REPORT;
 			}
-			if (ctx.hasUI) {
-				ctx.ui.setStatus("ctx-savings", report.status ?? undefined);
-			}
 			pi.sendMessage(
 				{ customType: "ctx-savings", content: report.text, display: true },
 				{ triggerTurn: false },
 			);
 		},
-	});
-
-	pi.on("session_start", async (_event, ctx: ExtensionContext) => {
-		await refreshStatus(ctx, reportBuilder);
-	});
-	pi.on("turn_end", async (_event, ctx: ExtensionContext) => {
-		await refreshStatus(ctx, reportBuilder);
 	});
 }

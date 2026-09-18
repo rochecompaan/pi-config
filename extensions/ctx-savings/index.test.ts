@@ -46,14 +46,12 @@ const unavailableBuilder = async () => {
 	throw new ContextModeDatabaseUnavailableError("SQLite could not be initialized.");
 };
 
-test("session refresh shows ctx unavailable when SQLite cannot initialize", async () => {
+test("registers ctx-savings as a command without lifecycle status refreshes", () => {
 	const harness = createHarness();
-	const { ctx, statusCalls } = createContext();
 	registerCtxSavings(harness.pi as any, unavailableBuilder);
 
-	await harness.hooks.get("session_start")?.({}, ctx);
-
-	assert.deepEqual(statusCalls, [["ctx-savings", "ctx: unavailable"]]);
+	assert.ok(harness.commands.has("ctx-savings"));
+	assert.deepEqual([...harness.hooks.keys()], []);
 });
 
 test("ctx-savings command reports SQLite unavailable without throwing", async () => {
@@ -63,7 +61,7 @@ test("ctx-savings command reports SQLite unavailable without throwing", async ()
 
 	await harness.commands.get("ctx-savings")?.handler("", ctx);
 
-	assert.deepEqual(statusCalls, [["ctx-savings", "ctx: unavailable"]]);
+	assert.deepEqual(statusCalls, []);
 	assert.deepEqual(harness.messages, [
 		{
 			message: {
