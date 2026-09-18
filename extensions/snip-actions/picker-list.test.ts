@@ -40,14 +40,13 @@ test("groups actions beneath message titles without repeated timestamps or numbe
 	const rows = list.renderRows();
 	assert.deepEqual(rows.filter((row) => row.style === "header").map((row) => row.text), [
 		`── ${copyItems[0]!.sourceLabel} · Create the cluster`,
-		`── ${copyItems[3]!.sourceLabel} · Older message`,
+		`── ${copyItems[2]!.sourceLabel} · Older message`,
 	]);
 	const actions = rows.filter((row) => row.style === "item" || row.style === "selected");
-	assert.equal(actions.length, 5);
+	assert.equal(actions.length, 3);
 	assert.equal(actions[0]?.text, "  › Full message");
 	assert.match(actions[1]!.text, /^    Code · zsh\s+echo target_new$/);
-	assert.match(actions[2]!.text, /^    Inline\s+target_name$/);
-	assert.equal(actions[3]?.text, "    Full message");
+	assert.equal(actions[2]?.text, "    Full message");
 	for (const row of actions) assert.doesNotMatch(row.text, /\d+[:.] /);
 });
 
@@ -57,34 +56,32 @@ test("navigation skips headers and previews the exact selected copy target", asy
 	controller.moveSelection(1, true);
 	assert.equal(controller.selectedCopyItemIndex(), 1);
 	assert.equal(preview().content, "echo target_new");
-	controller.moveSelection(2, true);
-	assert.equal(controller.selectedCopyItemIndex(), 3);
-	assert.equal(preview().content, "Older **message**\n\n`target_old`");
 	controller.moveSelection(1, true);
-	assert.equal(preview().content, "target_old");
+	assert.equal(controller.selectedCopyItemIndex(), 2);
+	assert.equal(preview().content, "Older **message**\n\n`target_old`");
 	controller.moveSelection(1, true);
 	assert.equal(controller.selectedCopyItemIndex(), 0);
 	controller.moveSelection(-1, true);
-	assert.equal(controller.selectedCopyItemIndex(), 4);
+	assert.equal(controller.selectedCopyItemIndex(), 2);
 });
 
 test("filtering preserves newest-message and source order instead of interleaving ranked hits", async () => {
 	const { controller, list } = await createHarness();
 	controller.updateFilter("target");
 	const selected: number[] = [];
-	for (let i = 0; i < 5; i++) {
+	for (let i = 0; i < 3; i++) {
 		selected.push(controller.selectedCopyItemIndex()!);
 		controller.moveSelection(1, true);
 	}
-	assert.deepEqual(selected, [0, 1, 2, 3, 4]);
+	assert.deepEqual(selected, [0, 1, 2]);
 	assert.equal(list.renderRows().filter((row) => row.style === "header").length, 2);
 });
 
 test("a snippet-only match retains its parent header and its original copy target", async () => {
 	const { controller, list, preview } = await createHarness();
-	controller.updateFilter("inline target_name");
-	assert.equal(controller.selectedCopyItemIndex(), 2);
-	assert.equal(preview().content, "target_name");
+	controller.updateFilter("code zsh target_new");
+	assert.equal(controller.selectedCopyItemIndex(), 1);
+	assert.equal(preview().content, "echo target_new");
 	const rows = list.renderRows();
 	assert.equal(rows[0]?.text, `── ${copyItems[0]!.sourceLabel} · Create the cluster`);
 	assert.equal(rows.filter((row) => row.style === "selected").length, 1);

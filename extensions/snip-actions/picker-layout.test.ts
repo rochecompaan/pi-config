@@ -82,6 +82,34 @@ test("paging follows the resized list budget in both directions without skipping
 	}
 });
 
+test("the list keeps its space when filtering or scrolling changes its rendered row count", () => {
+	for (const height of [24, 45]) {
+		const render = (list: string[]) => renderPickerLayout({
+			height, title: "Copy", filter: "Filter", border: "border", help: ["esc cancel"],
+			preview: ["Preview", "short content"], renderList: () => list,
+		});
+		const full = render(["group", "selected", "another item", "counter"]);
+		for (const rows of [["group", "selected"], ["No matching items"]]) {
+			const sparse = render(rows);
+			assert.equal(sparse.indexOf("Preview"), full.indexOf("Preview"), "list/preview boundary must not jump");
+		}
+	}
+});
+
+test("short previews shrink below the list without changing its row budget", () => {
+	const budgets: number[] = [];
+	const render = (preview: string[]) => renderPickerLayout({
+		height: 45, title: "Copy", filter: "Filter", border: "border", help: ["esc cancel"], preview,
+		renderList: (maxRows) => { budgets.push(maxRows); return ["group", "selected"]; },
+	});
+	const short = render(["Preview", "short content"]);
+	const long = render(["Preview", ...Array(30).fill("long content")]);
+	assert.equal(short.indexOf("selected"), long.indexOf("selected"));
+	assert.equal(short.indexOf("Preview"), long.indexOf("Preview"));
+	assert.deepEqual(budgets, [12, 12]);
+	assert.ok(short.length < long.length, "only the preview area should grow");
+});
+
 test("an empty filtered list still fits and has no selected action", async () => {
 	const { list, render } = await createLayout();
 	list.replaceItems([]);

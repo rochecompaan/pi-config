@@ -1,4 +1,4 @@
-import type { CopyItem } from "./copy-items.ts";
+import type { CopyItem, CopyItemKind } from "./copy-items.ts";
 import { buildCopyItemPreview, type CopyItemPreview } from "./preview.ts";
 import { rankedFilterItems, type SearchIndexItem } from "./search.ts";
 
@@ -6,7 +6,8 @@ export type PickerListItem = {
 	value: string;
 	label: string;
 	description?: string;
-	group?: { id: string; label: string };
+	kind?: CopyItemKind;
+	group?: { id: string; label: string; sourceLabel?: string; title?: string };
 };
 
 export type PickerListAdapter = {

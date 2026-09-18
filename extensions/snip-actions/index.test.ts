@@ -30,6 +30,7 @@ export function keyText(id) { return id; }
 export class Container { addChild() {} render() { return []; } invalidate() {} }
 export class Text { setText() {} }
 export function truncateToWidth(text) { return text; }
+export function visibleWidth(text) { return text.length; }
 export function decodeKittyPrintable() { return undefined; }
 export function matchesKey() { return false; }
 `),

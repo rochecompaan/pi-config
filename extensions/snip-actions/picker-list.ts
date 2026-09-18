@@ -4,6 +4,8 @@ import type { PickerListAdapter, PickerListItem } from "./picker-controller.ts";
 export type PickerRow = {
 	text: string;
 	style: "header" | "item" | "selected" | "dim" | "warning";
+	item?: PickerListItem;
+	group?: PickerListItem["group"];
 };
 
 function messageTitle(content: string): string {
@@ -27,6 +29,8 @@ export function buildPickerItems(copyItems: readonly CopyItem[]): PickerListItem
 		.map((item) => [item.messageId, {
 			id: item.messageId,
 			label: `${item.sourceLabel} · ${messageTitle(item.content)}`,
+			sourceLabel: item.sourceLabel,
+			title: messageTitle(item.content),
 		}]));
 	const kinds = copyItems.map((item) => {
 		const kind = copyItemKindLabel(item.kind);
@@ -36,11 +40,14 @@ export function buildPickerItems(copyItems: readonly CopyItem[]): PickerListItem
 	const labelWidth = Math.max(0, ...kinds.map((kind) => kind.length));
 	return copyItems.map((item, index) => ({
 		value: String(index),
-		label: item.kind === "message" ? "Full message"
-			: `${kinds[index]!.padEnd(labelWidth)}  ${item.content.replace(/\s+/g, " ").trim()}`,
+		kind: item.kind,
+		label: item.kind === "message" ? "Full message" : kinds[index]!.padEnd(labelWidth),
+		description: item.kind === "message" ? undefined : item.content.replace(/\s+/g, " ").trim(),
 		group: messages.get(item.messageId) ?? {
 			id: item.messageId,
 			label: `${item.sourceLabel} · ${messageTitle(item.content)}`,
+			sourceLabel: item.sourceLabel,
+			title: messageTitle(item.content),
 		},
 	}));
 }
@@ -119,10 +126,11 @@ export class GroupedPickerList implements PickerListAdapter {
 			if (rows.length + headerRows + 1 > this.maxRows) break;
 			if (newGroup) {
 				if (rows.length > 0) rows.push({ text: "", style: "dim" });
-				rows.push({ text: `── ${item.group!.label}`, style: "header" });
+				rows.push({ text: `── ${item.group!.label}`, style: "header", group: item.group });
 			}
 			const selected = index === this.selectedIndex;
-			rows.push({ text: `${selected ? "  › " : "    "}${item.label}`, style: selected ? "selected" : "item" });
+			const description = item.description ? `  ${item.description}` : "";
+			rows.push({ text: `${selected ? "  › " : "    "}${item.label}${description}`, style: selected ? "selected" : "item", item });
 		}
 		return { rows, endIndex: index };
 	}

@@ -1,20 +1,39 @@
 // Adapted from @signalridge/pi-code-actions. See NOTICE.
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, keyHint, keyText } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, keyText } from "@earendil-works/pi-coding-agent";
 import {
 	decodeKittyPrintable,
 	matchesKey,
 	Text,
 	truncateToWidth,
+	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CopyItem, CopySelection } from "./copy-items.ts";
 import { PickerController } from "./picker-controller.ts";
-import { buildPickerItems, GroupedPickerList } from "./picker-list.ts";
+import { buildPickerItems, GroupedPickerList, type PickerRow } from "./picker-list.ts";
 import { handlePickerInput } from "./picker-input.ts";
 import { renderPickerLayout } from "./picker-layout.ts";
 import { buildSearchIndex } from "./search.ts";
 
 const LIST_MAX_ROWS = 12;
+
+function renderPickerRow(row: PickerRow, theme: Theme, width: number): string {
+	if (row.style === "header") {
+		const heading = row.group?.title
+			? `${theme.fg("muted", row.group.sourceLabel ?? "")} ${theme.fg("dim", "·")} ${theme.fg("mdHeading", theme.bold(row.group.title))}`
+			: theme.fg("mdHeading", theme.bold(row.group?.label ?? row.text));
+		return truncateToWidth(`${theme.fg("borderMuted", "──")} ${heading} ${theme.fg("borderMuted", "─".repeat(width))}`, width, "");
+	}
+	if (!row.item) return theme.fg(row.style === "warning" ? "warning" : "dim", truncateToWidth(row.text, width));
+	const selected = row.style === "selected";
+	const color = row.item.kind === "code" ? "mdCode"
+		: row.item.kind === "quote" ? "mdQuote"
+			: row.item.kind === "pipe-message" ? "syntaxString" : "text";
+	const label = theme.fg(color, selected ? theme.bold(row.item.label) : row.item.label);
+	const description = row.item.description ? `  ${theme.fg(selected ? "text" : "muted", row.item.description)}` : "";
+	const text = truncateToWidth(`${theme.fg("accent", selected ? "  › " : "    ")}${label}${description}`, width);
+	return selected ? theme.bg("selectedBg", text + " ".repeat(Math.max(0, width - visibleWidth(text)))) : text;
+}
 
 function printableInput(data: string): string | undefined {
 	const kittyPrintable = decodeKittyPrintable(data);
@@ -34,7 +53,7 @@ export async function pickCopyItem(
 	const searchIndex = buildSearchIndex(copyItems, selectItems);
 
 	return ctx.ui.custom<CopySelection | undefined>((tui, theme, keybindings, done) => {
-		const border = new DynamicBorder((text: string) => theme.fg("borderAccent", text));
+		const border = new DynamicBorder((text: string) => theme.fg("borderMuted", text));
 		let title = "";
 		let filterText = "";
 		const list = new GroupedPickerList(selectItems, LIST_MAX_ROWS);
@@ -47,16 +66,19 @@ export async function pickCopyItem(
 			searchIndex,
 			list,
 			showPreview: (preview) => {
-				const heading = preview.item ? `${preview.title} · ${preview.item.sourceLabel}` : preview.title;
-				previewText.setText(`${theme.fg("accent", theme.bold(heading))}\n${preview.content}`);
+				const source = preview.item ? theme.fg("muted", ` · ${preview.item.sourceLabel}`) : "";
+				previewText.setText(`${theme.fg("mdHeading", theme.bold(preview.title))}${source}\n${theme.fg("text", preview.content)}`);
 			},
 			showFilter: (filter) => {
 				title = theme.fg("accent", theme.bold(" Copy message or snippet"));
-				filterText = theme.fg("dim", ` Filter: ${filter || "(none)"}`);
-				help.setText(theme.fg(
-					"dim",
-					`${keyText("tui.select.up")}/${keyText("tui.select.down")} select · ${keyHint("tui.select.confirm", "copy")} · Right insert code · ${keyHint("tui.select.cancel", "cancel")}`,
-				));
+				filterText = `${theme.fg("muted", " Filter: ")}${theme.fg(filter ? "accent" : "dim", filter || "(none)")}`;
+				const hint = (key: string, action: string) => `${theme.fg("accent", theme.bold(key))} ${theme.fg("muted", action)}`;
+				help.setText([
+					hint(`${keyText("tui.select.up")}/${keyText("tui.select.down")}`, "select"),
+					hint(keyText("tui.select.confirm"), "copy"),
+					hint("Right", "insert code"),
+					hint(keyText("tui.select.cancel"), "cancel"),
+				].join(theme.fg("dim", " · ")));
 			},
 			requestRender: () => tui.requestRender(),
 		});
@@ -73,13 +95,7 @@ export async function pickCopyItem(
 				preview: previewText.render(width),
 				renderList: (maxRows) => {
 					list.setMaxRows(maxRows);
-					return list.renderRows().map((row) => {
-						const color = row.style === "header" ? "muted"
-							: row.style === "selected" ? "accent"
-								: row.style === "item" ? "text" : row.style;
-						const text = row.style === "header" ? `${row.text} ${"─".repeat(Math.max(0, width))}` : row.text;
-						return theme.fg(color, truncateToWidth(text, width, row.style === "header" ? "" : "…"));
-					});
+					return list.renderRows().map((row) => renderPickerRow(row, theme, width));
 				},
 			}),
 			invalidate: () => {
@@ -95,6 +111,7 @@ export async function pickCopyItem(
 	}, {
 		// Overlays own their height; editor replacements also have an unknown footer/widget height.
 		overlay: true,
-		overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
+		// Preview height changes below the options instead of moving the entire picker.
+		overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-center" },
 	});
 }

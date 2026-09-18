@@ -35,11 +35,18 @@ test("collects newest messages first with the full message before extracts", () 
 			["newer", "message", "> Keep this quote\n| Hello,\n| world\nUse `main`."],
 			["newer", "quote", "Keep this quote"],
 			["newer", "pipe-message", "Hello,world"],
-			["newer", "inline", "main"],
 			["older", "message", "```sh\necho old\n```"],
 			["older", "code", "echo old"],
 		],
 	);
+});
+
+test("inline code stays in the full message but is never a standalone option", () => {
+	const content = "Use `main` and ``code with ` backticks``.\n\n```sh\necho kept\n```";
+	const items = collectCopyItems([{ ...newer, message: { role: "assistant", content } }] as never);
+	assert.deepEqual(items.map((item) => item.kind), ["message", "code"]);
+	assert.equal(items[0]?.content, content);
+	assert.equal(items[1]?.content, "echo kept");
 });
 
 test("excludes non-assistant, non-message, and empty assistant entries", () => {

@@ -94,6 +94,7 @@ export function collectCopyItems(entries: BranchEntry[]): CopyItem[] {
 		});
 
 		for (const extracted of extractCopyItems(content)) {
+			if (extracted.kind === "inline") continue;
 			items.push({
 				...extracted,
 				id: `${entry.id}:${extracted.kind}:${extracted.sourcePosition}`,

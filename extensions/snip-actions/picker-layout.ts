@@ -25,11 +25,13 @@ export function renderPickerLayout(parts: PickerLayout): string[] {
 	// Preview needs two separators; leave at least a header, an action and a counter.
 	const fullListRows = 12 + 1; // Content plus the scroll counter.
 	const previewRows = available >= 8 ? Math.min(10, Math.max(3, available - fullListRows - 2)) : 0;
-	const listRows = available - (previewRows > 0 ? previewRows + 2 : 0);
-	const list = parts.renderList(Math.max(2, Math.min(12, listRows - 1)));
+	const listRows = Math.min(fullListRows, available - (previewRows > 0 ? previewRows + 2 : 0));
+	const list = parts.renderList(Math.max(2, Math.min(12, listRows - 1))).slice(0, listRows);
+	// Keep the options viewport stable as groups, search results and counters change.
+	while (list.length < listRows) list.push("");
 	return [
 		...header,
-		...list.slice(0, listRows),
+		...list,
 		...(previewRows > 0
 			? [parts.border, ...limitPreviewLines(parts.preview, previewRows), parts.border]
 			: []),
