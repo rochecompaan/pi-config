@@ -185,6 +185,55 @@ for (const [name, text] of [
 	});
 }
 
+for (const [marker, replayLastAnswer] of [["YES", true], ["NO", false]] as const) {
+	test(`parses ${marker} answer replay without leaking the control into the prompt`, async () => {
+		const result = await completeHandoffPrompt(
+			completionContext({
+				stopReason: "stop",
+				content: [{ type: "text", text: `HANDOFF_ACTION: WAIT\r\nHANDOFF_REPLAY_LAST_ANSWER: ${marker}\r\n\r\n## Context\r\nCheckpoint` }],
+			}),
+			completionUserMessage,
+			new AbortController().signal,
+			"handoff-session",
+		);
+		assert.deepEqual(result, { action: "wait", replayLastAnswer, prompt: "## Context\nCheckpoint" });
+	});
+}
+
+for (const controls of [
+	"HANDOFF_REPLAY_LAST_ANSWER: MAYBE",
+	"HANDOFF_REPLAY_LAST_ANSWER: yes",
+	"HANDOFF_REPLAY_LAST_ANSWER YES",
+	"HANDOFF_REPLAY_LAST_ANSWER: YES\n\nHANDOFF_REPLAY_LAST_ANSWER: NO",
+	"HANDOFF_REPLAY_LAST_ANSWER: YES\nHANDOFF_REPLAY_LAST_ANSWER: YES",
+	"HANDOFF_REPLAY_LAST_ANSWER: YES\n\n## Context\nCheckpoint\nHANDOFF_REPLAY_LAST_ANSWER: NO",
+	"## Context\nCheckpoint\nHANDOFF_REPLAY_LAST_ANSWER: YES",
+]) {
+	test(`rejects malformed or duplicate replay controls: ${controls.replaceAll("\n", " / ")}`, async () => {
+		await assert.rejects(completeHandoffPrompt(
+			completionContext({
+				stopReason: "stop",
+				content: [{ type: "text", text: `HANDOFF_ACTION: WAIT\n${controls}\n\nCheckpoint` }],
+			}),
+			completionUserMessage,
+			new AbortController().signal,
+			"handoff-session",
+		), /invalid.*replay/i);
+	});
+}
+
+test("a replay control without checkpoint text is still an empty handoff", async () => {
+	await assert.rejects(completeHandoffPrompt(
+		completionContext({
+			stopReason: "stop",
+			content: [{ type: "text", text: "HANDOFF_ACTION: WAIT\nHANDOFF_REPLAY_LAST_ANSWER: YES\n\n" }],
+		}),
+		completionUserMessage,
+		new AbortController().signal,
+		"handoff-session",
+	), /empty prompt/i);
+});
+
 test("distinguishes current and legacy manual goals from automatic rollover policy", async () => {
 	const generation = await import("../../extensions/handoff-generation.ts");
 	assert.equal(typeof (generation as any).generateHandoffPrompt, "function");
@@ -301,6 +350,52 @@ test("distinguishes current and legacy manual goals from automatic rollover poli
 		receivedRequests[1].systemPrompt,
 		/do not appear in the user conversation, preparation transcript, or manual goal/,
 	);
+});
+
+test("automatic classification receives the exact candidate and labels internal extension context", async () => {
+	const answer = "  The proxy times out.\n\n```ts\ntimeout: 30\n```\n";
+	const requests: any[] = [];
+	const ctx: any = {
+		model: { provider: "test", id: "model" },
+		modelRegistry: {
+			async complete(_model: unknown, request: any) {
+				requests.push(request);
+				return { stopReason: "stop", content: [{ type: "text", text: "HANDOFF_ACTION: WAIT\nHANDOFF_REPLAY_LAST_ANSWER: YES\n\ncheckpoint" }] };
+			},
+		},
+		ui: { custom: (factory: Function) => new Promise((resolve) => factory({}, {}, {}, resolve)) },
+	};
+	const runtime: any = {
+		uuidv7: () => "generation",
+		BorderedLoader: class { signal = new AbortController().signal; },
+		// Pi converts custom messages to user messages and discards customType.
+		convertToLlm: (messages: any[]) => messages.map((message) => ({
+			role: message.role === "custom" ? "user" : message.role,
+			content: message.content,
+		})),
+		serializeConversation: JSON.stringify,
+	};
+	const messages: any[] = [
+		{ role: "user", content: "Explain the timeout", timestamp: 1 },
+		{ role: "custom", customType: "background-result", content: "Background task completed", display: true, timestamp: 2 },
+		{ role: "assistant", content: [{ type: "thinking", thinking: "private reasoning" }, { type: "text", text: answer }], stopReason: "stop", timestamp: 3 },
+	];
+	const input = {
+		ctx, messages,
+		preparationMessages: [{ role: "assistant", content: [{ type: "text", text: "Updated TODO-a1b2c3d4" }], stopReason: "stop", timestamp: 4 }] as any[],
+		intent: { kind: "automatic" } as const,
+	};
+	assert.deepEqual(await generateHandoffPrompt(input, async () => runtime), {
+		action: "wait", replayLastAnswer: true, prompt: "checkpoint",
+	});
+	const request = requests[0].messages[0].content[0].text;
+	const candidate = request.split("## Answer Replay Candidate\n\n")[1].split("\n\n##")[0];
+	assert.equal(JSON.parse(candidate), answer);
+	assert.ok(request.includes("[Internal extension message: background-result]"));
+	assert.equal(messages[1].content, "Background task completed", "serialization must not mutate source history");
+
+	await generateHandoffPrompt({ ...input, intent: { kind: "manual", goal: "review" } }, async () => runtime);
+	assert.ok(!requests[1].messages[0].content[0].text.includes("## Answer Replay Candidate"));
 });
 
 test("fails closed for a legacy automatic call across an activation", async () => {

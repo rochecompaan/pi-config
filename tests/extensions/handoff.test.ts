@@ -60,6 +60,7 @@ function createCommandContext(options: {
 	const replacementEditor: string[] = [];
 	const replacementMessages: Array<{ message: unknown; options: unknown }> = [];
 	const replacementUserMessages: string[] = [];
+	const replacementDelivery: string[] = [];
 	const sessionOptions: any[] = [];
 	let manualEditorCalls = 0;
 	const replacementCtx = {
@@ -68,9 +69,13 @@ function createCommandContext(options: {
 			notify(message: string, level: string) { notices.push({ message, level }); },
 		},
 		async sendMessage(message: unknown, sendOptions: unknown) {
+			replacementDelivery.push((message as any).customType);
 			replacementMessages.push({ message, options: sendOptions });
 		},
-		async sendUserMessage(content: string) { replacementUserMessages.push(content); },
+		async sendUserMessage(content: string) {
+			replacementDelivery.push("user");
+			replacementUserMessages.push(content);
+		},
 	};
 	const ctx: any = {
 		mode: "tui",
@@ -108,6 +113,8 @@ function createCommandContext(options: {
 		replacementEditor,
 		replacementMessages,
 		replacementUserMessages,
+		replacementDelivery,
+		replacementCtx,
 		sessionOptions,
 		getManualEditorCalls: () => manualEditorCalls,
 	};
@@ -833,6 +840,160 @@ for (const action of ["continue", "offer"] as const) {
 	});
 }
 
+const originalAnswer = "  The proxy sets the timeout.\n\n```ts\n  timeout: 30\n```\n\nSee [the guide](https://example.test).\n";
+const answerBranch = () => [
+	{ type: "message", id: "question", message: { role: "user", content: "Explain where the timeout comes from", timestamp: 1 } },
+	{
+		type: "message", id: "answer",
+		message: {
+			role: "assistant", stopReason: "stop", timestamp: 2,
+			content: [
+				{ type: "thinking", thinking: "Do not display this reasoning." },
+				{ type: "text", text: "  The proxy sets the timeout.\n\n```ts\n  timeout: 30\n```\n" },
+				{ type: "text", text: "See [the guide](https://example.test).\n" },
+			],
+		},
+	},
+];
+
+for (const action of ["wait", "continue", "offer"] as const) {
+	test(`automatic ${action} replays the original answer once, not the preparation report`, async () => {
+		const harness = createHarness({ generatePrompt: async () => ({ action, prompt: "checkpoint", replayLastAnswer: true }) });
+		const command = createCommandContext({ usageTokens: 150_000, branch: answerBranch() });
+		await beginAutomaticHandoff(harness, command);
+		await finalizeAutomaticHandoff(harness, command, "Updated TODO-a1b2c3d4. This is not the answer.");
+		await harness.events.get("agent_settled")?.({}, command.ctx);
+		await harness.commandHandler("--auto-finalize", command.ctx);
+
+		const replays = command.replacementMessages.filter((entry: any) => entry.message.customType === "handoff-answer");
+		assert.equal(replays.length, 1);
+		assert.deepEqual(replays[0], {
+			message: { customType: "handoff-answer", content: `Answer from previous session:\n\n${originalAnswer}`, display: true },
+			options: { triggerTurn: false },
+		});
+		assert.deepEqual(command.replacementDelivery, action === "wait"
+			? ["handoff-context", "handoff-answer"] : ["handoff-answer", "user"]);
+		assert.deepEqual(command.replacementUserMessages, action === "wait" ? [] : ["checkpoint"]);
+		assert.equal(command.sessionOptions.length, 1);
+	});
+}
+
+for (const replayLastAnswer of [false, undefined]) {
+	test(`automatic handoff skips replay for decision ${replayLastAnswer}`, async () => {
+		const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer }) });
+		const command = createCommandContext({ usageTokens: 150_000, branch: answerBranch() });
+		await beginAutomaticHandoff(harness, command);
+		await finalizeAutomaticHandoff(harness, command);
+		assert.deepEqual(command.replacementDelivery, ["handoff-context"]);
+	});
+}
+
+for (const [name, change] of [
+	["aborted", (branch: any[]) => { branch[1].message.stopReason = "aborted"; }],
+	["error", (branch: any[]) => { branch[1].message.stopReason = "error"; }],
+	["truncated", (branch: any[]) => { branch[1].message.stopReason = "length"; }],
+	["tool call", (branch: any[]) => { branch[1].message.content.push({ type: "toolCall", id: "tool", name: "read", arguments: {} }); }],
+	["thinking only", (branch: any[]) => { branch[1].message.content = [{ type: "thinking", thinking: "not an answer" }]; }],
+	["blank text", (branch: any[]) => { branch[1].message.content = [{ type: "text", text: " \n " }]; }],
+	["new user message", (branch: any[]) => { branch.push({ type: "message", id: "later-user", message: { role: "user", content: "Now do something else" } }); }],
+	["later failed assistant", (branch: any[]) => { branch.push({ type: "message", id: "later-assistant", message: { role: "assistant", stopReason: "error", content: [] } }); }],
+	["no user question", (branch: any[]) => { branch.shift(); }],
+	["previous replay", (branch: any[]) => { branch.push({ type: "custom_message", id: "old-replay", customType: "handoff-answer", content: "old replay", display: true }); }],
+] as const) {
+	test(`positive classification cannot replay an ineligible source: ${name}`, async () => {
+		const branch: any[] = answerBranch();
+		change(branch);
+		const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: true }) });
+		const command = createCommandContext({ usageTokens: 150_000, branch });
+		await beginAutomaticHandoff(harness, command);
+		await finalizeAutomaticHandoff(harness, command);
+		assert.deepEqual(command.replacementDelivery, ["handoff-context"]);
+	});
+}
+
+test("a trailing background notice does not hide the last assistant answer from replay", async () => {
+	const branch: any[] = answerBranch();
+	branch.push({
+		type: "custom_message", id: "background-notification", timestamp: "2026-09-18T00:00:00Z",
+		customType: "background-result", content: "Background check completed", display: true,
+	});
+	const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: true }) });
+	const command = createCommandContext({ usageTokens: 150_000, branch });
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
+	const replay = command.replacementMessages.find((entry: any) => entry.message.customType === "handoff-answer") as any;
+	assert.equal(replay?.message.content, `Answer from previous session:\n\n${originalAnswer}`);
+	assert.deepEqual(command.replacementUserMessages, []);
+});
+
+test("automatic classification preserves internal message provenance in the source snapshot", async () => {
+	let source: any[] = [];
+	const branch: any[] = answerBranch();
+	branch.splice(1, 0, {
+		type: "custom_message", id: "background-notification", timestamp: "2026-09-18T00:00:00Z",
+		customType: "background-result", content: "Worker finished", display: true,
+	});
+	const harness = createHarness({ generatePrompt: async ({ messages }) => {
+		source = messages;
+		return { action: "wait", prompt: "checkpoint", replayLastAnswer: false };
+	} });
+	const command = createCommandContext({ usageTokens: 150_000, branch });
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
+	assert.equal(source[1].role, "custom");
+	assert.equal(source[1].customType, "background-result");
+	assert.equal(source[1].content, "Worker finished");
+	assert.equal(source.at(-1).role, "assistant");
+	assert.deepEqual(command.replacementDelivery, ["handoff-context"]);
+});
+
+test("manual handoff ignores a positive replay decision", async () => {
+	const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: true }) });
+	const command = createCommandContext({ branch: answerBranch() });
+	await harness.commandHandler("review the work", command.ctx);
+	assert.deepEqual(command.replacementDelivery, []);
+	assert.deepEqual(command.replacementEditor, ["edited prompt"]);
+});
+
+test("cancelled replacement never replays an answer", async () => {
+	const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: true }) });
+	const command = createCommandContext({ usageTokens: 150_000, branch: answerBranch(), newSessionCancelled: true });
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
+	assert.deepEqual(command.replacementDelivery, []);
+});
+
+for (const action of ["wait", "continue", "offer"] as const) {
+	test(`${action} replay failure stages the checkpoint and original answer without starting work`, async () => {
+		const harness = createHarness({ generatePrompt: async () => ({ action, prompt: "checkpoint", replayLastAnswer: true }) });
+		const command = createCommandContext({ usageTokens: 150_000, branch: answerBranch() });
+		const sendMessage = command.replacementCtx.sendMessage;
+		command.replacementCtx.sendMessage = async (message: any, options: unknown) => {
+			if (message.customType === "handoff-answer") throw new Error("replay unavailable");
+			await sendMessage(message, options);
+		};
+		await beginAutomaticHandoff(harness, command);
+		await finalizeAutomaticHandoff(harness, command);
+		assert.equal(command.replacementEditor.length, 1);
+		assert.ok(command.replacementEditor[0].includes("checkpoint"));
+		assert.ok(command.replacementEditor[0].includes(originalAnswer));
+		assert.deepEqual(command.replacementUserMessages, []);
+		assert.match(command.notices.at(-1)?.message ?? "", /replay unavailable/);
+	});
+}
+
+test("failed WAIT context injection preserves the selected answer with the checkpoint", async () => {
+	const harness = createHarness({ generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: true }) });
+	const command = createCommandContext({ usageTokens: 150_000, branch: answerBranch() });
+	command.replacementCtx.sendMessage = async () => { throw new Error("injection unavailable"); };
+	await beginAutomaticHandoff(harness, command);
+	await finalizeAutomaticHandoff(harness, command);
+	assert.equal(command.replacementEditor.length, 1);
+	assert.ok(command.replacementEditor[0].includes("checkpoint"));
+	assert.ok(command.replacementEditor[0].includes(originalAnswer));
+	assert.deepEqual(command.replacementUserMessages, []);
+});
+
 const automaticErrorCases: Array<{
 	name: string;
 	dependencies?: Partial<HandoffDependencies>;
@@ -862,6 +1023,10 @@ const automaticErrorCases: Array<{
 	{
 		name: "prompt generation has no action",
 		dependencies: { generatePrompt: async () => "generated prompt" as any },
+	},
+	{
+		name: "replay decision is not a boolean",
+		dependencies: { generatePrompt: async () => ({ action: "wait", prompt: "checkpoint", replayLastAnswer: "YES" }) as any },
 	},
 	{
 		name: "session switch is cancelled",

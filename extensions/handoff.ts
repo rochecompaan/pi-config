@@ -36,6 +36,7 @@ import {
 	type GeneratedHandoff,
 	type HandoffIntent,
 } from "./handoff-generation.ts";
+import { getLastAnswerCandidate } from "./handoff-answer.ts";
 
 export type HandoffDependencies = {
 	generatePrompt: (input: {
@@ -75,10 +76,20 @@ function isGeneratedHandoff(value: unknown): value is GeneratedHandoff {
 		candidate.action === "continue" ||
 		candidate.action === "offer" ||
 		candidate.action === "wait"
-	) && typeof candidate.prompt === "string";
+	) && typeof candidate.prompt === "string" &&
+		(candidate.replayLastAnswer === undefined || typeof candidate.replayLastAnswer === "boolean");
 }
 
-function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
+function entryToMessage(entry: SessionEntry, includeCustomMessages: boolean): AgentMessage | undefined {
+	if (includeCustomMessages && entry.type === "custom_message") {
+		return {
+			role: "custom",
+			customType: entry.customType,
+			content: entry.content,
+			display: entry.display,
+			timestamp: new Date(entry.timestamp).getTime(),
+		};
+	}
 	if (entry.type === "message") {
 		return entry.message;
 	}
@@ -121,7 +132,7 @@ function getPreparationAssistantStatus(
 		: "completed";
 }
 
-function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
+function getHandoffMessages(branch: SessionEntry[], includeCustomMessages = false): AgentMessage[] {
 	let compactionIndex = -1;
 	for (let i = branch.length - 1; i >= 0; i--) {
 		if (branch[i].type === "compaction") {
@@ -130,7 +141,7 @@ function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 		}
 	}
 	if (compactionIndex < 0) {
-		return branch.map(entryToMessage).filter((message) => message !== undefined);
+		return branch.map((entry) => entryToMessage(entry, includeCustomMessages)).filter((message) => message !== undefined);
 	}
 
 	const compaction = branch[compactionIndex];
@@ -141,7 +152,7 @@ function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 		...(firstKeptIndex >= 0 ? branch.slice(firstKeptIndex, compactionIndex) : []),
 		...branch.slice(compactionIndex + 1),
 	];
-	return compactedBranch.map(entryToMessage).filter((message) => message !== undefined);
+	return compactedBranch.map((entry) => entryToMessage(entry, includeCustomMessages)).filter((message) => message !== undefined);
 }
 
 async function readJsonSettings(path: string): Promise<unknown> {
@@ -285,6 +296,10 @@ export function registerHandoffExtension(
 			return;
 		}
 		const stagedPrompt = automatic ? generatedPrompt : editedPrompt;
+		const answer = automatic && generatedResult.replayLastAnswer === true
+			? getLastAnswerCandidate(messages) : undefined;
+		const replayContent = answer === undefined ? undefined : `Answer from previous session:\n\n${answer}`;
+		const fallbackPrompt = replayContent === undefined ? stagedPrompt : `${stagedPrompt}\n\n${replayContent}`;
 		const parentSession = currentSessionFile;
 		let newSessionResult: Awaited<ReturnType<typeof ctx.newSession>>;
 		try {
@@ -300,14 +315,31 @@ export function registerHandoffExtension(
 									display: true,
 								}, { triggerTurn: false });
 							} catch (error) {
-								replacementCtx.ui.setEditorText(stagedPrompt);
+								replacementCtx.ui.setEditorText(fallbackPrompt);
 								replacementCtx.ui.notify(
 									`Automatic handoff context injection failed: ${error instanceof Error ? error.message : String(error)}. Checkpoint staged; no agent turn was started.`,
 									"error",
 								);
+								return;
 							}
-							return;
 						}
+						if (replayContent !== undefined) {
+							try {
+								await replacementCtx.sendMessage({
+									customType: "handoff-answer",
+									content: replayContent,
+									display: true,
+								}, { triggerTurn: false });
+							} catch (error) {
+								replacementCtx.ui.setEditorText(fallbackPrompt);
+								replacementCtx.ui.notify(
+									`Automatic handoff answer replay failed: ${error instanceof Error ? error.message : String(error)}. Checkpoint and answer staged; no agent turn was started.`,
+									"error",
+								);
+								return;
+							}
+						}
+						if (handoffAction === "wait") return;
 						try {
 							await replacementCtx.sendUserMessage(stagedPrompt);
 						} catch (error) {
@@ -346,7 +378,7 @@ export function registerHandoffExtension(
 			return;
 		}
 		const branch = ctx.sessionManager.getBranch();
-		const sourceMessages = getHandoffMessages(branch);
+		const sourceMessages = getHandoffMessages(branch, true);
 		const preparationBoundaryEntryId = ctx.sessionManager.getLeafId();
 		if (sourceMessages.length === 0) {
 			disableAutomatic(ctx, "No conversation to hand off.");
