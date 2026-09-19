@@ -5,7 +5,7 @@ import {
 	extractSafeAccountLabel,
 	parseWeeklyLimit,
 	type FooterTone,
-	type TruncateToWidth,
+	type VisibleWidth,
 	type WeeklyLimit,
 } from "./core.ts";
 
@@ -13,7 +13,26 @@ const CODEX_PROVIDER = "openai-codex";
 
 export interface StatusFooterDependencies {
 	now(): number;
-	truncateToWidth: TruncateToWidth;
+	visibleWidth: VisibleWidth;
+}
+
+const GRUVBOX_RGB: Record<FooterTone, readonly [number, number, number]> = {
+	model: [131, 165, 152],
+	thinking: [211, 134, 155],
+	context: [142, 192, 124],
+	quota: [250, 189, 47],
+	connected: [184, 187, 38],
+	branch: [214, 93, 14],
+	account: [235, 219, 178],
+	warning: [254, 128, 25],
+	error: [251, 73, 52],
+	cost: [254, 128, 25],
+	dim: [102, 92, 84],
+};
+
+function styleGruvboxText(tone: FooterTone, text: string): string {
+	const [red, green, blue] = GRUVBOX_RGB[tone];
+	return `\u001b[38;2;${red};${green};${blue}m${text}\u001b[39m`;
 }
 
 function collectSessionCost(ctx: ExtensionContext): number {
@@ -59,7 +78,7 @@ export function registerStatusFooter(
 		if (ctx.mode !== "tui") return;
 
 		await refreshAccountLabel(ctx);
-		ctx.ui.setFooter((tui, theme, footerData) => {
+		ctx.ui.setFooter((tui, _theme, footerData) => {
 			const render = () => tui.requestRender();
 			requestRender = render;
 			const unsubscribeBranch = footerData.onBranchChange(render);
@@ -78,22 +97,7 @@ export function registerStatusFooter(
 						extensionStatuses: footerData.getExtensionStatuses(),
 						accountLabel,
 						nowMs: dependencies.now(),
-					}, width, dependencies.truncateToWidth, (tone: FooterTone, text: string) => {
-						const thinkingColors: Record<string, string> = {
-							off: "thinkingOff",
-							minimal: "thinkingMinimal",
-							low: "thinkingLow",
-							medium: "thinkingMedium",
-							high: "thinkingHigh",
-							xhigh: "thinkingXhigh",
-							max: "thinkingMax",
-						};
-						const color = tone === "thinking"
-							? thinkingColors[ctx.thinkingLevel] ?? "muted"
-							: tone === "branch" ? "syntaxKeyword"
-								: tone === "cost" ? "syntaxNumber" : tone;
-						return theme.fg(color as any, text);
-					});
+					}, width, dependencies.visibleWidth, styleGruvboxText);
 				},
 				invalidate() {},
 				dispose() {

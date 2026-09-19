@@ -12,22 +12,11 @@ function jwt(payload: Record<string, unknown>): string {
 	return `header.${encoded}.signature`;
 }
 
-function terminalWidth(text: string): number {
-	return [...text].reduce((width, character) =>
-		width + (/^[\u2e80-\u9fff\uf900-\ufaff]$/u.test(character) ? 2 : 1), 0);
-}
+const ANSI_ESCAPE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
-function truncateForTest(text: string, width: number): string {
-	if (terminalWidth(text) <= width) return text;
-	const output: string[] = [];
-	let used = 0;
-	for (const character of text) {
-		const characterWidth = terminalWidth(character);
-		if (used + characterWidth > width - 1) break;
-		output.push(character);
-		used += characterWidth;
-	}
-	return `${output.join("")}…`;
+function terminalWidth(text: string): number {
+	return [...text.replace(ANSI_ESCAPE, "")].reduce((width, character) =>
+		width + (/^[\u2e80-\u9fff\uf900-\ufaff]$/u.test(character) ? 2 : 1), 0);
 }
 
 const nowMs = Date.UTC(2026, 8, 18, 9, 0, 0);
@@ -53,16 +42,15 @@ function footerInput() {
 	};
 }
 
-test("renders the approved two-line footer from model, quota, git, and known extension statuses", () => {
-	assert.deepEqual(buildFooterLines(footerInput(), 120, truncateForTest), [
-		"gpt-5.4 high │ ctx 35% 132k/372k │ $2.337 │ Week 95% rem · 6d21h",
-		" main │ ● relay ○ voice │ AUTH · LOCAL",
+test("renders one bracketed line with dim middle dots and the git branch last", () => {
+	assert.deepEqual(buildFooterLines(footerInput(), 160, terminalWidth), [
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH · LOCAL] [ main]",
 	]);
 });
 
 test("uses the agreed context and weekly quota color thresholds", () => {
 	const cases = [
-		{ rawContextPercent: 70, displayedContextPercent: 70, usedPercent: 75, contextTone: "success", quotaTone: "success" },
+		{ rawContextPercent: 70, displayedContextPercent: 70, usedPercent: 75, contextTone: "context", quotaTone: "quota" },
 		{ rawContextPercent: 70.1, displayedContextPercent: 70, usedPercent: 76, contextTone: "warning", quotaTone: "warning" },
 		{ rawContextPercent: 90, displayedContextPercent: 90, usedPercent: 90, contextTone: "warning", quotaTone: "warning" },
 		{ rawContextPercent: 90.1, displayedContextPercent: 90, usedPercent: 91, contextTone: "error", quotaTone: "error" },
@@ -75,7 +63,7 @@ test("uses the agreed context and weekly quota color thresholds", () => {
 		const [line] = buildFooterLines(
 			input,
 			240,
-			truncateForTest,
+			terminalWidth,
 			(tone, text) => `<${tone}>${text}</${tone}>`,
 		);
 		assert.match(line, new RegExp(`<${testCase.contextTone}>ctx ${testCase.displayedContextPercent}%`));
@@ -100,10 +88,9 @@ test("includes only a safe email account label decoded from the active OAuth tok
 
 	const input = footerInput();
 	input.accountLabel = "work@example.com";
-	assert.equal(
-		buildFooterLines(input, 120, truncateForTest)[1],
-		" main │ ● relay ○ voice │ AUTH work@example.com · LOCAL",
-	);
+	const [line] = buildFooterLines(input, 160, terminalWidth);
+	assert.match(line, /\[AUTH work@example\.com\]/);
+	assert.doesNotMatch(line, /\b(?:GLOBAL|LOCAL)\b/);
 });
 
 test("selects the weekly Codex response-header window and derives remaining quota", () => {
@@ -122,10 +109,27 @@ test("selects the weekly Codex response-header window and derives remaining quot
 	}), null);
 });
 
-test("bounds both footer lines to terminal columns for wide branch characters", () => {
+test("wraps complete ANSI-styled components at an exact-fit boundary", () => {
+	const lines = buildFooterLines(
+		footerInput(),
+		38,
+		terminalWidth,
+		(tone, text) => `\u001b[38;5;1m${text}\u001b[39m`,
+	);
+	assert.deepEqual(lines.map((line) => line.replace(ANSI_ESCAPE, "")), [
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k]",
+		"[$2.337] [Week 95% rem · 6d21h]",
+		"[● relay ○ voice] [AUTH · LOCAL]",
+		"[ main]",
+	]);
+	assert.equal(terminalWidth(lines[0]), 38);
+});
+
+test("keeps a component wider than the terminal intact on its own line", () => {
 	const input = footerInput();
 	input.gitBranch = "界".repeat(20);
-	const lines = buildFooterLines(input, 24, truncateForTest);
-	assert.equal(lines.length, 2);
-	for (const line of lines) assert.ok(terminalWidth(line) <= 24, line);
+	const lines = buildFooterLines(input, 24, terminalWidth);
+	assert.equal(lines.at(-1), `[ ${"界".repeat(20)}]`);
+	assert.ok(terminalWidth(lines.at(-1) ?? "") > 24);
+	assert.doesNotMatch(lines.join("\n"), /…/);
 });
