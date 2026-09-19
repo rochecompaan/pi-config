@@ -33,6 +33,12 @@ else
           autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
         '';
 
+    piLoadout = pkgs.fetchzip {
+      name = "pi-loadout-0.0.35";
+      url = "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.35.tgz";
+      hash = "sha256-nTa3E3KzIky1fYVC3xCI364iCnkVM7GTi/IXo9K3P2Q=";
+    };
+
     piVimPackageLock = ./pi-vim-package-lock.json;
 
     piVimSrc = pkgs.fetchzip {
@@ -310,6 +316,7 @@ else
       piCodegraph
       piClaudeBridge
       piListen
+      piLoadout
       piMessengerBridge
       piRemote
       piSubagents
@@ -324,6 +331,7 @@ else
       "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"
       "${piListen}"
+      "${piLoadout}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${piVim}/lib/node_modules/pi-vim"

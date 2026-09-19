@@ -15,6 +15,7 @@
         "diff-package" = piDeps.diffPackage;
         "pi-codegraph" = piDeps.piCodegraph;
         "pi-listen" = piDeps.piListen;
+        "pi-loadout" = piDeps.piLoadout;
         "pi-messenger-bridge" = piDeps.piMessengerBridge;
         "pi-subagents" = piDeps.piSubagents;
         "pi-vim" = piDeps.piVim;
