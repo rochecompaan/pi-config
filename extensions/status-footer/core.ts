@@ -5,6 +5,24 @@ export interface WeeklyLimit {
 
 export type TruncateToWidth = (text: string, width: number) => string;
 
+export type FooterTone =
+	| "accent"
+	| "thinking"
+	| "branch"
+	| "success"
+	| "warning"
+	| "error"
+	| "cost"
+	| "dim"
+	| "muted";
+
+export type StyleFooterText = (tone: FooterTone, text: string) => string;
+
+interface FooterPart {
+	text: string;
+	tone?: FooterTone;
+}
+
 export interface FooterInput {
 	modelId: string;
 	thinkingLevel: string;
@@ -35,6 +53,18 @@ function compactNumber(value: number): string {
 	if (safe >= 1_000_000) return `${trimDecimal(safe / 1_000_000)}M`;
 	if (safe >= 1_000) return `${trimDecimal(safe / 1_000)}k`;
 	return String(Math.round(safe));
+}
+
+function contextTone(percent: number): FooterTone {
+	if (percent > 90) return "error";
+	if (percent > 70) return "warning";
+	return "success";
+}
+
+function quotaTone(remainingPercent: number): FooterTone {
+	if (remainingPercent < 10) return "error";
+	if (remainingPercent < 25) return "warning";
+	return "success";
 }
 
 function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
@@ -98,51 +128,74 @@ function stripAnsi(value: string | undefined): string {
 	return value?.replace(ANSI_ESCAPE, "").trim() ?? "";
 }
 
-function relayStatus(statuses: ReadonlyMap<string, string>): string {
+function relayStatus(statuses: ReadonlyMap<string, string>): FooterPart {
 	const status = stripAnsi(statuses.get("remote-pi:relay"));
-	if (/^🟢\s*relay\b/i.test(status)) return "● relay";
-	if (status) return "◐ relay";
-	return "○ relay";
+	if (/^🟢\s*relay\b/i.test(status)) return { text: "● relay", tone: "success" };
+	if (status) return { text: "◐ relay", tone: "warning" };
+	return { text: "○ relay", tone: "error" };
 }
 
-function voiceStatus(statuses: ReadonlyMap<string, string>): string {
+function voiceStatus(statuses: ReadonlyMap<string, string>): FooterPart {
 	const status = stripAnsi(statuses.get("voice"));
-	if (/^REC\b/i.test(status)) return "● voice";
-	if (status && !/^MIC\s+(?:LOCAL|STREAM|SETUP)$/i.test(status)) return "◐ voice";
-	return "○ voice";
+	if (/^REC\b/i.test(status)) return { text: "● voice", tone: "success" };
+	if (status && !/^MIC\s+(?:LOCAL|STREAM|SETUP)$/i.test(status)) {
+		return { text: "◐ voice", tone: "warning" };
+	}
+	return { text: "○ voice", tone: "error" };
 }
 
-function authStatus(input: FooterInput): string {
+function authStatus(input: FooterInput): FooterPart[] {
 	const status = stripAnsi(input.extensionStatuses.get("auth-scope"));
 	const scope = status.match(/\bauth:\s*(GLOBAL|LOCAL)\b/i)?.[1]?.toUpperCase();
-	const account = input.accountLabel ? ` ${input.accountLabel}` : "";
-	return `AUTH${account}${scope ? ` · ${scope}` : ""}`;
+	return [
+		{ text: "AUTH", tone: "dim" },
+		...(input.accountLabel ? [{ text: ` ${input.accountLabel}`, tone: "accent" as const }] : []),
+		...(scope ? [{ text: ` · ${scope}`, tone: "muted" as const }] : []),
+	];
 }
 
 export function buildFooterLines(
 	input: FooterInput,
 	width: number,
 	truncateToWidth: TruncateToWidth,
+	styleText: StyleFooterText = (_tone, text) => text,
 ): string[] {
-	const contextPercent = input.contextWindow > 0
-		? Math.round((finiteNonNegative(input.contextTokens) / input.contextWindow) * 100)
+	const rawContextPercent = input.contextWindow > 0
+		? (finiteNonNegative(input.contextTokens) / input.contextWindow) * 100
 		: 0;
-	const firstParts = [
-		`${input.modelId || "no-model"}${input.thinkingLevel && input.thinkingLevel !== "off" ? ` ${input.thinkingLevel}` : ""}`,
-		`ctx ${contextPercent}% ${compactNumber(input.contextTokens)}/${compactNumber(input.contextWindow)}`,
-		`$${finiteNonNegative(input.cost).toFixed(3)}`,
+	const contextPercent = Math.round(rawContextPercent);
+	const firstGroups: FooterPart[][] = [
+		[
+			{ text: input.modelId || "no-model", tone: "accent" },
+			...(input.thinkingLevel && input.thinkingLevel !== "off"
+				? [{ text: " " }, { text: input.thinkingLevel, tone: "thinking" as const }]
+				: []),
+		],
+		[{
+			text: `ctx ${contextPercent}% ${compactNumber(input.contextTokens)}/${compactNumber(input.contextWindow)}`,
+			tone: contextTone(rawContextPercent),
+		}],
+		[{ text: `$${finiteNonNegative(input.cost).toFixed(3)}`, tone: "cost" }],
 	];
 	if (input.weeklyLimit) {
-		const remaining = trimDecimal(Math.max(0, 100 - input.weeklyLimit.usedPercent));
-		firstParts.push(`Week ${remaining}% rem · ${formatResetDistance(input.weeklyLimit.resetAt, input.nowMs)}`);
+		const remainingPercent = Math.max(0, 100 - input.weeklyLimit.usedPercent);
+		const remaining = trimDecimal(remainingPercent);
+		firstGroups.push([{
+			text: `Week ${remaining}% rem · ${formatResetDistance(input.weeklyLimit.resetAt, input.nowMs)}`,
+			tone: quotaTone(remainingPercent),
+		}]);
 	}
-	const secondParts = [
-		` ${input.gitBranch?.trim() || "—"}`,
-		`${relayStatus(input.extensionStatuses)} ${voiceStatus(input.extensionStatuses)}`,
+	const secondGroups: FooterPart[][] = [
+		[{ text: ` ${input.gitBranch?.trim() || "—"}`, tone: "branch" }],
+		[relayStatus(input.extensionStatuses), { text: " " }, voiceStatus(input.extensionStatuses)],
 		authStatus(input),
 	];
-	return [
-		truncateToWidth(firstParts.join(" │ "), width),
-		truncateToWidth(secondParts.join(" │ "), width),
-	];
+	const renderLine = (groups: FooterPart[][]) => truncateToWidth(
+		groups.flatMap((group, index) => [
+			...(index > 0 ? [{ text: " │ ", tone: "dim" as const }] : []),
+			...group,
+		]).map((part) => part.tone ? styleText(part.tone, part.text) : part.text).join(""),
+		width,
+	);
+	return [renderLine(firstGroups), renderLine(secondGroups)];
 }

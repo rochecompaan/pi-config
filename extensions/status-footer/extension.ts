@@ -4,6 +4,7 @@ import {
 	buildFooterLines,
 	extractSafeAccountLabel,
 	parseWeeklyLimit,
+	type FooterTone,
 	type TruncateToWidth,
 	type WeeklyLimit,
 } from "./core.ts";
@@ -66,7 +67,7 @@ export function registerStatusFooter(
 			return {
 				render(width: number): string[] {
 					const usage = ctx.getContextUsage();
-					const lines = buildFooterLines({
+					return buildFooterLines({
 						modelId: ctx.model?.id ?? "no-model",
 						thinkingLevel: ctx.thinkingLevel,
 						contextTokens: usage?.tokens ?? 0,
@@ -77,8 +78,22 @@ export function registerStatusFooter(
 						extensionStatuses: footerData.getExtensionStatuses(),
 						accountLabel,
 						nowMs: dependencies.now(),
-					}, width, dependencies.truncateToWidth);
-					return lines.map((line) => theme.fg("dim", line));
+					}, width, dependencies.truncateToWidth, (tone: FooterTone, text: string) => {
+						const thinkingColors: Record<string, string> = {
+							off: "thinkingOff",
+							minimal: "thinkingMinimal",
+							low: "thinkingLow",
+							medium: "thinkingMedium",
+							high: "thinkingHigh",
+							xhigh: "thinkingXhigh",
+							max: "thinkingMax",
+						};
+						const color = tone === "thinking"
+							? thinkingColors[ctx.thinkingLevel] ?? "muted"
+							: tone === "branch" ? "syntaxKeyword"
+								: tone === "cost" ? "syntaxNumber" : tone;
+						return theme.fg(color as any, text);
+					});
 				},
 				invalidate() {},
 				dispose() {

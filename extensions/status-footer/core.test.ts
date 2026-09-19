@@ -60,6 +60,29 @@ test("renders the approved two-line footer from model, quota, git, and known ext
 	]);
 });
 
+test("uses the agreed context and weekly quota color thresholds", () => {
+	const cases = [
+		{ rawContextPercent: 70, displayedContextPercent: 70, usedPercent: 75, contextTone: "success", quotaTone: "success" },
+		{ rawContextPercent: 70.1, displayedContextPercent: 70, usedPercent: 76, contextTone: "warning", quotaTone: "warning" },
+		{ rawContextPercent: 90, displayedContextPercent: 90, usedPercent: 90, contextTone: "warning", quotaTone: "warning" },
+		{ rawContextPercent: 90.1, displayedContextPercent: 90, usedPercent: 91, contextTone: "error", quotaTone: "error" },
+	];
+
+	for (const testCase of cases) {
+		const input = footerInput();
+		input.contextTokens = input.contextWindow * (testCase.rawContextPercent / 100);
+		input.weeklyLimit = { usedPercent: testCase.usedPercent, resetAt };
+		const [line] = buildFooterLines(
+			input,
+			240,
+			truncateForTest,
+			(tone, text) => `<${tone}>${text}</${tone}>`,
+		);
+		assert.match(line, new RegExp(`<${testCase.contextTone}>ctx ${testCase.displayedContextPercent}%`));
+		assert.match(line, new RegExp(`<${testCase.quotaTone}>Week ${100 - testCase.usedPercent}% rem`));
+	}
+});
+
 test("includes only a safe email account label decoded from the active OAuth token", () => {
 	const accessToken = jwt({
 		"https://api.openai.com/profile": { email: "work@example.com" },

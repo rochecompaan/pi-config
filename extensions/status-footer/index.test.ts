@@ -117,6 +117,40 @@ test("installs a live two-line footer and refreshes it from Codex rate-limit hea
 	assert.equal(footerCalls.at(-1), undefined);
 });
 
+test("renders footer fields with the agreed semantic colors", async () => {
+	const harness = createHarness();
+	const { ctx, footerCalls } = createContext();
+	registerStatusFooter(harness.pi as any, { now: () => nowMs, truncateToWidth: truncateForTest });
+	await harness.hooks.get("session_start")?.({}, ctx);
+	await harness.hooks.get("after_provider_response")?.({
+		headers: {
+			"x-codex-secondary-used-percent": "5",
+			"x-codex-secondary-window-minutes": "10080",
+			"x-codex-secondary-reset-at": String(resetAt),
+		},
+	}, ctx);
+
+	const factory = footerCalls[0] as (tui: any, theme: any, footerData: any) => any;
+	const component = factory(
+		{ requestRender() {} },
+		{ fg: (color: string, text: string) => `<${color}>${text}</${color}>` },
+		{
+			getGitBranch: () => "main",
+			getExtensionStatuses: () => new Map([
+				["remote-pi:relay", "🟢 relay"],
+				["voice", "MIC LOCAL"],
+				["auth-scope", "auth: LOCAL"],
+			]),
+			onBranchChange: () => () => {},
+		},
+	);
+
+	assert.deepEqual(component.render(240), [
+		"<accent>gpt-5.4</accent> <thinkingHigh>high</thinkingHigh><dim> │ </dim><success>ctx 35% 132k/372k</success><dim> │ </dim><syntaxNumber>$2.337</syntaxNumber><dim> │ </dim><success>Week 95% rem · 6d21h</success>",
+		"<syntaxKeyword> main</syntaxKeyword><dim> │ </dim><success>● relay</success> <error>○ voice</error><dim> │ </dim><dim>AUTH</dim><accent> work@example.com</accent><muted> · LOCAL</muted>",
+	]);
+});
+
 test("does not carry Codex weekly quota across providers", async () => {
 	const harness = createHarness();
 	const { ctx, footerCalls } = createContext();
