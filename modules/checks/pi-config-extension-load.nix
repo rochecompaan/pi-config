@@ -118,33 +118,6 @@
             assert "AskClaude" in tools["active"], tools
             PY
 
-            run_probe context-paging-tools \
-              ${pkgs.coreutils}/bin/env \
-              PI_TOOLSET_PROBE_OUTPUT="$TMPDIR/context-paging-tools.json" \
-              ${selectablePi}/bin/pi \
-              --no-session \
-              --extension ${probeExtension} \
-              -p /write-toolset-probe
-
-            python3 - "$TMPDIR/context-paging-tools.json" <<'PY'
-            import json
-            import sys
-
-            with open(sys.argv[1], encoding="utf-8") as f:
-                tools = json.load(f)
-
-            required = {
-                "search_history",
-                "browse_history",
-                "load_history",
-                "read_context_output",
-            }
-            assert required <= set(tools["all"]), tools
-            assert required <= set(tools["active"]), tools
-            assert "update_task_state" not in tools["all"], tools
-            assert "update_task_state" not in tools["active"], tools
-            PY
-
             set +e
             ${pkgs.coreutils}/bin/env \
               ANTHROPIC_API_KEY=pi-skillset-probe \

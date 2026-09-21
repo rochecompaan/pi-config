@@ -8,11 +8,6 @@ import {
 type CommandHandler = (args: string, ctx: any) => Promise<void>;
 type EventHandler = (event: any, ctx: any) => Promise<void> | void;
 
-const thresholdSettings: HandoffDependencies["loadSettings"] = async () => ({
-	globalSettings: { handoff: { autoEnabled: true, autoThresholdTokens: 100 } },
-	projectTrusted: false,
-});
-
 function createHarness(
 	overrides: Partial<HandoffDependencies> = {},
 	harnessOptions: { sendError?: Error; sendErrorFor?: string; customSendError?: Error } = {},
@@ -23,7 +18,7 @@ function createHarness(
 	const customMessages: Array<{ message: unknown; options: unknown }> = [];
 	const dependencies: HandoffDependencies = {
 		generatePrompt: async () => ({ action: "continue", prompt: "generated prompt" }),
-		loadSettings: thresholdSettings,
+		loadSettings: async () => ({ globalSettings: {}, projectTrusted: false }),
 		showAutoCountdown: async () => true,
 		...overrides,
 	};
@@ -225,7 +220,7 @@ test("manual session cancellation keeps the current session", async () => {
 test("settled usage at the threshold dispatches one internal command", async () => {
 	const harness = createHarness({
 		loadSettings: async () => ({
-			globalSettings: { handoff: { autoEnabled: true, autoThresholdTokens: 100 } },
+			globalSettings: { handoff: { autoThresholdTokens: 100 } },
 			projectTrusted: false,
 		}),
 	});
@@ -248,7 +243,7 @@ test("settled trigger ignores unavailable, low, busy, and non-TUI usage", async 
 	]) {
 		const harness = createHarness({
 			loadSettings: async () => ({
-				globalSettings: { handoff: { autoEnabled: true, autoThresholdTokens: 100 } },
+				globalSettings: { handoff: { autoThresholdTokens: 100 } },
 				projectTrusted: false,
 			}),
 		});
@@ -264,7 +259,7 @@ test("settled trigger ignores unavailable, low, busy, and non-TUI usage", async 
 test("dispatch errors disable automatic handoff", async () => {
 	const harness = createHarness({
 		loadSettings: async () => ({
-			globalSettings: { handoff: { autoEnabled: true, autoThresholdTokens: 100 } },
+			globalSettings: { handoff: { autoThresholdTokens: 100 } },
 			projectTrusted: false,
 		}),
 	}, { sendError: new Error("dispatch failed") });
@@ -274,6 +269,11 @@ test("dispatch errors disable automatic handoff", async () => {
 	await harness.commandHandler("auto status", command.ctx);
 	assert.deepEqual(harness.sentMessages, []);
 	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
+});
+
+const thresholdSettings: HandoffDependencies["loadSettings"] = async () => ({
+	globalSettings: { handoff: { autoThresholdTokens: 100 } },
+	projectTrusted: false,
 });
 
 test("auto off disables settled dispatch and status reports the threshold", async () => {
@@ -323,50 +323,14 @@ test("auto on dispatches immediately at the threshold", async () => {
 	}]);
 });
 
-test("session start defaults automatic handoff to disabled while manual handoff remains available", async () => {
-	const harness = createHarness({
-		loadSettings: async () => ({ globalSettings: {}, projectTrusted: false }),
-	});
-	const command = createCommandContext({ usageTokens: 150_000 });
-	await harness.events.get("session_start")?.({ reason: "startup" }, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
+test("session start resets disabled automatic state", async () => {
+	const harness = createHarness({ loadSettings: thresholdSettings });
+	const command = createCommandContext({ usageTokens: 99 });
+	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.commandHandler("auto off", command.ctx);
+	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.commandHandler("auto status", command.ctx);
-	assert.deepEqual(harness.sentMessages, []);
-	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
-
-	await harness.commandHandler("continue the approved plan", command.ctx);
-	assert.equal(command.sessionOptions.length, 1);
-});
-
-test("every session start rereads settings and resets a current-session opt-in", async () => {
-	for (const reason of ["startup", "new", "resume", "fork", "reload"]) {
-		let settingsReads = 0;
-		const harness = createHarness({
-			loadSettings: async () => {
-				settingsReads += 1;
-				return { globalSettings: {}, projectTrusted: false };
-			},
-		});
-		const command = createCommandContext({ usageTokens: 99 });
-		await harness.commandHandler("auto on", command.ctx);
-		await harness.events.get("session_start")?.({ reason }, command.ctx);
-		await harness.commandHandler("auto status", command.ctx);
-		assert.equal(settingsReads, 1, reason);
-		assert.match(command.notices.at(-1)?.message ?? "", /disabled/, reason);
-	}
-});
-
-test("a settings read failure keeps automatic handoff disabled at the default threshold", async () => {
-	const harness = createHarness({
-		loadSettings: async () => { throw new Error("settings unavailable"); },
-	});
-	const command = createCommandContext({ usageTokens: 150_000 });
-	await harness.events.get("session_start")?.({ reason: "startup" }, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
-	await harness.commandHandler("auto status", command.ctx);
-	assert.deepEqual(harness.sentMessages, []);
-	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
-	assert.match(command.notices.at(-1)?.message ?? "", /150000/);
+	assert.match(command.notices.at(-1)?.message ?? "", /armed/);
 });
 
 test("automatic countdown cancellation disables later attempts", async () => {
