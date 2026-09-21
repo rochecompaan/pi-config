@@ -1,3 +1,4 @@
+export const DEFAULT_AUTO_ENABLED = false;
 export const DEFAULT_AUTO_THRESHOLD_TOKENS = 150_000;
 export const AUTO_HANDOFF_COUNTDOWN_SECONDS = 5;
 
@@ -25,7 +26,7 @@ export type AutoHandoffTriggerInput = {
 };
 
 export type AutoHandoffEvent =
-	| { type: "session-start" }
+	| { type: "session-start"; enabled: boolean }
 	| { type: "threshold-reached" }
 	| { type: "preparation-started" }
 	| { type: "preparation-settled" }
@@ -43,6 +44,20 @@ function readThresholdSetting(settings: unknown): { present: boolean; value?: un
 		return { present: false };
 	}
 	return { present: true, value: settings.handoff.autoThresholdTokens };
+}
+
+function readBooleanSetting(settings: unknown, key: string): boolean | undefined {
+	if (!isRecord(settings) || !isRecord(settings.handoff)) return undefined;
+	const value = settings.handoff[key];
+	return typeof value === "boolean" ? value : undefined;
+}
+
+export function resolveAutoEnabled(sources: HandoffSettingsSources): boolean {
+	const globalValue = readBooleanSetting(sources.globalSettings, "autoEnabled");
+	const projectValue = sources.projectTrusted
+		? readBooleanSetting(sources.projectSettings, "autoEnabled")
+		: undefined;
+	return projectValue ?? globalValue ?? DEFAULT_AUTO_ENABLED;
 }
 
 export function resolveAutoThresholdTokens(sources: HandoffSettingsSources): number {
@@ -81,7 +96,7 @@ export function shouldTriggerAutoHandoff(input: AutoHandoffTriggerInput): boolea
 export function transitionAutoHandoffState(_state: AutoHandoffState, event: AutoHandoffEvent): AutoHandoffState {
 	switch (event.type) {
 		case "session-start":
-			return "armed";
+			return event.enabled ? "armed" : "disabled";
 		case "threshold-reached":
 			return "countdown";
 		case "preparation-started":

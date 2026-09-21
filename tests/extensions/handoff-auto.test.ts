@@ -1,12 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	DEFAULT_AUTO_ENABLED,
 	DEFAULT_AUTO_THRESHOLD_TOKENS,
 	parseHandoffCommand,
+	resolveAutoEnabled,
 	resolveAutoThresholdTokens,
 	shouldTriggerAutoHandoff,
 	transitionAutoHandoffState,
 } from "../../extensions/handoff-auto.ts";
+
+test("resolves automatic enablement from global and trusted project settings", () => {
+	assert.equal(DEFAULT_AUTO_ENABLED, false);
+	assert.equal(resolveAutoEnabled({ globalSettings: {}, projectTrusted: false }), false);
+	assert.equal(resolveAutoEnabled({
+		globalSettings: { handoff: { autoEnabled: true } },
+		projectTrusted: false,
+	}), true);
+	assert.equal(resolveAutoEnabled({
+		globalSettings: { handoff: { autoEnabled: true } },
+		projectSettings: { handoff: { autoEnabled: false } },
+		projectTrusted: true,
+	}), false);
+	assert.equal(resolveAutoEnabled({
+		globalSettings: { handoff: { autoEnabled: false } },
+		projectSettings: { handoff: { autoEnabled: true } },
+		projectTrusted: false,
+	}), false);
+	assert.equal(resolveAutoEnabled({
+		globalSettings: { handoff: { autoEnabled: true } },
+		projectSettings: { handoff: { autoEnabled: "yes" } },
+		projectTrusted: true,
+	}), true);
+	const invalidBooleanWithValidThreshold = {
+		globalSettings: { handoff: { autoEnabled: "yes", autoThresholdTokens: 90_000 } },
+		projectTrusted: false,
+	};
+	assert.equal(resolveAutoEnabled(invalidBooleanWithValidThreshold), false);
+	assert.equal(resolveAutoThresholdTokens(invalidBooleanWithValidThreshold), 90_000);
+});
 
 test("uses the default when no threshold exists", () => {
 	assert.equal(
@@ -97,7 +129,14 @@ test("triggers only for an armed idle TUI at or above the threshold", () => {
 });
 
 test("applies every approved automatic phase transition", () => {
-	assert.equal(transitionAutoHandoffState("disabled", { type: "session-start" }), "armed");
+	assert.equal(
+		transitionAutoHandoffState("armed", { type: "session-start", enabled: false }),
+		"disabled",
+	);
+	assert.equal(
+		transitionAutoHandoffState("disabled", { type: "session-start", enabled: true }),
+		"armed",
+	);
 	assert.equal(transitionAutoHandoffState("armed", { type: "threshold-reached" }), "countdown");
 	assert.equal(transitionAutoHandoffState("countdown", { type: "preparation-started" }), "preparing");
 	assert.equal(transitionAutoHandoffState("preparing", { type: "preparation-settled" }), "finalizing");

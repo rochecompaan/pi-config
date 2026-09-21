@@ -23,8 +23,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	AUTO_HANDOFF_COUNTDOWN_SECONDS,
+	DEFAULT_AUTO_ENABLED,
 	DEFAULT_AUTO_THRESHOLD_TOKENS,
 	parseHandoffCommand,
+	resolveAutoEnabled,
 	resolveAutoThresholdTokens,
 	shouldTriggerAutoHandoff,
 	transitionAutoHandoffState,
@@ -220,7 +222,7 @@ export function registerHandoffExtension(
 	pi: ExtensionAPI,
 	dependencies: HandoffDependencies = defaultDependencies,
 ): void {
-	let autoState: AutoHandoffState = "armed";
+	let autoState: AutoHandoffState = "disabled";
 	let autoThresholdTokens = DEFAULT_AUTO_THRESHOLD_TOKENS;
 	let automaticPreparation: AutomaticHandoffPreparation | undefined;
 	const disableAutomatic = (
@@ -435,14 +437,19 @@ export function registerHandoffExtension(
 
 	pi.on("session_start", async (_event, ctx) => {
 		automaticPreparation = undefined;
-		autoState = transitionAutoHandoffState(autoState, { type: "session-start" });
 		autoThresholdTokens = DEFAULT_AUTO_THRESHOLD_TOKENS;
+		let autoEnabled = DEFAULT_AUTO_ENABLED;
 		try {
 			const settings = await dependencies.loadSettings(ctx);
 			autoThresholdTokens = resolveAutoThresholdTokens(settings);
+			autoEnabled = resolveAutoEnabled(settings);
 		} catch {
-			// Keep the documented default and armed state.
+			// Keep the documented disabled state and default threshold.
 		}
+		autoState = transitionAutoHandoffState(autoState, {
+			type: "session-start",
+			enabled: autoEnabled,
+		});
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {
