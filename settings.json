@@ -3,6 +3,9 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "xhigh",
+  "contextPaging": {
+    "enabled": true
+  },
   "handoff": {
     "autoThresholdTokens": 150000
   },

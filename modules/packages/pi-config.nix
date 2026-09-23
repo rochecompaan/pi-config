@@ -99,6 +99,8 @@
         cp ${claudeBridgeJson} "$out/claude-bridge.json"
 
         cp -r ${../../extensions} "$out/extensions"
+        chmod u+w "$out/extensions/context-paging"
+        rm "$out/extensions/context-paging"/*.test.ts
         cp -r ${../../skills} "$out/skills"
         cp -r ${../../themes} "$out/themes"
         cp -r ${../../agents} "$out/agents"
