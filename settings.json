@@ -4,7 +4,8 @@
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "xhigh",
   "contextPaging": {
-    "enabled": true
+    "enabled": true,
+    "tokenBudget": 128000
   },
   "handoff": {
     "autoThresholdTokens": 150000

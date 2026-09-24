@@ -72,6 +72,7 @@ test("observed session selection keeps recent active task state coherent", () =>
 		systemPrompt: "resident prompt",
 		activeTools: [{ name: "read", description: "Read files", parameters: { type: "object" } }],
 		modelContextWindow: 64_000,
+		tokenBudget: 64_000,
 	});
 
 	assert.equal(hasMarker(selected.messages, "ACTIVE_IMPLEMENTATION_REQUEST"), true);

@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { selectContext, type ResidentToolDefinition } from "./context-policy.ts";
+import {
+	DEFAULT_CONTEXT_TOKEN_BUDGET,
+	selectContext,
+	type ResidentToolDefinition,
+} from "./context-policy.ts";
 import { projectActiveBranch, type HistoryItem } from "./history.ts";
 import { HistoryNavigator } from "./navigator.ts";
 import { registerContextPagingTools, type HistorySnapshot } from "./tools.ts";
@@ -10,6 +14,11 @@ export type ContextPagingSettingsSources = {
 	globalSettings: unknown;
 	projectSettings?: unknown;
 	projectTrusted: boolean;
+};
+
+export type ResolvedContextPagingSettings = {
+	enabled: boolean;
+	tokenBudget: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,10 +32,27 @@ function readEnabledSetting(settings: unknown): boolean | undefined {
 		: undefined;
 }
 
+function readTokenBudgetSetting(settings: unknown): number | undefined {
+	if (!isRecord(settings) || !isRecord(settings.contextPaging)) return undefined;
+	const value = settings.contextPaging.tokenBudget;
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+		? value
+		: undefined;
+}
+
 /** Resolves trusted-project context-paging settings over global settings. */
-export function resolveContextPagingEnabled(sources: ContextPagingSettingsSources): boolean {
-	const projectValue = sources.projectTrusted ? readEnabledSetting(sources.projectSettings) : undefined;
-	return projectValue ?? readEnabledSetting(sources.globalSettings) ?? true;
+export function resolveContextPagingSettings(
+	sources: ContextPagingSettingsSources,
+): ResolvedContextPagingSettings {
+	const projectSettings = sources.projectTrusted ? sources.projectSettings : undefined;
+	return {
+		enabled: readEnabledSetting(projectSettings)
+			?? readEnabledSetting(sources.globalSettings)
+			?? true,
+		tokenBudget: readTokenBudgetSetting(projectSettings)
+			?? readTokenBudgetSetting(sources.globalSettings)
+			?? DEFAULT_CONTEXT_TOKEN_BUDGET,
+	};
 }
 
 async function readJsonSettings(path: string): Promise<unknown> {
@@ -71,7 +97,9 @@ export default function contextPagingExtension(
 	pi: ExtensionAPI,
 	settingsSources?: ContextPagingSettingsSources,
 ): void {
-	let enabled = settingsSources ? resolveContextPagingEnabled(settingsSources) : false;
+	let resolvedSettings: ResolvedContextPagingSettings = settingsSources
+		? resolveContextPagingSettings(settingsSources)
+		: { enabled: false, tokenBudget: DEFAULT_CONTEXT_TOKEN_BUDGET };
 	let allItems: HistoryItem[] = [];
 	const navigator = new HistoryNavigator();
 	const rebuild = (ctx: ExtensionContext): HistorySnapshot => {
@@ -89,14 +117,14 @@ export default function contextPagingExtension(
 	};
 
 	registerContextPagingTools(pi, {
-		isEnabled: () => enabled,
+		isEnabled: () => resolvedSettings.enabled,
 		snapshot: rebuild,
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!settingsSources) {
-			enabled = false;
-			enabled = resolveContextPagingEnabled(await loadSettings(ctx));
+			resolvedSettings = { ...resolvedSettings, enabled: false };
+			resolvedSettings = resolveContextPagingSettings(await loadSettings(ctx));
 		}
 		rebuildSafely(ctx);
 	});
@@ -107,7 +135,7 @@ export default function contextPagingExtension(
 		rebuildSafely(ctx);
 	});
 	pi.on("context", (event, ctx) => {
-		if (!enabled) return;
+		if (!resolvedSettings.enabled) return;
 
 		let rawHistoryItems: readonly HistoryItem[] | undefined;
 		try {
@@ -123,6 +151,7 @@ export default function contextPagingExtension(
 				systemPrompt: ctx.getSystemPrompt(),
 				activeTools: activeResidentTools(pi),
 				modelContextWindow: ctx.model?.contextWindow,
+				tokenBudget: resolvedSettings.tokenBudget,
 				rawHistoryItems,
 			});
 			return { messages: selection.messages };
@@ -133,7 +162,7 @@ export default function contextPagingExtension(
 		}
 	});
 	pi.on("session_before_compact", async (event) => {
-		if (!enabled) return;
+		if (!resolvedSettings.enabled) return;
 		if (event.reason === "threshold" || event.reason === "overflow") return { cancel: true };
 	});
 }

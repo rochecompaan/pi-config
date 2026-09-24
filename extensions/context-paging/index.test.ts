@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import contextPagingExtension, { resolveContextPagingEnabled } from "./index.ts";
+import contextPagingExtension, { resolveContextPagingSettings } from "./index.ts";
 import { HistoryNavigator } from "./navigator.ts";
 
 type Handler = (event: any, ctx: any) => unknown;
@@ -106,28 +106,79 @@ async function searchIds(harness: ReturnType<typeof createHarness>, query: strin
 	return response.details.references.map((reference: { historyId: string }) => reference.historyId);
 }
 
-test("resolves settings precedence and registers only paging lifecycle handlers", () => {
-	assert.equal(resolveContextPagingEnabled({ globalSettings: {}, projectTrusted: false }), true);
-	assert.equal(resolveContextPagingEnabled({
+test("resolves enabled setting precedence", () => {
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: {},
+		projectTrusted: false,
+	}).enabled, true);
+	assert.equal(resolveContextPagingSettings({
 		globalSettings: { contextPaging: { enabled: false } },
 		projectTrusted: false,
-	}), false);
-	assert.equal(resolveContextPagingEnabled({
+	}).enabled, false);
+	assert.equal(resolveContextPagingSettings({
 		globalSettings: { contextPaging: { enabled: false } },
 		projectSettings: { contextPaging: { enabled: true } },
 		projectTrusted: true,
-	}), true);
-	assert.equal(resolveContextPagingEnabled({
+	}).enabled, true);
+	assert.equal(resolveContextPagingSettings({
 		globalSettings: { contextPaging: { enabled: false } },
 		projectSettings: { contextPaging: { enabled: true } },
 		projectTrusted: false,
-	}), false);
-	assert.equal(resolveContextPagingEnabled({
+	}).enabled, false);
+	assert.equal(resolveContextPagingSettings({
 		globalSettings: { contextPaging: { enabled: true } },
 		projectSettings: { contextPaging: { enabled: "yes" } },
 		projectTrusted: true,
-	}), true);
+	}).enabled, true);
+});
 
+test("resolves valid token budgets by trusted source precedence", () => {
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: {},
+		projectTrusted: false,
+	}).tokenBudget, 128_000);
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: { contextPaging: { tokenBudget: 96_000 } },
+		projectTrusted: false,
+	}).tokenBudget, 96_000);
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: { contextPaging: { tokenBudget: 96_000 } },
+		projectSettings: { contextPaging: { tokenBudget: 72_000 } },
+		projectTrusted: true,
+	}).tokenBudget, 72_000);
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: { contextPaging: { tokenBudget: 96_000 } },
+		projectSettings: { contextPaging: { tokenBudget: 72_000 } },
+		projectTrusted: false,
+	}).tokenBudget, 96_000);
+});
+
+test("falls through invalid token budgets without throwing", () => {
+	for (const tokenBudget of [
+		0,
+		-1,
+		1.5,
+		"128000",
+		[],
+		{},
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		Number.MAX_SAFE_INTEGER + 1,
+	]) {
+		assert.equal(resolveContextPagingSettings({
+			globalSettings: { contextPaging: { tokenBudget } },
+			projectTrusted: false,
+		}).tokenBudget, 128_000);
+	}
+
+	assert.equal(resolveContextPagingSettings({
+		globalSettings: { contextPaging: { tokenBudget: 96_000 } },
+		projectSettings: { contextPaging: { tokenBudget: "invalid" } },
+		projectTrusted: true,
+	}).tokenBudget, 96_000);
+});
+
+test("registers only paging lifecycle handlers", () => {
 	const harness = createHarness();
 	assert.equal(harness.tools.length, 4);
 	assert.deepEqual([...harness.handlers.keys()].sort(), [
@@ -273,7 +324,10 @@ test("does not abort custom requests and preserves their canonical role", async 
 });
 
 test("does not mutate stored history and generates transient notices", async () => {
-	const harness = createHarness();
+	const harness = createHarness({
+		globalSettings: { contextPaging: { enabled: true, tokenBudget: 32_000 } },
+		projectTrusted: false,
+	});
 	const canonicalMessages = [user(`old ${"x".repeat(300_000)}`), user("current")];
 	const rawBefore = structuredClone(harness.branch());
 	const canonicalBefore = structuredClone(canonicalMessages);
@@ -285,6 +339,8 @@ test("does not mutate stored history and generates transient notices", async () 
 	assert.equal(harness.appendCalls(), 0);
 	assert.equal(first.messages.filter((message: any) => marker(message).includes("Context paging notice")).length, 1);
 	assert.equal(second.messages.filter((message: any) => marker(message).includes("Context paging notice")).length, 1);
+	assert.match(marker(first.messages[0]), /Older context left the 32,000-token rolling window\./);
+	assert.match(marker(second.messages[0]), /Older context left the 32,000-token rolling window\./);
 	assert.equal(hasMarker(harness.branch().map((item: any) => item.message), "Context paging notice"), false);
 });
 

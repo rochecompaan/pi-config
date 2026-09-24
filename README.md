@@ -35,6 +35,23 @@ pi-matt
 
 `ROCHE_PI_SKILLSET` accepts `superpowers` and `matt`; an unset value defaults to `superpowers`. For normal agent launches, `pi-matt` always selects Matt, even when `ROCHE_PI_SKILLSET=superpowers`. Both commands change the workflow skills and routing instructions only. Authentication, sessions, common extensions, local skills, models, and trust state remain under the same `~/.pi/agent` directory.
 
+## Context paging
+
+The packaged configuration enables context paging with a default rolling budget of 128,000 estimated tokens:
+
+```json
+{
+  "contextPaging": {
+    "enabled": true,
+    "tokenBudget": 128000
+  }
+}
+```
+
+`tokenBudget` is optional. It must be a positive safe integer. A trusted project's `.pi/settings.json` can override the global value. An untrusted project is ignored, and an invalid value falls through to the next valid source or the 128,000-token default.
+
+When the active model declares a smaller context window, the extension uses that smaller value. Paging notices show the effective rolling budget. The setting does not change output-page sizes or history recovery limits.
+
 ## Per-project usage
 
 A project can provide Pi without installing the Home Manager module. For a devenv project, add the flake input to `devenv.yaml`:
