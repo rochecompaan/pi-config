@@ -1,6 +1,6 @@
 // Adapted from @signalridge/pi-code-actions. See NOTICE.
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, keyText } from "@earendil-works/pi-coding-agent";
+import { keyText } from "@earendil-works/pi-coding-agent";
 import {
 	decodeKittyPrintable,
 	matchesKey,
@@ -53,25 +53,26 @@ export async function pickCopyItem(
 	const searchIndex = buildSearchIndex(copyItems, selectItems);
 
 	return ctx.ui.custom<CopySelection | undefined>((tui, theme, keybindings, done) => {
-		const border = new DynamicBorder((text: string) => theme.fg("borderMuted", text));
 		let title = "";
 		let filterText = "";
+		let previewTitle = "";
 		const list = new GroupedPickerList(selectItems, LIST_MAX_ROWS);
-		const previewText = new Text("", 1, 0);
+		const previewText = new Text("", 0, 0);
 
-		const help = new Text("", 1, 0);
+		const help = new Text("", 0, 0);
 		const controller = new PickerController({
 			copyItems,
 			selectItems,
 			searchIndex,
 			list,
 			showPreview: (preview) => {
-				const source = preview.item ? theme.fg("muted", ` · ${preview.item.sourceLabel}`) : "";
-				previewText.setText(`${theme.fg("mdHeading", theme.bold(preview.title))}${source}\n${theme.fg("text", preview.content)}`);
+				const source = preview.item ? ` · ${preview.item.sourceLabel}` : "";
+				previewTitle = theme.fg("mdHeading", theme.bold(`${preview.title}${source}`.toUpperCase()));
+				previewText.setText(theme.fg("text", preview.content));
 			},
 			showFilter: (filter) => {
-				title = theme.fg("accent", theme.bold(" Copy message or snippet"));
-				filterText = `${theme.fg("muted", " Filter: ")}${theme.fg(filter ? "accent" : "dim", filter || "(none)")}`;
+				title = theme.fg("borderAccent", theme.bold("✂ SNIP · COPY MESSAGE OR SNIPPET"));
+				filterText = `${theme.fg("muted", "Filter: ")}${theme.fg(filter ? "accent" : "dim", filter || "(none)")}`;
 				const hint = (key: string, action: string) => `${theme.fg("accent", theme.bold(key))} ${theme.fg("muted", action)}`;
 				help.setText([
 					hint(`${keyText("tui.select.up")}/${keyText("tui.select.down")}`, "select"),
@@ -86,18 +87,26 @@ export async function pickCopyItem(
 		controller.initialize();
 
 		return {
-			render: (width: number) => renderPickerLayout({
-				height: tui.terminal.rows || 24,
-				title: truncateToWidth(title, width),
-				filter: truncateToWidth(filterText, width),
-				border: border.render(width)[0]!,
-				help: help.render(width),
-				preview: previewText.render(width),
-				renderList: (maxRows) => {
-					list.setMaxRows(maxRows);
-					return list.renderRows().map((row) => renderPickerRow(row, theme, width));
-				},
-			}),
+			render: (width: number) => {
+				const contentWidth = Math.max(1, width - 4);
+				return renderPickerLayout({
+					height: Math.max(1, (tui.terminal.rows || 24) - 2),
+					width,
+					title,
+					filter: filterText,
+					previewTitle,
+					help: help.render(contentWidth),
+					preview: previewText.render(contentWidth),
+					dialogBorder: (text) => theme.fg("borderAccent", text),
+					previewBorder: (text) => theme.fg("mdHeading", text),
+					visibleWidth,
+					truncate: (text, maxWidth) => truncateToWidth(text, maxWidth, ""),
+					renderList: (maxRows) => {
+						list.setMaxRows(maxRows);
+						return list.renderRows().map((row) => renderPickerRow(row, theme, contentWidth));
+					},
+				});
+			},
 			invalidate: () => {
 				previewText.invalidate();
 				help.invalidate();
@@ -111,7 +120,12 @@ export async function pickCopyItem(
 	}, {
 		// Overlays own their height; editor replacements also have an unknown footer/widget height.
 		overlay: true,
-		// Preview height changes below the options instead of moving the entire picker.
-		overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-center" },
+		// Keep the transcript visible around a near-full-width framed dialog.
+		overlayOptions: {
+			width: "100%",
+			maxHeight: "100%",
+			anchor: "top-center",
+			margin: { top: 1, right: 1, bottom: 1, left: 1 },
+		},
 	});
 }

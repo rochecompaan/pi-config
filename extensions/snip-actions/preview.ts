@@ -23,9 +23,9 @@ export function buildCopyItemPreview(
 		return { title: "Preview", content: "No matching item." };
 	}
 
-	const language = item.language ? ` (${item.language})` : "";
+	const language = item.language ? ` · ${item.language}` : "";
 	return {
-		title: `Preview — ${copyItemKindLabel(item.kind)}${language}`,
+		title: `Preview · ${copyItemKindLabel(item.kind)}${language}`,
 		content: item.content,
 		item,
 	};

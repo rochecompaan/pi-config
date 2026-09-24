@@ -35,12 +35,12 @@ test("builds a preview for the selected snippet", async () => {
 	assert.ok(previewModule, "the preview model must exist");
 
 	assert.deepEqual(previewModule.buildCopyItemPreview(copyItems, "1"), {
-		title: "Preview — quote",
+		title: "Preview · quote",
 		content: "First line\nSecond line",
 		item: copyItems[1],
 	});
 	assert.deepEqual(previewModule.buildCopyItemPreview(copyItems, "2"), {
-		title: "Preview — code (typescript)",
+		title: "Preview · code · typescript",
 		content: "const answer = 42;",
 		item: copyItems[2],
 	});

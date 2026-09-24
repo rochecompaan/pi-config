@@ -115,7 +115,7 @@ test("updates the preview after filtering and shows the empty state", async () =
 	harness.controller.initialize();
 
 	harness.controller.updateFilter("typescript");
-	assert.equal(harness.previews.at(-1)?.title, "Preview — code (typescript)");
+	assert.equal(harness.previews.at(-1)?.title, "Preview · code · typescript");
 	assert.equal(harness.list.getSelectedItem()?.value, "2");
 
 	harness.controller.updateFilter("missing");
