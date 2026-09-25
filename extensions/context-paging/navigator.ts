@@ -173,7 +173,7 @@ export class HistoryNavigator {
 	private itemById = new Map<string, HistoryItem>();
 	private itemBySequence = new Map<number, HistoryItem>();
 	private references: HistoryReference[] = [];
-	private searchDocuments: SearchDocument[] = [];
+	private searchDocuments: SearchDocument[] | undefined;
 	private documentFrequencies = new Map<string, number>();
 	private averageDocumentLength = 0;
 
@@ -188,7 +188,9 @@ export class HistoryNavigator {
 		this.itemById = new Map(this.items.map((item) => [item.id, item]));
 		this.itemBySequence = new Map(this.items.map((item) => [item.sequence, item]));
 		this.references = this.items.map((item, index) => buildReference(item, index, this.items));
-		this.rebuildSearchIndex();
+		this.searchDocuments = undefined;
+		this.documentFrequencies = new Map();
+		this.averageDocumentLength = 0;
 	}
 
 	search(input: HistorySearchInput): HistoryReference[] {
@@ -199,7 +201,8 @@ export class HistoryNavigator {
 		const limit = input.limit === undefined ? 5 : boundedInteger(input.limit, "limit", 1, 10);
 		const queryTerms = [...new Set(tokenize(input.query))];
 		if (input.query.length > 0 && queryTerms.length === 0) return [];
-		const totalDocuments = this.searchDocuments.length;
+		const searchDocuments = this.searchDocuments ?? this.buildSearchIndex();
+		const totalDocuments = searchDocuments.length;
 
 		return this.items
 			.map((item, index) => ({ item, index, score: this.bm25Score(index, queryTerms, totalDocuments) }))
@@ -243,7 +246,7 @@ export class HistoryNavigator {
 		return resolved as HistoryItem[];
 	}
 
-	private rebuildSearchIndex(): void {
+	private buildSearchIndex(): SearchDocument[] {
 		this.documentFrequencies = new Map();
 		this.searchDocuments = this.items.map((item) => {
 			const terms = new Map<string, number>();
@@ -254,11 +257,12 @@ export class HistoryNavigator {
 		this.averageDocumentLength = this.searchDocuments.length === 0
 			? 0
 			: this.searchDocuments.reduce((sum, document) => sum + document.length, 0) / this.searchDocuments.length;
+		return this.searchDocuments;
 	}
 
 	private bm25Score(index: number, queryTerms: string[], totalDocuments: number): number | undefined {
 		if (queryTerms.length === 0) return 0;
-		const document = this.searchDocuments[index];
+		const document = this.searchDocuments![index];
 		let score = 0;
 		let matched = false;
 		for (const term of queryTerms) {

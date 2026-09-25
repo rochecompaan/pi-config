@@ -22,9 +22,9 @@ const custom = (content: string) => ({
 	display: true,
 	timestamp: 0,
 });
-const toolAssistant = (id: string) => ({
+const toolAssistant = (id: string, name = "read") => ({
 	role: "assistant" as const,
-	content: [{ type: "toolCall" as const, id, name: "read", arguments: { path: "src/file.ts" } }],
+	content: [{ type: "toolCall" as const, id, name, arguments: { path: "src/file.ts" } }],
 	timestamp: 0,
 });
 const result = (toolCallId: string, text: string) => ({
@@ -191,7 +191,7 @@ test("registers only paging lifecycle handlers", () => {
 	assert.equal(harness.handlers.has("session_before_tree"), false);
 });
 
-test("rebuilds navigation for session lifecycle changes without cancelling tree navigation", async () => {
+test("refreshes navigation history for session lifecycle changes without cancelling tree navigation", async () => {
 	const harness = createHarness();
 	for (const reason of ["startup", "new", "resume", "fork", "reload"] as const) {
 		harness.setBranch(branchFor(reason));
@@ -240,8 +240,8 @@ test("selects canonical context and isolates raw-history failures", async () => 
 	assert.equal(hasMarker((canonical as any).messages, "CANONICAL_ONLY"), true);
 	assert.equal(hasMarker((canonical as any).messages, "RAW_ONLY"), false);
 	assert.deepEqual(canonical, { messages: canonicalMessages });
-	assert.notEqual((canonical as any).messages, canonicalMessages);
-	assert.notEqual((canonical as any).messages[0], canonicalMessages[0]);
+	assert.equal((canonical as any).messages, canonicalMessages);
+	assert.equal((canonical as any).messages[0], canonicalMessages[0]);
 
 	harness.setBranch([entry("orphan", result("missing", "ORPHAN_TOOL_RESULT"))]);
 	assert.deepEqual(await emit(harness, "context", { messages: canonicalMessages }), {
@@ -294,6 +294,50 @@ test("does not rebuild the navigator during a context event", async () => {
 	try {
 		await emit(harness, "context", { messages: [user("canonical")] });
 		assert.equal(rebuilds, 0);
+	} finally {
+		HistoryNavigator.prototype.rebuild = originalRebuild;
+	}
+});
+
+test("refreshes lifecycle history and reuses navigation until visible history changes", async () => {
+	const harness = createHarness();
+	const originalRebuild = HistoryNavigator.prototype.rebuild;
+	let rebuilds = 0;
+	HistoryNavigator.prototype.rebuild = function (items) {
+		rebuilds++;
+		return originalRebuild.call(this, items);
+	};
+	try {
+		harness.setBranch(branchFor("visible"));
+		await emit(harness, "turn_end", {});
+		assert.equal(rebuilds, 0);
+		assert.deepEqual(await searchIds(harness, "visible"), ["user-visible"]);
+		assert.equal(rebuilds, 1);
+		assert.deepEqual(await searchIds(harness, "visible"), ["user-visible"]);
+		assert.equal(rebuilds, 1);
+
+		harness.setBranch([
+			...branchFor("visible"),
+			entry("paging-assistant", toolAssistant("paging-call", "search_history")),
+			entry("paging-result", result("paging-call", "paging result")),
+		]);
+		await emit(harness, "turn_end", {});
+		assert.equal(rebuilds, 1);
+		assert.deepEqual(await searchIds(harness, "visible"), ["user-visible"]);
+		assert.equal(rebuilds, 1);
+		const read = harness.tools.find((tool) => tool.name === "read_context_output");
+		const output = await read.execute("call", {
+			historyId: "paging-assistant",
+			source: "assistant",
+			contentIndex: 0,
+		}, undefined, undefined, harness.ctx);
+		assert.match(output.details.text, /search_history/);
+
+		harness.setBranch(branchFor("replacement"));
+		await emit(harness, "session_tree", {});
+		assert.equal(rebuilds, 1);
+		assert.deepEqual(await searchIds(harness, "replacement"), ["user-replacement"]);
+		assert.equal(rebuilds, 2);
 	} finally {
 		HistoryNavigator.prototype.rebuild = originalRebuild;
 	}

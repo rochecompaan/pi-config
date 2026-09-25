@@ -1,7 +1,7 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
-import { findModelTurnByToolCallId, type HistoryItem } from "./history.ts";
+import type { HistoryItem } from "./history.ts";
 
 export const DEFAULT_CONTEXT_TOKEN_BUDGET = 128_000;
 
@@ -217,18 +217,112 @@ function groupContext(messages: readonly AgentMessage[]): GroupedContext {
 	return { prefixes, completedTurns, activeTurn: { kind: "activeTurn", request, exchanges } };
 }
 
-function messageEstimate(messages: readonly AgentMessage[]): number {
-	return messages.reduce((total, message) => total + estimateTokens(message), 0);
+type TokenCache = {
+	messages: Map<AgentMessage, number>;
+	units: WeakMap<readonly AgentMessage[], number>;
+};
+
+function messageEstimate(message: AgentMessage, cache: TokenCache): number {
+	const cached = cache.messages.get(message);
+	if (cached !== undefined) return cached;
+	const estimate = estimateTokens(message);
+	cache.messages.set(message, estimate);
+	return estimate;
 }
 
-function matchingHistoryId(message: AgentMessage, items: readonly HistoryItem[] | undefined): string | undefined {
-	if (!items) return undefined;
-	const matches = (candidate: AgentMessage): boolean => candidate === message || JSON.stringify(candidate) === JSON.stringify(message);
-	for (const item of items) {
-		if (item.kind === "user" && matches(item.userMessage)) return item.id;
-		if (item.kind === "modelTurn" && (matches(item.assistantMessage) || item.toolResults.some(matches))) return item.id;
+function unitEstimate(messages: readonly AgentMessage[], cache: TokenCache): number {
+	const cached = cache.units.get(messages);
+	if (cached !== undefined) return cached;
+	const estimate = messages.reduce((total, message) => total + messageEstimate(message, cache), 0);
+	cache.units.set(messages, estimate);
+	return estimate;
+}
+
+type ModelTurnHistoryItem = Extract<HistoryItem, { kind: "modelTurn" }>;
+type FallbackHistoryMessage = { message: AgentMessage; historyId: string };
+type FallbackHistoryBucket = {
+	messages: FallbackHistoryMessage[];
+	serializedIds?: Map<string, string>;
+};
+
+function historyFallbackBucket(message: AgentMessage): string {
+	return `${message.role}\u0000${message.timestamp}`;
+}
+
+// This stays local because it only supports one selectContext invocation.
+class SelectionHistoryLookup {
+	private readonly identities = new Map<AgentMessage, string>();
+	private readonly toolTurns = new Map<string, ModelTurnHistoryItem>();
+	private readonly fallbackBuckets = new Map<string, FallbackHistoryBucket>();
+	private readonly serializations = new Map<AgentMessage, string>();
+	private readonly items: readonly HistoryItem[] | undefined;
+
+	constructor(items: readonly HistoryItem[] | undefined) {
+		this.items = items;
+		for (const item of items ?? []) {
+			if (item.kind === "user") {
+				this.addMessage(item.userMessage, item.id);
+				continue;
+			}
+			this.addMessage(item.assistantMessage, item.id);
+			for (const call of item.assistantMessage.content.filter(isToolCallBlock)) {
+				this.toolTurns.set(call.id, item);
+			}
+			for (const result of item.toolResults) this.addMessage(result, item.id);
+		}
 	}
-	return undefined;
+
+	historyId(message: AgentMessage): string | undefined {
+		const identity = this.identities.get(message);
+		if (identity !== undefined) return identity;
+		const toolTurn = this.toolTurn(message);
+		if (toolTurn) return toolTurn.id;
+		const bucket = this.fallbackBuckets.get(historyFallbackBucket(message));
+		if (!bucket) return undefined;
+		const serialized = this.serialize(message);
+		return this.serializedIds(bucket).get(serialized);
+	}
+
+	toolTurn(message: AgentMessage): ModelTurnHistoryItem | undefined {
+		if (message.role === "toolResult") return this.toolTurns.get(message.toolCallId);
+		if (message.role !== "assistant") return undefined;
+		return message.content.filter(isToolCallBlock)
+			.map((call) => this.toolTurns.get(call.id))
+			.find((turn): turn is ModelTurnHistoryItem => turn !== undefined);
+	}
+
+	isLastItem(item: HistoryItem): boolean {
+		return this.items?.at(-1) === item;
+	}
+
+	private addMessage(message: AgentMessage, historyId: string): void {
+		if (!this.identities.has(message)) this.identities.set(message, historyId);
+		const key = historyFallbackBucket(message);
+		const bucket = this.fallbackBuckets.get(key) ?? { messages: [] };
+		bucket.messages.push({ message, historyId });
+		this.fallbackBuckets.set(key, bucket);
+	}
+
+	private serializedIds(bucket: FallbackHistoryBucket): Map<string, string> {
+		if (bucket.serializedIds) return bucket.serializedIds;
+		const serializedIds = new Map<string, string>();
+		for (const candidate of bucket.messages) {
+			const serialized = this.serialize(candidate.message);
+			if (!serializedIds.has(serialized)) {
+				serializedIds.set(serialized, candidate.historyId);
+			}
+		}
+		bucket.serializedIds = serializedIds;
+		return serializedIds;
+	}
+
+	private serialize(message: AgentMessage): string {
+		const cached = this.serializations.get(message);
+		if (cached !== undefined) return cached;
+		const serialized = JSON.stringify(message);
+		this.serializations.set(message, serialized);
+		return serialized;
+	}
 }
 
 function pagingNotice(
@@ -256,6 +350,15 @@ function pagingNotice(
 	return temporaryUserMessage(lines.join("\n"));
 }
 
+function pagingNoticeKey(historyId: string | undefined, toolReference: ToolRecoveryReference | undefined): string {
+	return JSON.stringify([
+		historyId,
+		toolReference?.historyId,
+		toolReference?.toolCallId,
+		toolReference?.toolName,
+	]);
+}
+
 function protectedOverflowNotice(budgetTokens: number): UserMessage {
 	return temporaryUserMessage([
 		"[Context paging notice — generated by the extension]",
@@ -274,34 +377,35 @@ function recoveryNotice(): UserMessage {
 	].join("\n"));
 }
 
-function toolRecoveryReference(message: AgentMessage, items: readonly HistoryItem[] | undefined): ToolRecoveryReference | undefined {
-	if (!items || message.role !== "toolResult") return undefined;
-	const turn = findModelTurnByToolCallId(items, message.toolCallId);
+function toolRecoveryReference(message: AgentMessage, history: SelectionHistoryLookup): ToolRecoveryReference | undefined {
+	if (message.role !== "toolResult") return undefined;
+	const turn = history.toolTurn(message);
 	return turn?.toolResults.some((result) => result.toolCallId === message.toolCallId)
 		? { historyId: turn.id, toolCallId: message.toolCallId, toolName: message.toolName }
 		: undefined;
 }
 
-function unreadTrailingExchange(grouped: GroupedContext, items: readonly HistoryItem[] | undefined): ToolExchange | undefined {
-	if (!items || !grouped.activeTurn) return undefined;
+function unreadTrailingExchange(grouped: GroupedContext, history: SelectionHistoryLookup): ToolExchange | undefined {
+	if (!grouped.activeTurn) return undefined;
 	const exchange = grouped.activeTurn.exchanges.at(-1);
 	if (!exchange) return undefined;
 	const calls = exchange.assistant.content.filter(isToolCallBlock);
 	if (calls.length === 0) return undefined;
 	const callIds = calls.map((call) => call.id);
-	const turn = findModelTurnByToolCallId(items, callIds[0]);
-	if (!turn || items.at(-1) !== turn) return undefined;
+	const turn = history.toolTurn(exchange.assistant);
+	if (!turn || !history.isLastItem(turn)) return undefined;
 	const rawCallIds = turn.assistantMessage.content.filter(isToolCallBlock).map((call) => call.id);
 	const resultIds = exchange.results.map((result) => result.toolCallId);
 	const rawResultIds = turn.toolResults.map((result) => result.toolCallId);
-	if (JSON.stringify(rawCallIds) !== JSON.stringify(callIds)
-		|| JSON.stringify(rawResultIds) !== JSON.stringify(resultIds)) return undefined;
+	if (rawCallIds.length !== callIds.length || rawResultIds.length !== resultIds.length
+		|| rawCallIds.some((id, index) => id !== callIds[index])
+		|| rawResultIds.some((id, index) => id !== resultIds[index])) return undefined;
 	return exchange;
 }
 
-function recoveredProtectedExchange(exchange: ToolExchange, items: readonly HistoryItem[]): ToolExchange {
+function recoveredProtectedExchange(exchange: ToolExchange, history: SelectionHistoryLookup): ToolExchange {
 	const results = exchange.results.map((result) => {
-		const turn = findModelTurnByToolCallId(items, result.toolCallId);
+		const turn = history.toolTurn(result);
 		const reference = turn && turn.toolResults.some((rawResult) => rawResult.toolCallId === result.toolCallId)
 			? { historyId: turn.id, toolCallId: result.toolCallId }
 			: undefined;
@@ -350,94 +454,122 @@ export function selectContext(input: ContextSelectionInput): ContextSelection {
 	}
 
 	const grouped = groupContext(input.messages);
-	const fullEstimate = residentTokens + messageEstimate(input.messages);
+	const tokenCache: TokenCache = { messages: new Map(), units: new WeakMap() };
+	const fullEstimate = residentTokens + unitEstimate(input.messages, tokenCache);
 	if (fullEstimate <= budgetTokens) {
 		return { messages: input.messages as AgentMessage[], estimatedTokens: fullEstimate, budgetTokens, mode: "within-budget" };
 	}
+	const history = new SelectionHistoryLookup(input.rawHistoryItems);
 	if (!grouped.activeTurn) {
-		const prefixes = [...grouped.prefixes];
+		const prefixes = grouped.prefixes;
+		let prefixIndex = 0;
 		let evictedHistoryId: string | undefined;
-		let removed = false;
-		const candidate = (): AgentMessage[] => [
-			...(removed ? [pagingNotice(budgetTokens, evictedHistoryId)] : []),
-			...prefixes.flatMap((unit) => unit.messages),
-		];
-
-		while (residentTokens + messageEstimate(candidate()) > budgetTokens) {
-			if (prefixes.length === 0) {
-				const estimatedTokens = residentTokens + messageEstimate(candidate());
+		let retainedTokens = fullEstimate - residentTokens;
+		let notice: UserMessage | undefined;
+		let noticeTokens = 0;
+		let noticeKey: string | undefined;
+		const updateNotice = () => {
+			const nextKey = pagingNoticeKey(evictedHistoryId, undefined);
+			if (nextKey === noticeKey) return;
+			noticeKey = nextKey;
+			notice = pagingNotice(budgetTokens, evictedHistoryId);
+			noticeTokens = messageEstimate(notice, tokenCache);
+		};
+		while (residentTokens + retainedTokens + noticeTokens > budgetTokens) {
+			if (prefixIndex === prefixes.length) {
+				const estimatedTokens = residentTokens + retainedTokens + noticeTokens;
 				throw error("RESIDENT_INPUT_TOO_LARGE", `Resident and paging-notice estimate ${estimatedTokens} exceeds budget estimate ${budgetTokens}.`, residentTokens, estimatedTokens, budgetTokens);
 			}
-			removed = true;
-			for (const message of prefixes.shift()!.messages) {
-				evictedHistoryId = matchingHistoryId(message, input.rawHistoryItems) ?? evictedHistoryId;
+			const evicted = prefixes[prefixIndex++]!;
+			retainedTokens -= unitEstimate(evicted.messages, tokenCache);
+			for (const message of evicted.messages) {
+				evictedHistoryId = history.historyId(message) ?? evictedHistoryId;
 			}
+			updateNotice();
 		}
-
-		const messages = candidate();
-		return { messages, estimatedTokens: residentTokens + messageEstimate(messages), budgetTokens, mode: "paged" };
+		const messages = [...(notice ? [notice] : []), ...prefixes.slice(prefixIndex).flatMap((unit) => unit.messages)];
+		return { messages, estimatedTokens: residentTokens + retainedTokens + noticeTokens, budgetTokens, mode: "paged" };
 	}
 
-	const activeRequestTokens = residentTokens + messageEstimate(grouped.activeTurn.request);
+	const activeRequestTokens = residentTokens + unitEstimate(grouped.activeTurn.request, tokenCache);
 	if (activeRequestTokens > budgetTokens) {
 		throw error("ACTIVE_REQUEST_TOO_LARGE", `Resident plus active request estimate ${activeRequestTokens} exceeds budget estimate ${budgetTokens}.`, residentTokens, activeRequestTokens, budgetTokens);
 	}
 
-	const prefixes = [...grouped.prefixes];
-	const completedTurns = [...grouped.completedTurns];
+	const prefixes = grouped.prefixes;
+	const completedTurns = grouped.completedTurns;
 	const exchanges = [...grouped.activeTurn.exchanges];
-	const protectedExchange = unreadTrailingExchange(grouped, input.rawHistoryItems);
+	let prefixIndex = 0;
+	let completedTurnIndex = 0;
+	let exchangeIndex = 0;
+	const protectedExchange = unreadTrailingExchange(grouped, history);
+	const protectedExchangeIndex = protectedExchange ? exchanges.indexOf(protectedExchange) : -1;
 	let evictedHistoryId: string | undefined;
 	let evictedToolReference: ToolRecoveryReference | undefined;
-	let removed = false;
-	const candidate = (notice = removed ? pagingNotice(budgetTokens, evictedHistoryId, evictedToolReference) : undefined): AgentMessage[] => [
-		...(notice ? [notice] : []),
-		...prefixes.flatMap((unit) => unit.messages),
-		...completedTurns.flatMap((unit) => unit.messages),
+	let retainedTokens = fullEstimate - residentTokens;
+	let notice: UserMessage | undefined;
+	let noticeTokens = 0;
+	let noticeKey: string | undefined;
+	const messagesFor = (selectionNotice: UserMessage | undefined): AgentMessage[] => [
+		...(selectionNotice ? [selectionNotice] : []),
+		...prefixes.slice(prefixIndex).flatMap((unit) => unit.messages),
+		...completedTurns.slice(completedTurnIndex).flatMap((unit) => unit.messages),
 		...grouped.activeTurn!.request,
-		...exchanges.flatMap((exchange) => exchange.messages),
+		...exchanges.slice(exchangeIndex).flatMap((exchange) => exchange.messages),
 	];
+	const updateNotice = () => {
+		const nextKey = pagingNoticeKey(evictedHistoryId, evictedToolReference);
+		if (nextKey === noticeKey) return;
+		noticeKey = nextKey;
+		notice = pagingNotice(budgetTokens, evictedHistoryId, evictedToolReference);
+		noticeTokens = messageEstimate(notice, tokenCache);
+	};
 	const remove = (messages: readonly AgentMessage[]) => {
-		removed = true;
 		for (const message of messages) {
-			evictedHistoryId = matchingHistoryId(message, input.rawHistoryItems) ?? evictedHistoryId;
-			evictedToolReference ??= toolRecoveryReference(message, input.rawHistoryItems);
+			evictedHistoryId = history.historyId(message) ?? evictedHistoryId;
+			evictedToolReference ??= toolRecoveryReference(message, history);
 		}
+		updateNotice();
 	};
 
-	while (residentTokens + messageEstimate(candidate()) > budgetTokens) {
-		if (prefixes.length > 0) {
-			remove(prefixes.shift()!.messages);
+	while (residentTokens + retainedTokens + noticeTokens > budgetTokens) {
+		if (prefixIndex < prefixes.length) {
+			const evicted = prefixes[prefixIndex++]!;
+			retainedTokens -= unitEstimate(evicted.messages, tokenCache);
+			remove(evicted.messages);
 			continue;
 		}
-		if (completedTurns.length > 0) {
-			remove(completedTurns.shift()!.messages);
+		if (completedTurnIndex < completedTurns.length) {
+			const evicted = completedTurns[completedTurnIndex++]!;
+			retainedTokens -= unitEstimate(evicted.messages, tokenCache);
+			remove(evicted.messages);
 			continue;
 		}
-		if (exchanges.length > 0 && exchanges[0] !== protectedExchange) {
-			remove(exchanges.shift()!.messages);
+		if (exchangeIndex < exchanges.length && exchangeIndex !== protectedExchangeIndex) {
+			const evicted = exchanges[exchangeIndex++]!;
+			retainedTokens -= unitEstimate(evicted.messages, tokenCache);
+			remove(evicted.messages);
 			continue;
 		}
 		if (protectedExchange) {
-			const overflowMessages = candidate(protectedOverflowNotice(budgetTokens));
-			const overflowEstimate = residentTokens + messageEstimate(overflowMessages);
+			const overflowNotice = protectedOverflowNotice(budgetTokens);
+			const overflowEstimate = residentTokens + retainedTokens + messageEstimate(overflowNotice, tokenCache);
 			if (overflowEstimate <= modelLimit) {
-				return { messages: overflowMessages, estimatedTokens: overflowEstimate, budgetTokens, mode: "protected-overflow" };
+				return { messages: messagesFor(overflowNotice), estimatedTokens: overflowEstimate, budgetTokens, mode: "protected-overflow" };
 			}
-			const replacement = recoveredProtectedExchange(protectedExchange, input.rawHistoryItems ?? []);
-			const replacementIndex = exchanges.indexOf(protectedExchange);
-			exchanges[replacementIndex] = replacement;
-			const recoveredMessages = candidate(recoveryNotice());
-			const recoveredEstimate = residentTokens + messageEstimate(recoveredMessages);
+			const replacement = recoveredProtectedExchange(protectedExchange, history);
+			exchanges[protectedExchangeIndex] = replacement;
+			retainedTokens += unitEstimate(replacement.messages, tokenCache) - unitEstimate(protectedExchange.messages, tokenCache);
+			const recovery = recoveryNotice();
+			const recoveredEstimate = residentTokens + retainedTokens + messageEstimate(recovery, tokenCache);
 			if (recoveredEstimate <= modelLimit) {
-				return { messages: recoveredMessages, estimatedTokens: recoveredEstimate, budgetTokens, mode: "recovery" };
+				return { messages: messagesFor(recovery), estimatedTokens: recoveredEstimate, budgetTokens, mode: "recovery" };
 			}
 			throw error("ACTIVE_REQUEST_TOO_LARGE", `Protected exchange recovery estimate ${recoveredEstimate} exceeds model context estimate ${input.modelContextWindow}.`, residentTokens, recoveredEstimate, budgetTokens);
 		}
-		const estimatedTokens = residentTokens + messageEstimate(candidate());
+		const estimatedTokens = residentTokens + retainedTokens + noticeTokens;
 		throw error("ACTIVE_REQUEST_TOO_LARGE", `Resident plus active request estimate ${estimatedTokens} exceeds budget estimate ${budgetTokens}.`, residentTokens, estimatedTokens, budgetTokens);
 	}
 
-	const messages = candidate();
-	return { messages, estimatedTokens: residentTokens + messageEstimate(messages), budgetTokens, mode: "paged" };
+	return { messages: messagesFor(notice), estimatedTokens: residentTokens + retainedTokens + noticeTokens, budgetTokens, mode: "paged" };
 }

@@ -6,7 +6,7 @@ import {
 	selectContext,
 	type ResidentToolDefinition,
 } from "./context-policy.ts";
-import { projectActiveBranch, type HistoryItem } from "./history.ts";
+import { isPagingToolTurn, projectActiveBranch, type HistoryItem } from "./history.ts";
 import { HistoryNavigator } from "./navigator.ts";
 import { registerContextPagingTools, type HistorySnapshot } from "./tools.ts";
 
@@ -102,15 +102,31 @@ export default function contextPagingExtension(
 		: { enabled: false, tokenBudget: DEFAULT_CONTEXT_TOKEN_BUDGET };
 	let allItems: HistoryItem[] = [];
 	const navigator = new HistoryNavigator();
-	const rebuild = (ctx: ExtensionContext): HistorySnapshot => {
+	let visibleHistoryIds: string[] = [];
+	const refresh = (ctx: ExtensionContext): HistoryItem[] => {
 		const projected = projectActiveBranch(ctx.sessionManager.getBranch());
-		navigator.rebuild(projected);
 		allItems = projected;
+		return projected;
+	};
+	const visibleHistoryChanged = (items: readonly HistoryItem[]): boolean => {
+		let index = 0;
+		for (const item of items) {
+			if (isPagingToolTurn(item)) continue;
+			if (item.id !== visibleHistoryIds[index++]) return true;
+		}
+		return index !== visibleHistoryIds.length;
+	};
+	const snapshot = (ctx: ExtensionContext): HistorySnapshot => {
+		const projected = refresh(ctx);
+		if (visibleHistoryChanged(projected)) {
+			navigator.rebuild(projected);
+			visibleHistoryIds = projected.filter((item) => !isPagingToolTurn(item)).map((item) => item.id);
+		}
 		return { allItems, navigator };
 	};
-	const rebuildSafely = (ctx: ExtensionContext) => {
+	const refreshSafely = (ctx: ExtensionContext) => {
 		try {
-			rebuild(ctx);
+			refresh(ctx);
 		} catch (error) {
 			ctx.ui.notify(`Context paging navigation is unavailable: ${errorMessage(error)}`, "error");
 		}
@@ -118,7 +134,7 @@ export default function contextPagingExtension(
 
 	registerContextPagingTools(pi, {
 		isEnabled: () => resolvedSettings.enabled,
-		snapshot: rebuild,
+		snapshot,
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -126,28 +142,27 @@ export default function contextPagingExtension(
 			resolvedSettings = { ...resolvedSettings, enabled: false };
 			resolvedSettings = resolveContextPagingSettings(await loadSettings(ctx));
 		}
-		rebuildSafely(ctx);
+		refreshSafely(ctx);
 	});
 	pi.on("turn_end", (_event, ctx) => {
-		rebuildSafely(ctx);
+		refreshSafely(ctx);
 	});
 	pi.on("session_tree", (_event, ctx) => {
-		rebuildSafely(ctx);
+		refreshSafely(ctx);
 	});
 	pi.on("context", (event, ctx) => {
 		if (!resolvedSettings.enabled) return;
 
 		let rawHistoryItems: readonly HistoryItem[] | undefined;
 		try {
-			rawHistoryItems = projectActiveBranch(ctx.sessionManager.getBranch());
+			rawHistoryItems = refresh(ctx);
 		} catch (error) {
 			ctx.ui.notify(`Context paging history is unavailable: ${errorMessage(error)}`, "error");
 		}
 
 		try {
-			const messages = structuredClone(event.messages);
 			const selection = selectContext({
-				messages,
+				messages: event.messages,
 				systemPrompt: ctx.getSystemPrompt(),
 				activeTools: activeResidentTools(pi),
 				modelContextWindow: ctx.model?.contextWindow,

@@ -173,6 +173,35 @@ test("references use adjacent visible IDs and rebuild replaces the old branch in
 	);
 });
 
+test("rebuild defers tool-result serialization until the first search and caches the corpus", () => {
+	let serializations = 0;
+	const item = turnItem("turn", 0, "other", ["read"], ["src/file.ts"], false);
+	if (item.kind === "modelTurn") {
+		item.toolResults = [{
+			role: "toolResult",
+			toolCallId: "call-1",
+			content: [{
+				toJSON() {
+					serializations++;
+					return "needle tool result";
+				},
+			}],
+		}] as any;
+	}
+
+	const navigator = new HistoryNavigator([item]);
+	assert.equal(serializations, 0);
+	assert.deepEqual(ids(navigator.search({ query: "needle" })), ["turn"]);
+	assert.equal(serializations, 1);
+	assert.deepEqual(ids(navigator.search({ query: "needle" })), ["turn"]);
+	assert.equal(serializations, 1);
+
+	navigator.rebuild([item]);
+	assert.equal(serializations, 1);
+	assert.deepEqual(ids(navigator.search({ query: "needle" })), ["turn"]);
+	assert.equal(serializations, 2);
+});
+
 test("navigator validates bounded inputs", () => {
 	const navigator = new HistoryNavigator([userItem("h0", 0, "item")]);
 	for (const action of [

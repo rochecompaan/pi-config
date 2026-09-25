@@ -499,3 +499,125 @@ test("reports invalid model windows and resident or active request overflows as 
 			&& error.code === "ACTIVE_REQUEST_TOO_LARGE" && /estimate/i.test(error.message),
 	);
 });
+
+test("pages late raw tool exchanges without serializing unrelated history payloads", () => {
+	const serializations = { unrelated: 0, assistant: 0, result: 0 };
+	const probe = <T extends object>(message: T, key: keyof typeof serializations): T => {
+		Object.defineProperty(message, "toJSON", {
+			enumerable: false,
+			value() {
+				serializations[key]++;
+				return { ...message };
+			},
+		});
+		return message;
+	};
+	const lateAssistant = toolAssistant(toolCall("late-call"));
+	const lateResult = result("late-call", repeat("late tool output", 180_000));
+	const rawAssistant = probe(structuredClone(lateAssistant), "assistant");
+	const rawResult = probe(structuredClone(lateResult), "result");
+	const rawHistoryItems: HistoryItem[] = [
+		...Array.from({ length: 200 }, (_, index) => ({
+			id: `unrelated-${index}`,
+			kind: "user" as const,
+			sequence: index,
+			timestamp: "2026-09-21T00:00:00.000Z",
+			userMessage: probe({ ...user(`UNRELATED_${index}`), timestamp: index + 1 } as any, "unrelated"),
+		})),
+		{
+			id: "late-tool-turn",
+			kind: "modelTurn",
+			sequence: 200,
+			timestamp: "2026-09-21T00:00:00.000Z",
+			assistantMessage: rawAssistant as any,
+			toolResults: [rawResult as any],
+			metadata: { tools: ["read"], files: [], failed: false },
+		},
+	];
+	const messages = [
+		user(repeat("old request", 160_000)),
+		lateAssistant,
+		lateResult,
+		user("active request"),
+	];
+
+	const selection = selected(messages, { modelContextWindow: 100_000, rawHistoryItems });
+
+	assert.equal(selection.mode, "paged");
+	assert.match(marker(selection.messages[0]), /Recent evicted historyId: "late-tool-turn"\./);
+	assert.equal(serializations.unrelated, 0);
+	assert.equal(serializations.assistant, 0);
+	assert.equal(serializations.result, 0);
+});
+
+test("matches same-timestamp fallback candidates exactly and serializes each once", () => {
+	const serializations = new Map<string, number>();
+	const probe = (message: object, historyId: string) => {
+		Object.defineProperty(message, "toJSON", {
+			enumerable: false,
+			value() {
+				serializations.set(historyId, (serializations.get(historyId) ?? 0) + 1);
+				return { ...message };
+			},
+		});
+		return message;
+	};
+	const oldMessages = Array.from({ length: 80 }, (_, index) => ({
+		request: repeat(`OLD_REQUEST_${index}`, 6_000),
+	}));
+	const rawHistoryItems: HistoryItem[] = oldMessages.flatMap(({ request }, index) => {
+		const items: HistoryItem[] = [];
+		if (index === 37) {
+			items.push({
+				id: "near-collision",
+				kind: "user",
+				sequence: index,
+				timestamp: "2026-09-21T00:00:00.000Z",
+				userMessage: probe(user(`${request} near collision`), "near-collision") as any,
+			});
+		}
+		items.push({
+			id: `old-user-${index}`,
+			kind: "user",
+			sequence: index,
+			timestamp: "2026-09-21T00:00:00.000Z",
+			userMessage: probe(user(request), `old-user-${index}`) as any,
+		});
+		return items;
+	});
+	const messages = [
+		...oldMessages.map(({ request }) => user(request)),
+		user("active request"),
+	];
+
+	const selection = selected(messages, { modelContextWindow: 100_000, rawHistoryItems });
+
+	assert.equal(selection.mode, "paged");
+	assert.match(marker(selection.messages[0]), /Recent evicted historyId: "old-user-37"\./);
+	for (const item of rawHistoryItems) {
+		assert.equal(serializations.get(item.id), 1, `${item.id} should serialize once`);
+	}
+});
+
+test("does not mutate canonical or raw inputs while paging", () => {
+	const oldAssistant = toolAssistant(toolCall("old-call"));
+	const oldResult = result("old-call", repeat("old result", 180_000));
+	const messages = [user(repeat("old request", 160_000)), oldAssistant, oldResult, user("active request")];
+	const rawHistoryItems: HistoryItem[] = [{
+		id: "old-turn",
+		kind: "modelTurn",
+		sequence: 0,
+		timestamp: "2026-09-21T00:00:00.000Z",
+		assistantMessage: structuredClone(oldAssistant) as any,
+		toolResults: [structuredClone(oldResult) as any],
+		metadata: { tools: ["read"], files: [], failed: false },
+	}];
+	const messagesBefore = structuredClone(messages);
+	const rawHistoryBefore = structuredClone(rawHistoryItems);
+
+	const selection = selected(messages, { modelContextWindow: 100_000, rawHistoryItems });
+
+	assert.equal(selection.mode, "paged");
+	assert.deepEqual(messages, messagesBefore);
+	assert.deepEqual(rawHistoryItems, rawHistoryBefore);
+});
