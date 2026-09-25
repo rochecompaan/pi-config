@@ -63,32 +63,31 @@ else
     };
 
     piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
-    # main's package-lock.json omits integrity for three nested dev-only
+    # main's package-lock.json omits integrity for five nested dev-only
     # @earendil-works entries, which crashes the npm-deps fetcher
     # ("non-git dependencies should have associated integrity"). Add them back.
     piClaudeBridgeLockIntegrityPatch = ./pi-claude-bridge-lock-integrity.patch;
     piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
     piClaudeBridgeDirectCompletionTest = ./pi-claude-bridge-direct-completion.test.mjs;
 
-    # GitHub main snapshot (unreleased): PR #80 adds claude-fable-5-1 to the
-    # picker and derives catalog rows missing from pi-ai's snapshot. Revert to
-    # the npm tarball once a release > 0.7.0 ships with it.
+    # GitHub main snapshot (unreleased): adds Pi 0.87 compatibility and
+    # claude-opus-5-5 with its measured 1M context window.
     piClaudeBridgeSrc = pkgs.fetchFromGitHub {
       owner = "elidickinson";
       repo = "pi-claude-bridge";
-      rev = "4a7920ac4f4449b546307b3a53d4a4867f8b6cb5";
-      hash = "sha256-dZEbRahk9Eu6mieVn+Zn5OZDvHRrcuMfsy5Kxa5aHIg=";
+      rev = "227f5eb4450a070dfbc083a7fe75b8b35366b941";
+      hash = "sha256-tJFAMykelEeQC0Pq1UxN6ZcB36jO6VsM3A0ThUKaVJ4=";
     };
 
     piClaudeBridge = pkgs.buildNpmPackage {
       pname = "pi-claude-bridge";
-      version = "0.7.0-unstable-2026-09-08";
+      version = "0.8.0-unstable-2026-09-23";
       src = piClaudeBridgeSrc;
 
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
       buildInputs = [ pkgs.stdenv.cc.cc.lib ];
 
-      npmDepsHash = "sha256-OeVRTuYJlJV065FCcbmH6OYXyv8SqnKoj0CSFes++tw=";
+      npmDepsHash = "sha256-o/gjQyT/Y9hnBzp8YJeG7lm4RS4tVc0bzUg8V5Fxwnk=";
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -106,7 +105,7 @@ else
       installCheckPhase = ''
         claude="$out/lib/node_modules/pi-claude-bridge/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
         claudeVersion="$("$claude" --version)" || exit $?
-        test "$claudeVersion" = "2.1.141 (Claude Code)"
+        test "$claudeVersion" = "2.1.280 (Claude Code)"
         bridgeHistoryModule="$TMPDIR/history-reconstruction.ts"
         bridgeDirectCompletionModule="$TMPDIR/request-router.ts"
         cp "$out/lib/node_modules/pi-claude-bridge/src/history-reconstruction.ts" "$bridgeHistoryModule"

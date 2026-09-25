@@ -118,6 +118,30 @@
             assert "AskClaude" in tools["active"], tools
             PY
 
+            run_probe claude-bridge-models \
+              ${pkgs.coreutils}/bin/env \
+              PI_MODELSET_PROBE_OUTPUT="$TMPDIR/claude-bridge-models.json" \
+              ${selectablePi}/bin/pi \
+              --no-session \
+              --no-tools \
+              --extension ${probeExtension} \
+              -p /write-modelset-probe
+
+            python3 - "$TMPDIR/claude-bridge-models.json" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as f:
+                models = json.load(f)
+
+            opus_5_5 = next(
+                (model for model in models if model["id"] == "claude-opus-5-5"),
+                None,
+            )
+            assert opus_5_5 is not None, models
+            assert opus_5_5["contextWindow"] == 1_000_000, opus_5_5
+            PY
+
             run_probe context-paging-tools \
               ${pkgs.coreutils}/bin/env \
               PI_TOOLSET_PROBE_OUTPUT="$TMPDIR/context-paging-tools.json" \

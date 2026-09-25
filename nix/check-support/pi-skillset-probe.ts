@@ -6,6 +6,7 @@ const STOP_MARKER = "PI_SKILLSET_PROBE_STOP";
 
 export default function (pi: ExtensionAPI) {
   const bootstrapOutput = process.env.PI_SUPERPOWERS_BOOTSTRAP_OUTPUT;
+  const modelsetOutput = process.env.PI_MODELSET_PROBE_OUTPUT;
   const toolsetOutput = process.env.PI_TOOLSET_PROBE_OUTPUT;
 
   pi.registerCommand("write-skillset-probe", {
@@ -44,6 +45,30 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("write-modelset-probe", {
+    description: "Write available Claude bridge models for a Nix runtime check",
+    handler: async (_args, ctx) => {
+      if (!modelsetOutput) {
+        throw new Error("PI_MODELSET_PROBE_OUTPUT is required");
+      }
+
+      writeFileSync(
+        modelsetOutput,
+        JSON.stringify(
+          ctx.modelRegistry
+            .getAvailable()
+            .filter((model) => model.provider === "claude-bridge")
+            .map((model) => ({
+              provider: model.provider,
+              id: model.id,
+              contextWindow: model.contextWindow,
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+        ),
+      );
+    },
+  });
+
   pi.on("context", async (event) => {
     if (bootstrapOutput && event.messages.some(messageContainsBootstrap)) {
       writeFileSync(bootstrapOutput, `${BOOTSTRAP_MARKER}\n`);
@@ -51,7 +76,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", () => {
-    if (bootstrapOutput || toolsetOutput) {
+    if (bootstrapOutput || modelsetOutput || toolsetOutput) {
       throw new Error(STOP_MARKER);
     }
   });

@@ -114,17 +114,22 @@
 +}
 --- /dev/null
 +++ b/src/request-router.ts
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,18 @@
 +export type BridgeRequestHandlers<TContext, TResult> = {
 +	isolated: (context: TContext) => TResult;
 +	agent: (context: TContext) => TResult;
 +};
 +
-+export function routeBridgeRequest<TContext extends { tools?: unknown }, TResult>(
++export type BridgeRequestOptions = {
++	cacheRetention?: string;
++};
++
++export function routeBridgeRequest<TContext, TResult>(
 +	context: TContext,
 +	handlers: BridgeRequestHandlers<TContext, TResult>,
++	options: BridgeRequestOptions = {},
 +): TResult {
-+	return context.tools === undefined
++	return options.cacheRetention === "none"
 +		? handlers.isolated(context)
 +		: handlers.agent(context);
 +}
@@ -174,7 +179,7 @@
 +	return routeBridgeRequest(context, {
 +		isolated: (requestContext) => isolatedStreamFn(model, requestContext, options),
 +		agent: (requestContext) => streamClaudeAgentRequest(model, requestContext, options),
-+	});
++	}, options);
 +}
 +
 +function streamClaudeAgentRequest(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
