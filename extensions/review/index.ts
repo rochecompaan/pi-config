@@ -2,14 +2,13 @@
  * Code Review Extension (inspired by Codex's review feature)
  *
  * Provides a `/review` command that prompts the agent to review code changes.
- * Supports multiple review modes:
- * - Review a GitHub pull request (checks out the PR locally)
- * - Review against a base branch (PR style)
- * - Review another branch/ref against a base branch without checkout
- * - Review uncommitted changes
- * - Review a specific commit
- * - Selectable review profiles (standard or thermo-nuclear code quality)
- * - Shared custom review instructions (applied to all review modes when configured)
+ * Supports six review targets:
+ * - Uncommitted changes
+ * - Current branch
+ * - Another branch or ref
+ * - Commit
+ * - GitHub pull request
+ * - Files or folders
  *
  * Usage:
  * - `/review` - show interactive selector
@@ -19,16 +18,7 @@
  * - `/review branch main` - review against main branch
  * - `/review compare feature/my-branch main` - review another branch/ref against a base branch without checkout
  * - `/review commit abc123` - review specific commit
- * - `/review folder src docs` - review specific folders/files (snapshot, not diff)
- * - `/review` selector includes Add/Remove custom review instructions (applies to all modes)
- * - `/review --extra "focus on performance regressions"` - add extra review instruction (works with any mode)
- * - `/review --profile thermo-nuclear` - choose the thermo-nuclear code-quality review profile
- * - `/review branch main --profile thermo-nuclear` - use a review profile with any target mode
- * - Empty branch reviews use Pi's model selector to choose a review-only model
- *
- * Project-specific review guidelines:
- * - If a REVIEW_GUIDELINES.md file exists in the same directory as .pi,
- *   its contents are appended to the review prompt.
+ * - `/review folder src docs` - review specific folders/files
  *
  * Note: PR review requires a clean working tree (no uncommitted changes to tracked files).
  */
@@ -44,8 +34,6 @@ import {
 	Spacer,
 	Text,
 } from "@mariozechner/pi-tui";
-import path from "node:path";
-import { promises as fs } from "node:fs";
 import {
 	buildCompareBranchesPrompt,
 	parseCompareBranchArgs,
@@ -61,6 +49,7 @@ import {
 	parseReviewProfileOption,
 	type ReviewProfileId,
 } from "./review-profile.ts";
+import { getUnsupportedReviewOptionError } from "./review-command-options.ts";
 import { createReviewPromptFooterState } from "./review-output-footer.ts";
 import {
 	registerReviewPromptFooterLifecycle,
@@ -91,26 +80,16 @@ import {
 let reviewOriginId: string | undefined = undefined;
 let reviewOriginModel: ReviewModelIdentity | undefined = undefined;
 let endReviewInProgress = false;
-let reviewLoopFixingEnabled = false;
-let reviewCustomInstructions: string | undefined = undefined;
-let reviewLoopInProgress = false;
 
 const REVIEW_STATE_TYPE = "review-session";
 const REVIEW_ANCHOR_TYPE = "review-anchor";
-const REVIEW_SETTINGS_TYPE = "review-settings";
-const REVIEW_LOOP_MAX_ITERATIONS = 10;
-const REVIEW_LOOP_START_TIMEOUT_MS = 15000;
-const REVIEW_LOOP_START_POLL_MS = 50;
+const REVIEW_TURN_START_TIMEOUT_MS = 15000;
+const REVIEW_TURN_START_POLL_MS = 50;
 
 type ReviewSessionState = {
 	active: boolean;
 	originId?: string;
 	originModel?: ReviewModelIdentity;
-};
-
-type ReviewSettingsState = {
-	loopFixingEnabled?: boolean;
-	customInstructions?: string;
 };
 
 function setReviewWidget(ctx: ExtensionContext, active: boolean) {
@@ -121,11 +100,7 @@ function setReviewWidget(ctx: ExtensionContext, active: boolean) {
 	}
 
 	ctx.ui.setWidget("review", (_tui, theme) => {
-		const message = reviewLoopInProgress
-			? "Review session active (loop fixing running)"
-			: reviewLoopFixingEnabled
-				? "Review session active (loop fixing enabled), return with /end-review"
-				: "Review session active, return with /end-review";
+		const message = "Review session active, return with /end-review";
 		const text = new Text(theme.fg("warning", message), 0, 0);
 		return {
 			render(width: number) {
@@ -164,240 +139,6 @@ function applyReviewState(ctx: ExtensionContext) {
 	setReviewWidget(ctx, false);
 }
 
-function getReviewSettings(ctx: ExtensionContext): ReviewSettingsState {
-	let state: ReviewSettingsState | undefined;
-	for (const entry of ctx.sessionManager.getEntries()) {
-		if (entry.type === "custom" && entry.customType === REVIEW_SETTINGS_TYPE) {
-			state = entry.data as ReviewSettingsState | undefined;
-		}
-	}
-
-	return {
-		loopFixingEnabled: state?.loopFixingEnabled === true,
-		customInstructions: state?.customInstructions?.trim() || undefined,
-	};
-}
-
-function applyReviewSettings(ctx: ExtensionContext) {
-	const state = getReviewSettings(ctx);
-	reviewLoopFixingEnabled = state.loopFixingEnabled === true;
-	reviewCustomInstructions = state.customInstructions?.trim() || undefined;
-}
-
-function parseMarkdownHeading(line: string): { level: number; title: string } | null {
-	const headingMatch = line.match(/^\s*(#{1,6})\s+(.+?)\s*$/);
-	if (!headingMatch) {
-		return null;
-	}
-
-	const rawTitle = headingMatch[2].replace(/\s+#+\s*$/, "").trim();
-	return {
-		level: headingMatch[1].length,
-		title: rawTitle,
-	};
-}
-
-function getFindingsSectionBounds(lines: string[]): { start: number; end: number } | null {
-	let start = -1;
-	let findingsHeadingLevel: number | null = null;
-
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const heading = parseMarkdownHeading(line);
-		if (heading && /^findings\b/i.test(heading.title)) {
-			start = i + 1;
-			findingsHeadingLevel = heading.level;
-			break;
-		}
-		if (/^\s*findings\s*:?\s*$/i.test(line)) {
-			start = i + 1;
-			break;
-		}
-	}
-
-	if (start < 0) {
-		return null;
-	}
-
-	let end = lines.length;
-	for (let i = start; i < lines.length; i++) {
-		const line = lines[i];
-		const heading = parseMarkdownHeading(line);
-		if (heading) {
-			const normalizedTitle = heading.title.replace(/[*_`]/g, "").trim();
-			if (/^(review scope|verdict|overall verdict|fix queue|constraints(?:\s*&\s*preferences)?)\b:?/i.test(normalizedTitle)) {
-				end = i;
-				break;
-			}
-
-			if (/\[P[0-3]\]/i.test(heading.title)) {
-				continue;
-			}
-
-			if (findingsHeadingLevel !== null && heading.level <= findingsHeadingLevel) {
-				end = i;
-				break;
-			}
-		}
-
-		if (/^\s*(review scope|verdict|overall verdict|fix queue|constraints(?:\s*&\s*preferences)?)\b:?/i.test(line)) {
-			end = i;
-			break;
-		}
-	}
-
-	return { start, end };
-}
-
-function isLikelyFindingLine(line: string): boolean {
-	if (!/\[P[0-3]\]/i.test(line)) {
-		return false;
-	}
-
-	if (/^\s*(?:[-*+]|(?:\d+)[.)]|#{1,6})\s+priority\s+tag\b/i.test(line)) {
-		return false;
-	}
-
-	if (/^\s*(?:[-*+]|(?:\d+)[.)]|#{1,6})\s+\[P[0-3]\]\s*-\s*(?:drop everything|urgent|normal|low|nice to have)\b/i.test(line)) {
-		return false;
-	}
-
-	const allPriorityTags = line.match(/\[P[0-3]\]/gi) ?? [];
-	if (allPriorityTags.length > 1) {
-		return false;
-	}
-
-	if (/^\s*(?:[-*+]|(?:\d+)[.)])\s+/.test(line)) {
-		return true;
-	}
-
-	if (/^\s*#{1,6}\s+/.test(line)) {
-		return true;
-	}
-
-	if (/^\s*(?:\*\*|__)?\[P[0-3]\](?:\*\*|__)?(?=\s|:|-)/i.test(line)) {
-		return true;
-	}
-
-	return false;
-}
-
-function normalizeVerdictValue(value: string): string {
-	return value
-		.trim()
-		.replace(/^[-*+]\s*/, "")
-		.replace(/^['"`]+|['"`]+$/g, "")
-		.toLowerCase();
-}
-
-function isNeedsAttentionVerdictValue(value: string): boolean {
-	const normalized = normalizeVerdictValue(value);
-	if (!normalized.includes("needs attention")) {
-		return false;
-	}
-
-	if (/\bnot\s+needs\s+attention\b/.test(normalized)) {
-		return false;
-	}
-
-	// Reject rubric/choice phrasing like "correct or needs attention", but
-	// keep legitimate verdict text that may contain unrelated "or".
-	if (/\bcorrect\b/.test(normalized) && /\bor\b/.test(normalized)) {
-		return false;
-	}
-
-	return true;
-}
-
-function hasNeedsAttentionVerdict(messageText: string): boolean {
-	const lines = messageText.split(/\r?\n/);
-
-	for (const line of lines) {
-		const inlineMatch = line.match(/^\s*(?:[*-+]\s*)?(?:overall\s+)?verdict\s*:\s*(.+)$/i);
-		if (inlineMatch && isNeedsAttentionVerdictValue(inlineMatch[1])) {
-			return true;
-		}
-	}
-
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const heading = parseMarkdownHeading(line);
-
-		let verdictLevel: number | null = null;
-		if (heading) {
-			const normalizedHeading = heading.title.replace(/[*_`]/g, "").trim();
-			if (!/^(?:overall\s+)?verdict\b/i.test(normalizedHeading)) {
-				continue;
-			}
-			verdictLevel = heading.level;
-		} else if (!/^\s*(?:overall\s+)?verdict\s*:?\s*$/i.test(line)) {
-			continue;
-		}
-
-		for (let j = i + 1; j < lines.length; j++) {
-			const verdictLine = lines[j];
-			const nextHeading = parseMarkdownHeading(verdictLine);
-			if (nextHeading) {
-				const normalizedNextHeading = nextHeading.title.replace(/[*_`]/g, "").trim();
-				if (verdictLevel === null || nextHeading.level <= verdictLevel) {
-					break;
-				}
-				if (/^(review scope|findings|fix queue|constraints(?:\s*&\s*preferences)?)\b:?/i.test(normalizedNextHeading)) {
-					break;
-				}
-			}
-
-			const trimmed = verdictLine.trim();
-			if (!trimmed) {
-				continue;
-			}
-
-			if (isNeedsAttentionVerdictValue(trimmed)) {
-				return true;
-			}
-
-			if (/\bcorrect\b/i.test(normalizeVerdictValue(trimmed))) {
-				break;
-			}
-		}
-	}
-
-	return false;
-}
-
-function hasBlockingReviewFindings(messageText: string): boolean {
-	const lines = messageText.split(/\r?\n/);
-	const bounds = getFindingsSectionBounds(lines);
-	const candidateLines = bounds ? lines.slice(bounds.start, bounds.end) : lines;
-
-	let inCodeFence = false;
-	let foundTaggedFinding = false;
-	for (const line of candidateLines) {
-		if (/^\s*```/.test(line)) {
-			inCodeFence = !inCodeFence;
-			continue;
-		}
-		if (inCodeFence) {
-			continue;
-		}
-
-		if (!isLikelyFindingLine(line)) {
-			continue;
-		}
-
-		foundTaggedFinding = true;
-		if (/\[(P0|P1|P2)\]/i.test(line)) {
-			return true;
-		}
-	}
-
-	if (foundTaggedFinding) {
-		return false;
-	}
-
-	return hasNeedsAttentionVerdict(messageText);
-}
-
 // Review target types (matching Codex's approach)
 type ReviewTarget =
 	| { type: "uncommitted" }
@@ -410,9 +151,6 @@ type ReviewTarget =
 // Prompts (adapted from Codex)
 const UNCOMMITTED_PROMPT =
 	"Review the current code changes (staged, unstaged, and untracked files) and provide prioritized findings.";
-
-const LOCAL_CHANGES_REVIEW_INSTRUCTIONS =
-	"Also include local working-tree changes (staged, unstaged, and untracked files) from this branch. Use `git status --porcelain`, `git diff`, `git diff --staged`, and `git ls-files --others --exclude-standard` so local fixes are part of this review cycle.";
 
 const BASE_BRANCH_PROMPT_WITH_MERGE_BASE =
 	"Review the code changes against the base branch '{baseBranch}'. The merge base commit for this comparison is {mergeBaseSha}. Run `git diff {mergeBaseSha}` to inspect the changes relative to {baseBranch}. Provide prioritized, actionable findings.";
@@ -439,7 +177,7 @@ const REVIEW_RUBRIC = `# Review Guidelines
 
 You are acting as a code reviewer for a proposed code change made by another engineer.
 
-Below are default guidelines for determining what to flag. These are not the final word — if you encounter more specific guidelines elsewhere (in a developer message, user message, file, or project review guidelines appended below), those override these general instructions.
+Below are default guidelines for determining what to flag. These are not the final word — if you encounter more specific guidelines elsewhere (in a developer message, user message, or file), those override these general instructions.
 
 ## Determining what to flag
 
@@ -732,36 +470,6 @@ const REVIEW_PROFILE_RUBRICS: Record<ReviewProfileId, string> = {
 	"thermo-nuclear": THERMO_NUCLEAR_RUBRIC,
 };
 
-async function loadProjectReviewGuidelines(cwd: string): Promise<string | null> {
-	let currentDir = path.resolve(cwd);
-
-	while (true) {
-		const piDir = path.join(currentDir, ".pi");
-		const guidelinesPath = path.join(currentDir, "REVIEW_GUIDELINES.md");
-
-		const piStats = await fs.stat(piDir).catch(() => null);
-		if (piStats?.isDirectory()) {
-			const guidelineStats = await fs.stat(guidelinesPath).catch(() => null);
-			if (guidelineStats?.isFile()) {
-				try {
-					const content = await fs.readFile(guidelinesPath, "utf8");
-					const trimmed = content.trim();
-					return trimmed ? trimmed : null;
-				} catch {
-					return null;
-				}
-			}
-			return null;
-		}
-
-		const parentDir = path.dirname(currentDir);
-		if (parentDir === currentDir) {
-			return null;
-		}
-		currentDir = parentDir;
-	}
-}
-
 /**
  * Get the merge base between HEAD and a branch
  */
@@ -956,33 +664,25 @@ async function getDefaultBranch(pi: ExtensionAPI): Promise<string> {
 /**
  * Build the review prompt based on target
  */
-async function buildReviewPrompt(
-	pi: ExtensionAPI,
-	target: ReviewTarget,
-	options?: { includeLocalChanges?: boolean },
-): Promise<string> {
-	const includeLocalChanges = options?.includeLocalChanges === true;
-
+async function buildReviewPrompt(pi: ExtensionAPI, target: ReviewTarget): Promise<string> {
 	switch (target.type) {
 		case "uncommitted":
 			return UNCOMMITTED_PROMPT;
 
 		case "baseBranch": {
 			const mergeBase = await getMergeBase(pi, target.branch);
-			const basePrompt = mergeBase
+			return mergeBase
 				? BASE_BRANCH_PROMPT_WITH_MERGE_BASE.replace(/{baseBranch}/g, target.branch).replace(/{mergeBaseSha}/g, mergeBase)
 				: BASE_BRANCH_PROMPT_FALLBACK.replace(/{branch}/g, target.branch);
-			return includeLocalChanges ? `${basePrompt} ${LOCAL_CHANGES_REVIEW_INSTRUCTIONS}` : basePrompt;
 		}
 
 		case "compareBranches": {
 			const mergeBase = await getMergeBaseBetweenRefs(pi, target.targetBranch, target.baseBranch);
-			const basePrompt = buildCompareBranchesPrompt({
+			return buildCompareBranchesPrompt({
 				targetBranch: target.targetBranch,
 				baseBranch: target.baseBranch,
 				mergeBaseSha: mergeBase,
 			});
-			return includeLocalChanges ? `${basePrompt} ${LOCAL_CHANGES_REVIEW_INSTRUCTIONS}` : basePrompt;
 		}
 
 		case "commit":
@@ -993,7 +693,7 @@ async function buildReviewPrompt(
 
 		case "pullRequest": {
 			const mergeBase = await getMergeBase(pi, target.baseBranch);
-			const basePrompt = mergeBase
+			return mergeBase
 				? PULL_REQUEST_PROMPT
 						.replace(/{prNumber}/g, String(target.prNumber))
 						.replace(/{title}/g, target.title)
@@ -1003,7 +703,6 @@ async function buildReviewPrompt(
 						.replace(/{prNumber}/g, String(target.prNumber))
 						.replace(/{title}/g, target.title)
 						.replace(/{baseBranch}/g, target.baseBranch);
-			return includeLocalChanges ? `${basePrompt} ${LOCAL_CHANGES_REVIEW_INSTRUCTIONS}` : basePrompt;
 		}
 
 		case "folder":
@@ -1087,14 +786,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function waitForAgentTurnToStart(ctx: ExtensionContext, previousAssistantId?: string): Promise<boolean> {
-	const deadline = Date.now() + REVIEW_LOOP_START_TIMEOUT_MS;
+	const deadline = Date.now() + REVIEW_TURN_START_TIMEOUT_MS;
 
 	while (Date.now() < deadline) {
 		const lastAssistantId = getLastAssistantSnapshot(ctx)?.id;
 		if (!ctx.isIdle() || ctx.hasPendingMessages() || (lastAssistantId && lastAssistantId !== previousAssistantId)) {
 			return true;
 		}
-		await sleep(REVIEW_LOOP_START_POLL_MS);
+		await sleep(REVIEW_TURN_START_POLL_MS);
 	}
 
 	return false;
@@ -1102,57 +801,54 @@ async function waitForAgentTurnToStart(ctx: ExtensionContext, previousAssistantI
 
 // Review preset options for the selector (keep this order stable)
 const REVIEW_PRESETS = [
-	{ value: "uncommitted", label: "Review uncommitted changes", description: "" },
-	{ value: "baseBranch", label: "Review against a base branch", description: "(local)" },
-	{ value: "compareBranches", label: "Review another branch against base", description: "(no checkout)" },
-	{ value: "commit", label: "Review a commit", description: "" },
-	{ value: "pullRequest", label: "Review a pull request", description: "(GitHub PR)" },
-	{ value: "folder", label: "Review a folder (or more)", description: "(snapshot, not diff)" },
+	{
+		value: "uncommitted",
+		label: "Uncommitted changes",
+		description: "Staged, unstaged, and untracked files",
+	},
+	{
+		value: "baseBranch",
+		label: "Current branch",
+		description: "Compare the checked-out branch with a base branch",
+	},
+	{
+		value: "compareBranches",
+		label: "Another branch or ref",
+		description: "Compare it with a base branch without checking it out",
+	},
+	{
+		value: "commit",
+		label: "Commit",
+		description: "Changes introduced by one commit",
+	},
+	{
+		value: "pullRequest",
+		label: "GitHub pull request",
+		description: "Check out and review a PR",
+	},
+	{
+		value: "folder",
+		label: "Files or folders",
+		description: "Review current contents, not Git changes",
+	},
 ] as const;
 
-const TOGGLE_LOOP_FIXING_VALUE = "toggleLoopFixing" as const;
-const TOGGLE_CUSTOM_INSTRUCTIONS_VALUE = "toggleCustomInstructions" as const;
-type ReviewPresetValue =
-	| (typeof REVIEW_PRESETS)[number]["value"]
-	| typeof TOGGLE_LOOP_FIXING_VALUE
-	| typeof TOGGLE_CUSTOM_INSTRUCTIONS_VALUE;
+type ReviewPresetValue = (typeof REVIEW_PRESETS)[number]["value"];
 
 export default function reviewExtension(pi: ExtensionAPI) {
 	const reviewPromptFooterState = createReviewPromptFooterState();
 	registerReviewPromptFooterLifecycle(pi, reviewPromptFooterState);
 
-	function persistReviewSettings() {
-		pi.appendEntry(REVIEW_SETTINGS_TYPE, {
-			loopFixingEnabled: reviewLoopFixingEnabled,
-			customInstructions: reviewCustomInstructions,
-		});
-	}
-
-	function setReviewLoopFixingEnabled(enabled: boolean) {
-		reviewLoopFixingEnabled = enabled;
-		persistReviewSettings();
-	}
-
-	function setReviewCustomInstructions(instructions: string | undefined) {
-		reviewCustomInstructions = instructions?.trim() || undefined;
-		persistReviewSettings();
-	}
-
-	function applyAllReviewState(ctx: ExtensionContext) {
-		applyReviewSettings(ctx);
-		applyReviewState(ctx);
-	}
-
 	pi.on("session_start", (_event, ctx) => {
-		applyAllReviewState(ctx);
+		applyReviewState(ctx);
 	});
 
 	pi.on("session_switch", (_event, ctx) => {
-		applyAllReviewState(ctx);
+		applyReviewState(ctx);
 	});
 
 	pi.on("session_tree", (_event, ctx) => {
-		applyAllReviewState(ctx);
+		applyReviewState(ctx);
 	});
 
 	/**
@@ -1223,36 +919,18 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	async function showReviewSelector(ctx: ExtensionContext): Promise<ReviewTarget | null> {
 		// Determine smart default (but keep the list order stable)
 		const smartDefault = await getSmartDefault();
-		const presetItems: SelectItem[] = REVIEW_PRESETS.map((preset) => ({
+		const items: SelectItem[] = REVIEW_PRESETS.map((preset) => ({
 			value: preset.value,
 			label: preset.label,
 			description: preset.description,
 		}));
-		const smartDefaultIndex = presetItems.findIndex((item) => item.value === smartDefault);
+		const smartDefaultIndex = items.findIndex((item) => item.value === smartDefault);
 
 		while (true) {
-			const customInstructionsLabel = reviewCustomInstructions
-				? "Remove custom review instructions"
-				: "Add custom review instructions";
-			const customInstructionsDescription = reviewCustomInstructions
-				? "(currently set)"
-				: "(applies to all review modes)";
-			const loopToggleLabel = reviewLoopFixingEnabled ? "Disable Loop Fixing" : "Enable Loop Fixing";
-			const loopToggleDescription = reviewLoopFixingEnabled ? "(currently on)" : "(currently off)";
-			const items: SelectItem[] = [
-				...presetItems,
-				{
-					value: TOGGLE_CUSTOM_INSTRUCTIONS_VALUE,
-					label: customInstructionsLabel,
-					description: customInstructionsDescription,
-				},
-				{ value: TOGGLE_LOOP_FIXING_VALUE, label: loopToggleLabel, description: loopToggleDescription },
-			];
-
 			const result = await ctx.ui.custom<ReviewPresetValue | null>((tui, theme, _kb, done) => {
 				const container = new Container();
 				container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-				container.addChild(new Text(theme.fg("accent", theme.bold("Select a review preset"))));
+				container.addChild(new Text(theme.fg("accent", theme.bold("What do you want to review?"))));
 
 				const selectList = new SelectList(items, Math.min(items.length, 10), {
 					selectedPrefix: (text) => theme.fg("accent", text),
@@ -1290,35 +968,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 			if (!result) return null;
 
-			if (result === TOGGLE_LOOP_FIXING_VALUE) {
-				const nextEnabled = !reviewLoopFixingEnabled;
-				setReviewLoopFixingEnabled(nextEnabled);
-				ctx.ui.notify(nextEnabled ? "Loop fixing enabled" : "Loop fixing disabled", "info");
-				continue;
-			}
-
-			if (result === TOGGLE_CUSTOM_INSTRUCTIONS_VALUE) {
-				if (reviewCustomInstructions) {
-					setReviewCustomInstructions(undefined);
-					ctx.ui.notify("Custom review instructions removed", "info");
-					continue;
-				}
-
-				const customInstructions = await ctx.ui.editor(
-					"Enter custom review instructions (applies to all review modes):",
-					"",
-				);
-
-				if (!customInstructions?.trim()) {
-					ctx.ui.notify("Custom review instructions not changed", "info");
-					continue;
-				}
-
-				setReviewCustomInstructions(customInstructions);
-				ctx.ui.notify("Custom review instructions saved", "info");
-				continue;
-			}
-
 			// Handle each preset type
 			switch (result) {
 				case "uncommitted":
@@ -1337,10 +986,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				case "commit": {
-					if (reviewLoopFixingEnabled) {
-						ctx.ui.notify("Loop mode does not work with this review target.", "error");
-						break;
-					}
 					const target = await showCommitSelector(ctx);
 					if (target) return target;
 					break;
@@ -1728,8 +1373,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	}
 
 	type ExecuteReviewOptions = {
-		includeLocalChanges?: boolean;
-		extraInstruction?: string;
 		profile?: ReviewProfileId;
 		modelSelection?: SelectedReviewModel;
 	};
@@ -1740,27 +1383,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		useFreshSession: boolean,
 		options?: ExecuteReviewOptions,
 	): Promise<void> {
-		const prompt = await buildReviewPrompt(pi, target, {
-			includeLocalChanges: options?.includeLocalChanges === true,
-		});
+		const prompt = await buildReviewPrompt(pi, target);
 		const hint = getUserFacingHint(target);
-		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
 
 		const profile = options?.profile ?? DEFAULT_REVIEW_PROFILE_ID;
 		const rubric = REVIEW_PROFILE_RUBRICS[profile];
-		let fullPrompt = `${rubric}\n\n---\n\nPlease perform a code review with the following focus:\n\n${prompt}`;
-
-		if (reviewCustomInstructions) {
-			fullPrompt += `\n\nShared custom review instructions (applies to all reviews):\n\n${reviewCustomInstructions}`;
-		}
-
-		if (options?.extraInstruction?.trim()) {
-			fullPrompt += `\n\nAdditional user-provided review instruction:\n\n${options.extraInstruction.trim()}`;
-		}
-
-		if (projectGuidelines) {
-			fullPrompt += `\n\nThis project has additional instructions for code reviews:\n\n${projectGuidelines}`;
-		}
+		const fullPrompt = `${rubric}\n\n---\n\nPlease perform a code review with the following focus:\n\n${prompt}`;
 
 		const modeHint = useFreshSession ? " (fresh session)" : "";
 		const profileLabel = REVIEW_PROFILE_OPTIONS.find((option) => option.id === profile)?.label ?? profile;
@@ -1899,7 +1527,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		target: ReviewTarget | { type: "pr"; ref: string } | null;
 		profile: ReviewProfileId;
 		profileSpecified: boolean;
-		extraInstruction?: string;
 		error?: string;
 	};
 
@@ -1958,6 +1585,16 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		}
 
 		const rawParts = tokenizeArgs(args.trim());
+		const unsupportedOptionError = getUnsupportedReviewOptionError(rawParts);
+		if (unsupportedOptionError) {
+			return {
+				target: null,
+				profile: DEFAULT_REVIEW_PROFILE_ID,
+				profileSpecified: false,
+				error: unsupportedOptionError,
+			};
+		}
+
 		const profileParse = parseReviewProfileOption(rawParts);
 		if (profileParse.error) {
 			return {
@@ -1968,38 +1605,10 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			};
 		}
 
-		const parts: string[] = [];
-		let extraInstruction: string | undefined;
-
-		for (let i = 0; i < profileParse.parts.length; i++) {
-			const part = profileParse.parts[i];
-			if (part === "--extra") {
-				const next = profileParse.parts[i + 1];
-				if (!next) {
-					return {
-						target: null,
-						profile: profileParse.profile,
-						profileSpecified: profileParse.profileSpecified,
-						error: "Missing value for --extra",
-					};
-				}
-				extraInstruction = next;
-				i += 1;
-				continue;
-			}
-
-			if (part.startsWith("--extra=")) {
-				extraInstruction = part.slice("--extra=".length);
-				continue;
-			}
-
-			parts.push(part);
-		}
-
+		const parts = profileParse.parts;
 		const baseResult = {
 			profile: profileParse.profile,
 			profileSpecified: profileParse.profileSpecified,
-			extraInstruction,
 		};
 
 		if (parts.length === 0) {
@@ -2099,122 +1708,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		};
 	}
 
-	function isLoopCompatibleTarget(target: ReviewTarget): boolean {
-		return target.type !== "commit" && target.type !== "compareBranches";
-	}
-
-	async function runLoopFixingReview(
-		ctx: ExtensionCommandContext,
-		target: ReviewTarget,
-		profile: ReviewProfileId,
-		extraInstruction?: string,
-	): Promise<void> {
-		if (reviewLoopInProgress) {
-			ctx.ui.notify("Loop fixing review is already running.", "warning");
-			return;
-		}
-
-		reviewLoopInProgress = true;
-		setReviewWidget(ctx, Boolean(reviewOriginId));
-		try {
-			ctx.ui.notify(
-				"Loop fixing enabled: using Empty branch mode and cycling until no blocking findings remain.",
-				"info",
-			);
-
-			for (let pass = 1; pass <= REVIEW_LOOP_MAX_ITERATIONS; pass++) {
-				const reviewBaselineAssistantId = getLastAssistantSnapshot(ctx)?.id;
-				const started = await executeReview(ctx, target, true, {
-					includeLocalChanges: true,
-					extraInstruction,
-					profile,
-				});
-				if (!started) {
-					ctx.ui.notify("Loop fixing stopped before starting the review pass.", "warning");
-					return;
-				}
-
-				const reviewTurnStarted = await waitForAgentTurnToStart(ctx, reviewBaselineAssistantId);
-				if (!reviewTurnStarted) {
-					ctx.ui.notify("Loop fixing stopped: review pass did not start in time.", "error");
-					return;
-				}
-
-				await ctx.waitForIdle();
-
-				const reviewSnapshot = getLastAssistantSnapshot(ctx);
-				if (!reviewSnapshot || reviewSnapshot.id === reviewBaselineAssistantId) {
-					ctx.ui.notify("Loop fixing stopped: could not read the review result.", "warning");
-					return;
-				}
-
-				if (reviewSnapshot.stopReason === "aborted") {
-					ctx.ui.notify("Loop fixing stopped: review was aborted.", "warning");
-					return;
-				}
-
-				if (reviewSnapshot.stopReason === "error") {
-					ctx.ui.notify("Loop fixing stopped: review failed with an error.", "error");
-					return;
-				}
-
-				if (reviewSnapshot.stopReason === "length") {
-					ctx.ui.notify("Loop fixing stopped: review output was truncated (stopReason=length).", "warning");
-					return;
-				}
-
-				if (!hasBlockingReviewFindings(reviewSnapshot.text)) {
-					const finalized = await executeEndReviewAction(ctx, "returnAndSummarize", {
-						showSummaryLoader: true,
-						notifySuccess: false,
-					});
-					if (finalized !== "ok") {
-						return;
-					}
-
-					ctx.ui.notify("Loop fixing complete: no blocking findings remain.", "info");
-					return;
-				}
-
-				ctx.ui.notify(
-					`Loop fixing pass ${pass}: found blocking findings, returning to verify them before fixing...`,
-					"info",
-				);
-
-				const verifiedFixResult = await executeEndReviewAction(ctx, "returnVerifyAndFix", {
-					showSummaryLoader: true,
-					notifySuccess: false,
-				});
-				if (verifiedFixResult === "noAgreedFindings") {
-					ctx.ui.notify("Loop fixing complete: no findings passed verification.", "info");
-					return;
-				}
-				if (verifiedFixResult !== "ok") {
-					return;
-				}
-			}
-
-			ctx.ui.notify(
-				`Loop fixing stopped after ${REVIEW_LOOP_MAX_ITERATIONS} passes (safety limit reached).`,
-				"warning",
-			);
-		} finally {
-			reviewLoopInProgress = false;
-			setReviewWidget(ctx, Boolean(reviewOriginId));
-		}
-	}
-
 	// Register the /review command
 	pi.registerCommand("review", {
-		description: "Review code changes (PR, uncommitted, branch, commit, or folder)",
+		description: "Review uncommitted changes, branches, commits, GitHub PRs, or files",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("Review requires interactive mode", "error");
-				return;
-			}
-
-			if (reviewLoopInProgress) {
-				ctx.ui.notify("Loop fixing review is already running.", "warning");
 				return;
 			}
 
@@ -2234,7 +1733,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			// Try to parse direct arguments
 			let target: ReviewTarget | null = null;
 			let fromSelector = false;
-			let extraInstruction: string | undefined;
 			let profile: ReviewProfileId = DEFAULT_REVIEW_PROFILE_ID;
 			let profileSpecified = false;
 			const parsed = parseArgs(args);
@@ -2242,7 +1740,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				ctx.ui.notify(parsed.error, "error");
 				return;
 			}
-			extraInstruction = parsed.extraInstruction?.trim() || undefined;
 			profile = parsed.profile;
 			profileSpecified = parsed.profileSpecified;
 
@@ -2287,20 +1784,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					return;
 				}
 
-				if (reviewLoopFixingEnabled && !isLoopCompatibleTarget(target)) {
-					ctx.ui.notify("Loop mode does not work with this review target.", "error");
-					if (fromSelector) {
-						target = null;
-						continue;
-					}
-					return;
-				}
-
-				if (reviewLoopFixingEnabled) {
-					await runLoopFixingReview(ctx, target, profile, extraInstruction);
-					return;
-				}
-
 				// Determine if we should use fresh session mode
 				// Check if this is a new session (no messages yet)
 				const entries = ctx.sessionManager.getEntries();
@@ -2340,7 +1823,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				await executeReview(ctx, target, useFreshSession, {
-					extraInstruction,
 					profile,
 					modelSelection,
 				});
@@ -2673,11 +2155,6 @@ End the summary with this exact final line:
 	async function runEndReview(ctx: ExtensionCommandContext): Promise<void> {
 		if (!ctx.hasUI) {
 			ctx.ui.notify("End-review requires interactive mode", "error");
-			return;
-		}
-
-		if (reviewLoopInProgress) {
-			ctx.ui.notify("Loop fixing review is running. Wait for it to finish.", "info");
 			return;
 		}
 

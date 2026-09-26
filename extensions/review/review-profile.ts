@@ -64,19 +64,6 @@ export function parseReviewProfileOption(parts: string[]): ParsedReviewProfileOp
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
 
-		if (part === "--extra") {
-			remainingParts.push(part);
-			if (i + 1 < parts.length) {
-				remainingParts.push(parts[i + 1]);
-				i += 1;
-			}
-			continue;
-		}
-
-		if (part.startsWith("--extra=")) {
-			remainingParts.push(part);
-			continue;
-		}
 
 		if (part === "--profile") {
 			profileSpecified = true;

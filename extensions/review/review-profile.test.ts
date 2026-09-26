@@ -36,17 +36,6 @@ test("parseReviewProfileOption accepts equals --profile value", () => {
 	});
 });
 
-test("parseReviewProfileOption preserves --extra args for the existing parser", () => {
-	assert.deepEqual(
-		parseReviewProfileOption(["branch", "main", "--extra", "focus on API boundaries", "--profile", "thermo-nuclear"]),
-		{
-			profile: "thermo-nuclear",
-			profileSpecified: true,
-			parts: ["branch", "main", "--extra", "focus on API boundaries"],
-		},
-	);
-});
-
 test("parseReviewProfileOption rejects unknown profile names", () => {
 	assert.deepEqual(parseReviewProfileOption(["--profile", "extreme", "branch", "main"]), {
 		profile: DEFAULT_REVIEW_PROFILE_ID,
@@ -80,13 +69,5 @@ test("parseReviewProfileOption preserves the first profile parse error", () => {
 		profileSpecified: true,
 		parts: ["branch", "main"],
 		error: "Missing value for --profile",
-	});
-});
-
-test("parseReviewProfileOption preserves --extra values that look like profile flags", () => {
-	assert.deepEqual(parseReviewProfileOption(["--extra", "--profile=thermo-nuclear", "branch", "main"]), {
-		profile: DEFAULT_REVIEW_PROFILE_ID,
-		profileSpecified: false,
-		parts: ["--extra", "--profile=thermo-nuclear", "branch", "main"],
 	});
 });
