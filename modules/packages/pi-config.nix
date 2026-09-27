@@ -9,7 +9,10 @@
     }:
     let
       piRemote = self'.packages."pi-remote";
-      piPackage = inputs.llm-agents.packages.${system}.pi;
+      upstreamPi = inputs.llm-agents.packages.${system}.pi;
+      piPackage = import ../../nix/packages/pi-with-tool-result-preview.nix {
+        inherit pkgs upstreamPi;
+      };
       piIntervals = self'.packages."pi-intervals";
 
       # Use the current Claude Code CLI from llm-agents instead of the bridge's

@@ -9,6 +9,9 @@
     }:
     let
       upstreamPi = inputs.llm-agents.packages.${system}.pi;
+      piPackage = import ../../nix/packages/pi-with-tool-result-preview.nix {
+        inherit pkgs upstreamPi;
+      };
       piDeps = import ../../nix/packages/pi-deps.nix {
         inherit pkgs;
         piRemote = self'.packages.pi-remote;
@@ -30,18 +33,18 @@
       packages = {
         pi = mkPiSkillsetWrapper {
           inherit pkgs skillsets;
-          piPackage = upstreamPi;
+          inherit piPackage;
         };
         pi-matt = mkPiSkillsetWrapper {
           inherit pkgs skillsets;
-          piPackage = upstreamPi;
+          inherit piPackage;
           programName = "pi-matt";
           defaultSkillset = "matt";
           allowSelection = false;
         };
         pi-superpowers = mkPiSkillsetWrapper {
           inherit pkgs skillsets;
-          piPackage = upstreamPi;
+          inherit piPackage;
           allowSelection = false;
         };
         mattpocock-skills = piDeps.mattPocockSkills;
