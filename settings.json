@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.64.0",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "xhigh",
   "contextPaging": {
     "enabled": false,
