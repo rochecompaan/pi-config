@@ -81,7 +81,7 @@ export function shouldTriggerAutoHandoff(input: AutoHandoffTriggerInput): boolea
 export function transitionAutoHandoffState(_state: AutoHandoffState, event: AutoHandoffEvent): AutoHandoffState {
 	switch (event.type) {
 		case "session-start":
-			return "armed";
+			return "disabled";
 		case "threshold-reached":
 			return "countdown";
 		case "preparation-started":

@@ -4,7 +4,7 @@
   "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "xhigh",
   "contextPaging": {
-    "enabled": false,
+    "enabled": true,
     "tokenBudget": 128000
   },
   "handoff": {

@@ -97,7 +97,7 @@ test("triggers only for an armed idle TUI at or above the threshold", () => {
 });
 
 test("applies every approved automatic phase transition", () => {
-	assert.equal(transitionAutoHandoffState("disabled", { type: "session-start" }), "armed");
+	assert.equal(transitionAutoHandoffState("armed", { type: "session-start" }), "disabled");
 	assert.equal(transitionAutoHandoffState("armed", { type: "threshold-reached" }), "countdown");
 	assert.equal(transitionAutoHandoffState("countdown", { type: "preparation-started" }), "preparing");
 	assert.equal(transitionAutoHandoffState("preparing", { type: "preparation-settled" }), "finalizing");

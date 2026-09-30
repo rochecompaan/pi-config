@@ -125,6 +125,7 @@ async function beginAutomaticHandoff(
 	command: ReturnType<typeof createCommandContext>,
 ): Promise<void> {
 	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 }
@@ -217,7 +218,7 @@ test("manual session cancellation keeps the current session", async () => {
 	assert.equal(command.notices.at(-1)?.message, "New session cancelled");
 });
 
-test("settled usage at the threshold dispatches one internal command", async () => {
+test("automatic handoff is disabled by default and can be enabled at the threshold", async () => {
 	const harness = createHarness({
 		loadSettings: async () => ({
 			globalSettings: { handoff: { autoThresholdTokens: 100 } },
@@ -227,6 +228,9 @@ test("settled usage at the threshold dispatches one internal command", async () 
 	const command = createCommandContext({ usageTokens: 100 });
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
+	assert.deepEqual(harness.sentMessages, []);
+
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	assert.deepEqual(harness.sentMessages, [{
 		content: "/handoff --auto",
@@ -247,10 +251,14 @@ test("settled trigger ignores unavailable, low, busy, and non-TUI usage", async 
 				projectTrusted: false,
 			}),
 		});
-		const command = createCommandContext({ usageTokens: change.usageTokens });
+		const command = createCommandContext({ usageTokens: 99 });
+		await harness.events.get("session_start")?.({}, command.ctx);
+		await harness.commandHandler("auto on", command.ctx);
+		command.ctx.getContextUsage = () => change.usageTokens === undefined
+			? undefined
+			: { tokens: change.usageTokens };
 		if (change.idle === false) command.ctx.isIdle = () => false;
 		if (change.mode) command.ctx.mode = change.mode;
-		await harness.events.get("session_start")?.({}, command.ctx);
 		await harness.events.get("agent_settled")?.({}, command.ctx);
 		assert.deepEqual(harness.sentMessages, []);
 	}
@@ -265,7 +273,7 @@ test("dispatch errors disable automatic handoff", async () => {
 	}, { sendError: new Error("dispatch failed") });
 	const command = createCommandContext({ usageTokens: 100 });
 	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.events.get("agent_settled")?.({}, command.ctx);
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.commandHandler("auto status", command.ctx);
 	assert.deepEqual(harness.sentMessages, []);
 	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
@@ -323,20 +331,21 @@ test("auto on dispatches immediately at the threshold", async () => {
 	}]);
 });
 
-test("session start resets disabled automatic state", async () => {
+test("session start restores the disabled automatic state", async () => {
 	const harness = createHarness({ loadSettings: thresholdSettings });
 	const command = createCommandContext({ usageTokens: 99 });
 	await harness.events.get("session_start")?.({}, command.ctx);
-	await harness.commandHandler("auto off", command.ctx);
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.events.get("session_start")?.({}, command.ctx);
 	await harness.commandHandler("auto status", command.ctx);
-	assert.match(command.notices.at(-1)?.message ?? "", /armed/);
+	assert.match(command.notices.at(-1)?.message ?? "", /disabled/);
 });
 
 test("automatic countdown cancellation disables later attempts", async () => {
 	const harness = createHarness({ showAutoCountdown: async () => false });
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await harness.commandHandler("--auto", command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
@@ -352,6 +361,7 @@ test("automatic countdown errors disable later attempts", async () => {
 	});
 	const command = createCommandContext({ usageTokens: 150_000 });
 	await harness.events.get("session_start")?.({}, command.ctx);
+	await harness.commandHandler("auto on", command.ctx);
 	await harness.events.get("agent_settled")?.({}, command.ctx);
 	await assert.doesNotReject(() => harness.commandHandler("--auto", command.ctx));
 	assert.equal(command.notices.at(-1)?.level, "error");

@@ -220,7 +220,7 @@ export function registerHandoffExtension(
 	pi: ExtensionAPI,
 	dependencies: HandoffDependencies = defaultDependencies,
 ): void {
-	let autoState: AutoHandoffState = "armed";
+	let autoState: AutoHandoffState = "disabled";
 	let autoThresholdTokens = DEFAULT_AUTO_THRESHOLD_TOKENS;
 	let automaticPreparation: AutomaticHandoffPreparation | undefined;
 	const disableAutomatic = (
@@ -441,7 +441,7 @@ export function registerHandoffExtension(
 			const settings = await dependencies.loadSettings(ctx);
 			autoThresholdTokens = resolveAutoThresholdTokens(settings);
 		} catch {
-			// Keep the documented default and armed state.
+			// Keep the documented threshold and disabled state.
 		}
 	});
 
