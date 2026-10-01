@@ -63,12 +63,17 @@ else
     };
 
     piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
+    # Applied after piClaudeBridgePatch. Resume Claude Code's session only while
+    # pi's history still starts with the messages it holds, so context paging
+    # (which drops older messages) forces a rebuild instead of a stale resume.
+    piClaudeBridgePagingHistorySyncPatch = ./pi-claude-bridge-paging-history-sync.patch;
     # main's package-lock.json omits integrity for five nested dev-only
     # @earendil-works entries, which crashes the npm-deps fetcher
     # ("non-git dependencies should have associated integrity"). Add them back.
     piClaudeBridgeLockIntegrityPatch = ./pi-claude-bridge-lock-integrity.patch;
     piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
     piClaudeBridgeDirectCompletionTest = ./pi-claude-bridge-direct-completion.test.mjs;
+    piClaudeBridgeHistoryIdentityTest = ./pi-claude-bridge-history-identity.test.mjs;
 
     # GitHub main snapshot (unreleased): adds Pi 0.87 compatibility and
     # claude-opus-5-5 with its measured 1M context window.
@@ -99,6 +104,7 @@ else
       postPatch = ''
         patch -p1 < ${piClaudeBridgeLockIntegrityPatch}
         patch -p1 < ${piClaudeBridgePatch}
+        patch -p1 < ${piClaudeBridgePagingHistorySyncPatch}
       '';
 
       doInstallCheck = true;
@@ -108,13 +114,17 @@ else
         test "$claudeVersion" = "2.1.280 (Claude Code)"
         bridgeHistoryModule="$TMPDIR/history-reconstruction.ts"
         bridgeDirectCompletionModule="$TMPDIR/request-router.ts"
+        bridgeHistoryIdentityModule="$TMPDIR/history-identity.ts"
         cp "$out/lib/node_modules/pi-claude-bridge/src/history-reconstruction.ts" "$bridgeHistoryModule"
         cp "$out/lib/node_modules/pi-claude-bridge/src/request-router.ts" "$bridgeDirectCompletionModule"
+        cp "$out/lib/node_modules/pi-claude-bridge/src/history-identity.ts" "$bridgeHistoryIdentityModule"
         BRIDGE_HISTORY_MODULE="$bridgeHistoryModule" \
           BRIDGE_DIRECT_COMPLETION_MODULE="$bridgeDirectCompletionModule" \
+          BRIDGE_HISTORY_IDENTITY_MODULE="$bridgeHistoryIdentityModule" \
           ${pkgs.nodejs}/bin/node --test --experimental-strip-types \
           ${piClaudeBridgeHistoryReconstructionTest} \
-          ${piClaudeBridgeDirectCompletionTest}
+          ${piClaudeBridgeDirectCompletionTest} \
+          ${piClaudeBridgeHistoryIdentityTest}
       '';
     };
 

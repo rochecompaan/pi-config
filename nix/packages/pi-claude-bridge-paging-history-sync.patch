@@ -1,0 +1,309 @@
+diff --git a/src/history-identity.ts b/src/history-identity.ts
+new file mode 100644
+index 0000000..d73f5cb
+--- /dev/null
++++ b/src/history-identity.ts
+@@ -0,0 +1,29 @@
++export type HistoryIdentityMessage = {
++	role?: string;
++	timestamp?: unknown;
++	toolCallId?: unknown;
++	content?: unknown;
++};
++
++function historyKey(message: HistoryIdentityMessage): string {
++	// Generated messages, such as a context-paging notice, carry no real timestamp,
++	// so their content is what tells one apart from the next.
++	const identity = typeof message.timestamp === "number" && message.timestamp > 0
++		? String(message.timestamp)
++		: `content:${JSON.stringify(message.content ?? null)}`;
++	const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : "";
++	return `${message.role}\u0000${identity}\u0000${toolCallId}`;
++}
++
++/** Identifies the pi history a Claude Code session holds once a turn starts: the
++ *  messages before the turn and the turn's first user message. */
++export function sessionHistoryKeys(history: readonly HistoryIdentityMessage[], turnStart: number): string[] {
++	return history.slice(0, turnStart + 1).map(historyKey);
++}
++
++/** Reports whether pi's history still begins with the messages a session holds.
++ *  Context transforms such as paging drop messages from the front, so a matching
++ *  message count alone does not prove the history continues the session. */
++export function historyStartsWith(history: readonly HistoryIdentityMessage[], keys: readonly string[]): boolean {
++	return keys.length <= history.length && keys.every((key, index) => historyKey(history[index]!) === key);
++}
+diff --git a/src/index.ts b/src/index.ts
+index 16bf496..fd5bc28 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -14,6 +14,7 @@ import {
+ 	planHistoryReconstruction,
+ 	prependHistoryTranscript,
+ } from "./history-reconstruction.js";
++import { historyStartsWith, sessionHistoryKeys } from "./history-identity.js";
+ import { routeBridgeRequest } from "./request-router.js";
+ import { applyLongContext, buildModels, claudeCodeModelId, type LongContextSettings, resolveModel as _resolveModel } from "./models.js";
+ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, renderSkillsBlock } from "./skills.js";
+@@ -210,6 +211,11 @@ interface SessionState {
+ 	// this — there's no concurrent CC writer during those events, so
+ 	// in-place rebuild (preserve UUID, deleteSession + createSession) is safe.
+ 	forceRotate?: boolean;
++	// Identity of the pi history this session holds (see sessionHistoryKeys).
++	// REUSE requires pi's history to still start with it: a context transform
++	// such as paging can drop older messages without changing the count enough
++	// to fail the cursor check. A state without it is never resumed.
++	historyKeys: string[];
+ }
+ 
+ /**
+@@ -572,6 +578,9 @@ interface SyncResult {
+ 	sessionId: string | null;
+ 	preserveSharedSession?: boolean;
+ 	historyTranscript?: string;
++	// Identity of the history this turn's session will hold, recorded on the
++	// shared session when the query completes.
++	historyKeys: string[];
+ }
+ 
+ /**
+@@ -661,6 +670,7 @@ function syncSharedSession(
+ 	// the history space (priorMessages, cursor, missed) everywhere below (issue #106).
+ 	const history = nonSystemMessages(messages);
+ 	const priorMessages = history.slice(0, turnStart(history)); // everything before the current user turn
++	const historyKeys = sessionHistoryKeys(history, priorMessages.length);
+ 
+ 	// REUSE path
+ 	//
+@@ -669,7 +679,11 @@ function syncSharedSession(
+ 	// pi-side history rewrites such as /compact and session_tree: without it,
+ 	// missed = [].slice(cursor) can falsely hit REUSE and resume an unrelated
+ 	// longer CC session. See issue #25.
+-	if (sharedSession && !sharedSession.needsRebuild && priorMessages.length >= sharedSession.cursor) {
++	const historyContinues = sharedSession?.historyKeys !== undefined && historyStartsWith(history, sharedSession.historyKeys);
++	if (sharedSession && !historyContinues) {
++		debug(`history does not start with session ${sharedSession.sessionId.slice(0, 8)}'s messages (a context transform such as paging dropped some, or they were never recorded), not resuming`);
++	}
++	if (sharedSession && !sharedSession.needsRebuild && historyContinues && priorMessages.length >= sharedSession.cursor) {
+ 		const missed = priorMessages.slice(sharedSession.cursor);
+ 		const trailingAssistantOnly =
+ 			missed.length === 1 && (missed[0] as { role?: string }).role === "assistant";
+@@ -679,7 +693,7 @@ function syncSharedSession(
+ 			}
+ 			debug(`Case 3: ${trailingAssistantOnly ? "advanced cursor past trailing assistant, " : ""}resuming session ${sharedSession.sessionId.slice(0, 8)}, cursor=${sharedSession.cursor}`);
+ 			debug(`syncResult: path=reuse sessionId=${sharedSession.sessionId} cursor=${sharedSession.cursor}`);
+-			return { sessionId: sharedSession.sessionId };
++			return { sessionId: sharedSession.sessionId, historyKeys };
+ 		}
+ 	}
+ 	// This is what keeps a reentrant subagent from taking over the parent's
+@@ -697,6 +711,7 @@ function syncSharedSession(
+ 		return {
+ 			sessionId: null,
+ 			historyTranscript: reconstruction.transcript,
++			historyKeys,
+ 		};
+ 	}
+ 	// It is NOT, despite an earlier comment here, the isolated compact-summary
+@@ -708,14 +723,14 @@ function syncSharedSession(
+ 	if (sharedSession && !sharedSession.needsRebuild && priorMessages.length < sharedSession.cursor) {
+ 		debug(`Case 1 synthetic: clean start for shorter context, preserving shared session ${sharedSession.sessionId.slice(0, 8)}, cursor=${sharedSession.cursor}`);
+ 		debug(`syncResult: path=clean-start preserve-shared sessionId=${sharedSession.sessionId} cursor=${sharedSession.cursor}`);
+-		return { sessionId: null, preserveSharedSession: true };
++		return { sessionId: null, preserveSharedSession: true, historyKeys };
+ 	}
+ 
+ 	// REBUILD path
+ 	if (priorMessages.length === 0) {
+ 		debug(`Case 1: clean start, ${history.length} total messages`);
+ 		debug(`syncResult: path=clean-start`);
+-		return { sessionId: null };
++		return { sessionId: null, historyKeys };
+ 	}
+ 	const previousSessionId = sharedSession?.sessionId;
+ 	const previousCursor = sharedSession?.cursor ?? 0;
+@@ -741,7 +756,7 @@ function syncSharedSession(
+ 	// records, not messages: `messages` filters out the attachment records that
+ 	// carrying an `@file` expansion across a rebuild writes into the same file.
+ 	verifyWrittenSession(session.jsonlPath, session.sessionId, session.records.length, cwd);
+-	sharedSession = { sessionId: session.sessionId, cursor: priorMessages.length, cwd };
++	sharedSession = { sessionId: session.sessionId, cursor: priorMessages.length, cwd, historyKeys };
+ 	if (previousSessionId === undefined) {
+ 		debug(`Case 2: first turn with ${priorMessages.length} prior messages → session ${session.sessionId.slice(0, 8)}, ${session.records.length} records`);
+ 	} else if (preserveId) {
+@@ -752,7 +767,14 @@ function syncSharedSession(
+ 	}
+ 	debugSessionPaths(`${session.sessionId.slice(0, 8)}`, cwd, session.jsonlPath);
+ 	debug(`syncResult: path=rebuild sessionId=${session.sessionId} priors=${priorMessages.length} ${previousSessionId === undefined ? "first" : preserveId ? "preserved" : "rotated-post-abort"}`);
+-	return { sessionId: session.sessionId };
++	return { sessionId: session.sessionId, historyKeys };
++}
++
++/** Records the session a completed query leaves behind, with the identity of the
++ *  history the query started from, so the next turn can tell whether pi's
++ *  history still continues it. */
++function recordCompletedSession(sessionId: string, cursor: number, cwd: string, syncResult: SyncResult): void {
++	sharedSession = { sessionId, cursor, cwd, historyKeys: syncResult.historyKeys };
+ }
+ 
+ // @internal
+@@ -771,6 +793,7 @@ export const __test = {
+ 	},
+ 	toBridgeContext,
+ 	syncSharedSession,
++	recordCompletedSession,
+ 	extractUserPromptBlocks,
+ 	consumeQuery,
+ 	finalizeCurrentStream,
+@@ -1839,7 +1862,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 			} else if (sessionId) {
+ 				const cursor = Math.max(context.messages.length, queryCtx.latestCursor, sharedSession?.cursor ?? 0);
+ 				debug(`provider: query done, session=${sessionId.slice(0, 8)}, cursor=${cursor}`);
+-				sharedSession = { sessionId, cursor, cwd };
++				recordCompletedSession(sessionId, cursor, cwd, syncResult);
+ 			}
+ 
+ 			if (!isReentrant && queryCtx.activeQuery === sdkQuery) {
+diff --git a/tests/unit-sync-shared-session.mjs b/tests/unit-sync-shared-session.mjs
+index 63b699d..e3c9e65 100644
+--- a/tests/unit-sync-shared-session.mjs
++++ b/tests/unit-sync-shared-session.mjs
+@@ -10,6 +10,8 @@ import { join } from "node:path";
+ import { createSession, deleteSession, openSession } from "cc-session-io";
+ 
+ const { __test } = await import("../src/index.js");
++const { PROVIDER_ID } = await import("../src/convert.js");
++const { sessionHistoryKeys } = await import("../src/history-identity.js");
+ 
+ describe("syncSharedSession", () => {
+ 	afterEach(() => {
+@@ -49,10 +51,11 @@ describe("syncSharedSession", () => {
+ 				{ role: "assistant", content: [{ type: "text", text: "Hello." }] },
+ 			]);
+ 			seeded.save();
+-			__test.setSharedSession({ sessionId, cursor: 2, cwd });
++			const hi = { role: "user", content: "Hi", timestamp: Date.now() };
++			__test.setSharedSession({ sessionId, cursor: 2, cwd, historyKeys: sessionHistoryKeys([hi], 0) });
+ 
+ 			const result = __test.syncSharedSession([
+-				{ role: "user", content: "Hi", timestamp: Date.now() },
++				hi,
+ 				{ role: "assistant", content: [{ type: "text", text: "Hello." }], timestamp: Date.now() },
+ 				{ role: "system", content: "", toolsAdded: [{ name: "grep", description: "", parameters: {} }], timestamp: Date.now() },
+ 				{ role: "user", content: "Next", timestamp: Date.now() },
+@@ -112,6 +115,115 @@ describe("syncSharedSession", () => {
+ 		}
+ 	});
+ 
++	// Context paging drops older messages from the front of pi's context and puts a
++	// notice in their place, so the count can still look like a continuation. Resuming
++	// then hands Claude Code the full history that paging removed.
++	describe("after a context transform drops older messages", () => {
++		const pagingNotice = (historyId) => ({
++			role: "user",
++			content: `[Context paging notice]\nRecent evicted historyId: "${historyId}".`,
++			timestamp: 0,
++		});
++		const firstPrompt = { role: "user", content: "EVICTED first prompt", timestamp: 1_000 };
++		const firstAnswer = { role: "assistant", provider: "openai-codex", content: [{ type: "text", text: "EVICTED first answer" }], timestamp: 1_001 };
++		const secondPrompt = { role: "user", content: "Second prompt", timestamp: 2_000 };
++		const secondAnswer = { role: "assistant", provider: PROVIDER_ID, content: [{ type: "text", text: "Second answer" }], timestamp: 2_001 };
++		const thirdPrompt = { role: "user", content: "Third prompt", timestamp: 3_000 };
++
++		// Builds the session the way a real turn does: a rebuild from pi's history,
++		// then the cursor the query-done handler records for the finished turn.
++		const startSecondTurn = (cwd) => {
++			const result = __test.syncSharedSession([firstPrompt, firstAnswer, secondPrompt], cwd);
++			assert.ok(result.sessionId, "the second turn must rebuild a session from pi's history");
++			__test.setSharedSession({ ...__test.getSharedSession(), cursor: 3 });
++			return result.sessionId;
++		};
++
++		it("does not resume a session that still holds the dropped messages", () => {
++			const cwd = mkdtempSync(join(tmpdir(), "sync-shared-session-"));
++			let sessionId;
++			try {
++				sessionId = startSecondTurn(cwd);
++
++				const result = __test.syncSharedSession([pagingNotice("turn-1"), secondPrompt, secondAnswer, thirdPrompt], cwd);
++
++				assert.notEqual(result.sessionId, sessionId, "resuming would restore the messages paging dropped");
++				assert.match(result.historyTranscript ?? "", /Second answer/);
++				assert.doesNotMatch(result.historyTranscript ?? "", /EVICTED/);
++			} finally {
++				if (sessionId) deleteSession(sessionId, cwd);
++				rmSync(cwd, { recursive: true, force: true });
++			}
++		});
++
++		// The common path once the history holds a Claude reply: the turn starts from a
++		// transcript, and only the query-done handler records the session it leaves.
++		describe("for a session recorded when its query completed", () => {
++			const bridgeFirstAnswer = { ...firstAnswer, provider: PROVIDER_ID };
++			const completedSessionId = "22222222-2222-4222-8222-222222222222";
++			const completeSecondTurn = (cwd) => {
++				const result = __test.syncSharedSession([firstPrompt, bridgeFirstAnswer, secondPrompt], cwd);
++				assert.equal(result.sessionId, null, "the second turn must start from a transcript");
++				__test.recordCompletedSession(completedSessionId, 3, cwd, result);
++			};
++
++			it("does not resume it after older messages were dropped", () => {
++				const cwd = mkdtempSync(join(tmpdir(), "sync-shared-session-"));
++				try {
++					completeSecondTurn(cwd);
++
++					const result = __test.syncSharedSession([pagingNotice("turn-1"), secondPrompt, secondAnswer, thirdPrompt], cwd);
++
++					assert.notEqual(result.sessionId, completedSessionId);
++					assert.doesNotMatch(result.historyTranscript ?? "", /EVICTED/);
++				} finally {
++					rmSync(cwd, { recursive: true, force: true });
++				}
++			});
++
++			it("resumes it when pi only appended the finished turn", () => {
++				const cwd = mkdtempSync(join(tmpdir(), "sync-shared-session-"));
++				try {
++					completeSecondTurn(cwd);
++
++					const result = __test.syncSharedSession([firstPrompt, bridgeFirstAnswer, secondPrompt, secondAnswer, thirdPrompt], cwd);
++
++					assert.equal(result.sessionId, completedSessionId);
++				} finally {
++					rmSync(cwd, { recursive: true, force: true });
++				}
++			});
++		});
++
++		it("does not resume a session whose history is unknown", () => {
++			const cwd = mkdtempSync(join(tmpdir(), "sync-shared-session-"));
++			try {
++				__test.setSharedSession({ sessionId: "33333333-3333-4333-8333-333333333333", cursor: 3, cwd });
++
++				const result = __test.syncSharedSession([pagingNotice("turn-1"), secondPrompt, secondAnswer, thirdPrompt], cwd);
++
++				assert.notEqual(result.sessionId, "33333333-3333-4333-8333-333333333333");
++			} finally {
++				rmSync(cwd, { recursive: true, force: true });
++			}
++		});
++
++		it("still resumes when pi only appended the finished turn", () => {
++			const cwd = mkdtempSync(join(tmpdir(), "sync-shared-session-"));
++			let sessionId;
++			try {
++				sessionId = startSecondTurn(cwd);
++
++				const result = __test.syncSharedSession([firstPrompt, firstAnswer, secondPrompt, secondAnswer, thirdPrompt], cwd);
++
++				assert.equal(result.sessionId, sessionId);
++			} finally {
++				if (sessionId) deleteSession(sessionId, cwd);
++				rmSync(cwd, { recursive: true, force: true });
++			}
++		});
++	});
++
+ 	// The rebuilt file holds one line per record, and a carried `@file` expansion
+ 	// is an `attachment` record — which `session.messages` filters out. Counting
+ 	// messages told every user who at-mentioned a file before switching providers
