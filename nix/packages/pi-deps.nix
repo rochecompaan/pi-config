@@ -164,19 +164,22 @@ else
 
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
-      rev = "v0.58.0";
-      sha256 = "sha256-cpgU6h8L1ISZT/S6NaGei5w9wVjq4yW/bowy/binkHM=";
+      rev = "v0.74.0";
+      sha256 = "sha256-QKf8Y8x90TLBKy3AkTRUc0+FxXAy/GKkHK2WQL2+a+k=";
     };
 
     piSubagents = pkgs.buildNpmPackage {
       pname = "pi-subagents";
-      version = "0.58.0";
+      version = "0.74.0";
       src = piSubagentsSrc;
 
-      npmDepsHash = "sha256-BixrOUy1n+Xa4H88FP7lV08d2DfO0fhfGZBrg030MA0=";
+      npmDepsHash = "sha256-dLLyib2Bgz4bAdslKaiIhqd24eycuiHxpZWVdIpWPYg=";
 
       dontNpmBuild = true;
-      npmInstallFlags = [ "--omit=dev" ];
+      npmInstallFlags = [
+        "--omit=dev"
+        "--omit=peer"
+      ];
     };
 
     remotePiExtensionSrc = pkgs.fetchzip {
@@ -188,6 +191,9 @@ else
       pname = "remote-pi";
       version = "0.7.0";
       src = remotePiExtensionSrc;
+
+      # Keep its shared CLI entry usable without Pi's extension-only modules.
+      patches = [ ../../patches/remote-pi-host-imports.patch ];
 
       npmDepsHash = "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=";
 
@@ -201,6 +207,36 @@ else
 
       postInstall = ''
         rm -rf "$out/bin"
+
+        # Temporary until remote-pi declares host modules as peers upstream.
+        # Patch after npm installation to keep the upstream lockfile unchanged.
+        ${pkgs.nodejs}/bin/node <<'NODE'
+        const fs = require("node:fs");
+        const path = require("node:path");
+        const packageRoot = path.join(process.env.out, "lib/node_modules/remote-pi");
+        const manifestPath = path.join(packageRoot, "package.json");
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        const hostPackages = [
+          "@earendil-works/pi-ai",
+          "@earendil-works/pi-agent-core",
+          "@earendil-works/pi-coding-agent",
+          "@earendil-works/pi-tui",
+          "typebox",
+        ];
+        for (const name of hostPackages) {
+          if (Object.hasOwn(manifest.dependencies, name)) {
+            delete manifest.dependencies[name];
+            manifest.peerDependencies ??= {};
+            manifest.peerDependencies[name] = "*";
+          }
+          fs.rmSync(path.join(packageRoot, "node_modules", name), {
+            recursive: true,
+            force: true,
+          });
+        }
+        fs.rmSync(path.join(packageRoot, "node_modules/.bin/pi"), { force: true });
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+        NODE
       '';
     };
 

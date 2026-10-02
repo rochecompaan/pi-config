@@ -1,0 +1,31 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -30,7 +30,8 @@
+  *   for integration tests.
+  */
+ import { createHash, randomUUID } from "node:crypto";
+-import { SettingsManager, convertToPng } from "@earendil-works/pi-coding-agent";
++// The standalone CLI must not load extension-only host modules.
++const { SettingsManager, convertToPng } = _isDirectRun() ? {} : await import("@earendil-works/pi-coding-agent");
+ import { buildQRUri, qrSession, renderQRAscii, clampPairTtlMs, TOKEN_TTL_MS } from "./pairing/qr.js";
+ import { addPeer, getOrCreateEd25519Keypair, KeyringUnavailableError, PairedIdentityMissingError, listPeers, removePeer, snapshotOwnerPubkeys, conditionalRemovePeer, } from "./pairing/storage.js";
+ import { MeshClient } from "./mesh/client.js";
+@@ -40,7 +41,7 @@
+ import { PlainPeerChannel } from "./transport/peer_channel.js";
+ import { createExtensionUiBridge, } from "./extension_ui_bridge.js";
+ import { roomIdFor } from "./rooms.js";
+-import { registerAgentTools } from "./session/tools.js";
++const { registerAgentTools } = _isDirectRun() ? {} : await import("./session/tools.js");
+ import { formatPeerInventory } from "./session/peer_inventory.js";
+ import { MeshNode } from "./session/mesh_node.js";
+ import { handleSessionCompact, handleModelSet, handleThinkingSet, handleListModels, } from "./actions/handlers.js";
+@@ -61,7 +62,7 @@
+ import { spawnSync } from "node:child_process";
+ import { hostname, tmpdir } from "node:os";
+ import { kDefaultRelayUrl, resolveRelayUrl, saveConfig, isValidRelayUrl, isWebSocketScheme, toWebSocketUrl, } from "./config.js";
+-import { Box, Container, Image, Text } from "@earendil-works/pi-tui";
++const { Box, Container, Image, Text } = _isDirectRun() ? {} : await import("@earendil-works/pi-tui");
+ let _state = "idle";
+ let _relay = null;
+ /** Last `RelayConnectivity` emitted, for change-dedup. Starts "disconnected"

@@ -43,7 +43,8 @@
                 "Failed to load extension" \
                 "Extension does not export a valid factory function" \
                 "No such built-in module" \
-                "Cannot find package"
+                "Cannot find package" \
+                "Host-provided extension packages must be declared"
               do
                 if ${pkgs.gnugrep}/bin/grep -Fq "$failure" "$log"; then
                   cat "$log"
@@ -68,6 +69,28 @@
                 return "$status"
               fi
             }
+
+            remote_pi_dir="$(python3 - "${piConfig}/settings.json" <<'PY'
+            import json
+            import sys
+
+            with open(sys.argv[1], encoding="utf-8") as f:
+                packages = json.load(f)["packages"]
+            sources = [p if isinstance(p, str) else p["source"] for p in packages]
+            print(next(source for source in sources if source.endswith("/remote-pi")))
+            PY
+            )"
+
+            run_probe remote-pi-cli \
+              ${pkgs.nodejs}/bin/node "$remote_pi_dir/dist/index.js" --help
+
+            if ! ${pkgs.gnugrep}/bin/grep -Fq \
+              "Usage: remote-pi <command>" "$TMPDIR/remote-pi-cli.log"
+            then
+              cat "$TMPDIR/remote-pi-cli.log"
+              echo "remote-pi CLI did not display help" >&2
+              exit 1
+            fi
 
             run_probe superpowers \
               ${pkgs.coreutils}/bin/env \
@@ -158,6 +181,8 @@
                 tools = json.load(f)
 
             required = {
+                "list_peers",
+                "agent_send",
                 "search_history",
                 "browse_history",
                 "load_history",
