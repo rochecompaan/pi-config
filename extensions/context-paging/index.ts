@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	DEFAULT_CONTEXT_TOKEN_BUDGET,
+	residentTokenEstimate,
 	selectContext,
 	type ResidentToolDefinition,
 } from "./context-policy.ts";
+import { ContextUsageTracker } from "./context-usage.ts";
 import { isPagingToolTurn, projectActiveBranch, type HistoryItem } from "./history.ts";
 import { HistoryNavigator } from "./navigator.ts";
 import { registerContextPagingTools, type HistorySnapshot } from "./tools.ts";
@@ -92,6 +95,10 @@ function activeResidentTools(pi: ExtensionAPI): ResidentToolDefinition[] {
 		.map(({ name, description, parameters }) => ({ name, description, parameters }));
 }
 
+function persistentSessionMessages(ctx: ExtensionContext): AgentMessage[] {
+	return ctx.sessionManager.buildSessionProjection().messages;
+}
+
 /** Registers context paging lifecycle hooks and the four recovery tools. */
 export default function contextPagingExtension(
 	pi: ExtensionAPI,
@@ -102,9 +109,19 @@ export default function contextPagingExtension(
 		: { enabled: false, tokenBudget: DEFAULT_CONTEXT_TOKEN_BUDGET };
 	let allItems: HistoryItem[] = [];
 	const navigator = new HistoryNavigator();
+	const usageTracker = new ContextUsageTracker();
 	let visibleHistoryIds: string[] = [];
+	let invalidatingBranchEntries = new Set<string>();
+	let canonicalSessionMessages: AgentMessage[] | undefined;
 	const refresh = (ctx: ExtensionContext): HistoryItem[] => {
-		const projected = projectActiveBranch(ctx.sessionManager.getBranch());
+		const branch = ctx.sessionManager.getBranch();
+		const currentInvalidatingEntries = new Set(branch
+			.filter((entry) => entry.type === "context_edit" || entry.type === "compaction")
+			.map((entry) => entry.id));
+		if ([...currentInvalidatingEntries].some((id) => !invalidatingBranchEntries.has(id))) usageTracker.clear();
+		invalidatingBranchEntries = currentInvalidatingEntries;
+		const projected = projectActiveBranch(branch);
+		canonicalSessionMessages = persistentSessionMessages(ctx);
 		allItems = projected;
 		return projected;
 	};
@@ -128,6 +145,8 @@ export default function contextPagingExtension(
 		try {
 			refresh(ctx);
 		} catch (error) {
+			usageTracker.clear();
+			canonicalSessionMessages = undefined;
 			ctx.ui.notify(`Context paging navigation is unavailable: ${errorMessage(error)}`, "error");
 		}
 	};
@@ -138,17 +157,28 @@ export default function contextPagingExtension(
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		usageTracker.clear();
+		invalidatingBranchEntries = new Set();
 		if (!settingsSources) {
 			resolvedSettings = { ...resolvedSettings, enabled: false };
 			resolvedSettings = resolveContextPagingSettings(await loadSettings(ctx));
 		}
 		refreshSafely(ctx);
 	});
-	pi.on("turn_end", (_event, ctx) => {
+	pi.on("turn_end", (event, ctx) => {
+		usageTracker.recordResponse(event.message);
 		refreshSafely(ctx);
 	});
 	pi.on("session_tree", (_event, ctx) => {
+		usageTracker.clear();
+		invalidatingBranchEntries = new Set();
 		refreshSafely(ctx);
+	});
+	pi.on("model_select", () => {
+		usageTracker.clear();
+	});
+	pi.on("session_compact", () => {
+		usageTracker.clear();
 	});
 	pi.on("context", (event, ctx) => {
 		if (!resolvedSettings.enabled) return;
@@ -157,18 +187,32 @@ export default function contextPagingExtension(
 		try {
 			rawHistoryItems = refresh(ctx);
 		} catch (error) {
+			usageTracker.clear();
+			canonicalSessionMessages = undefined;
 			ctx.ui.notify(`Context paging history is unavailable: ${errorMessage(error)}`, "error");
 		}
 
 		try {
+			const systemPrompt = ctx.getSystemPrompt();
+			const activeTools = activeResidentTools(pi);
+			const residentTokens = residentTokenEstimate({ systemPrompt, activeTools });
+			const outgoingOnly = canonicalSessionMessages
+				? usageTracker.outgoingOnly(event.messages, canonicalSessionMessages)
+				: undefined;
+			const contextTokens = canonicalSessionMessages
+				? usageTracker.prepare(event.messages, residentTokens, ctx.getContextUsage()?.tokens, canonicalSessionMessages)
+				: undefined;
 			const selection = selectContext({
 				messages: event.messages,
-				systemPrompt: ctx.getSystemPrompt(),
-				activeTools: activeResidentTools(pi),
+				systemPrompt,
+				activeTools,
 				modelContextWindow: ctx.model?.contextWindow,
 				tokenBudget: resolvedSettings.tokenBudget,
+				contextTokens,
+				outgoingOnly,
 				rawHistoryItems,
 			});
+			if (canonicalSessionMessages) usageTracker.recordSelection(selection.messages, residentTokens, canonicalSessionMessages);
 			return { messages: selection.messages };
 		} catch (error) {
 			ctx.abort();
@@ -179,5 +223,6 @@ export default function contextPagingExtension(
 	pi.on("session_before_compact", async (event) => {
 		if (!resolvedSettings.enabled) return;
 		if (event.reason === "threshold" || event.reason === "overflow") return { cancel: true };
+		usageTracker.clear();
 	});
 }

@@ -13,6 +13,8 @@ const LEGACY_TEST_TOKEN_BUDGET = 64_000;
 type SelectionOverrides = {
 	modelContextWindow?: number;
 	tokenBudget?: number;
+	contextTokens?: number;
+	outgoingOnly?: boolean[];
 	rawHistoryItems?: HistoryItem[];
 };
 
@@ -44,6 +46,8 @@ const selected = (
 	{
 		modelContextWindow = 100_000,
 		tokenBudget = LEGACY_TEST_TOKEN_BUDGET,
+		contextTokens,
+		outgoingOnly,
 		rawHistoryItems,
 	}: SelectionOverrides = {},
 ) => selectContext({
@@ -52,6 +56,8 @@ const selected = (
 	activeTools: [{ name: "read", description: "Read files", parameters: { type: "object" } }],
 	modelContextWindow,
 	tokenBudget,
+	contextTokens,
+	outgoingOnly,
 	rawHistoryItems,
 });
 const marker = (message: any): string => typeof message.content === "string"
@@ -61,21 +67,30 @@ const hasMarker = (messages: readonly object[], value: string) => messages.some(
 const rolesAndMarkers = (messages: readonly any[]) => messages.map((message) => [message.role, marker(message)]);
 const repeat = (markerText: string, length: number) => `${markerText} ${"x".repeat(length)}`;
 
+test("treats outgoing system/tool metadata as resident input rather than a second message estimate", () => {
+	const request = user("next");
+	const metadata = { role: "system", content: "s".repeat(20), toolsAdded: [{ name: "t" }] };
+	const withoutMetadata = selected([request]);
+	const withMetadata = selected([metadata, request], { tokenBudget: withoutMetadata.estimatedTokens });
+	assert.equal(withMetadata.estimatedTokens, withoutMetadata.estimatedTokens);
+	assert.deepEqual(withMetadata.messages, [metadata, request]);
+	assert.equal(withMetadata.mode, "within-budget");
+});
+
 // This test fails if accounting changes from Pi's exported estimator to byte or character counting.
 test("accounts resident inputs and canonical messages with Pi estimates", () => {
 	const messages = [
 		user("request  😀  {\"spacing\":  true}"),
 		assistant("answer\n\nwith JSON: {\"ok\":true}"),
 	];
-	const systemMessage = user("system prompt\t😀");
-	const toolMessage = user(JSON.stringify([{ name: "read", description: "Read", parameters: { type: "object" } }]));
-	const expected = estimateTokens(systemMessage)
-		+ estimateTokens(toolMessage)
+	const systemPrompt = "system prompt\t😀";
+	const tools = [{ name: "read", description: "Read", parameters: { type: "object" } }];
+	const expected = Math.ceil((systemPrompt.length + JSON.stringify(tools).length) / 4)
 		+ messages.reduce((total, message) => total + estimateTokens(message as any), 0);
 	const selection = selectContext({
 		messages: messages as any,
-		systemPrompt: systemMessage.content,
-		activeTools: [{ name: "read", description: "Read", parameters: { type: "object" } }],
+		systemPrompt,
+		activeTools: tools,
 		modelContextWindow: 100_000,
 		tokenBudget: LEGACY_TEST_TOKEN_BUDGET,
 	});
@@ -91,6 +106,63 @@ test("accounts resident inputs and canonical messages with Pi estimates", () => 
 		modelContextWindow: 32_000,
 		tokenBudget: DEFAULT_CONTEXT_TOKEN_BUDGET,
 	}).budgetTokens, 32_000);
+});
+
+test("keeps measured within-budget input despite a larger heuristic", () => {
+	const messages = [
+		user(repeat("old request", 300_000)),
+		assistant(repeat("old answer", 300_000)),
+		user("active request"),
+	];
+	const selection = selected(messages, {
+		modelContextWindow: 272_000,
+		tokenBudget: 128_000,
+		contextTokens: 119_430,
+	});
+
+	assert.equal(selection.mode, "within-budget");
+	assert.equal(selection.estimatedTokens, 119_430);
+	assert.deepEqual(selection.messages, messages);
+});
+
+test("keeps a persistent request with its outgoing-only instruction", () => {
+	const old = user(repeat("old", 1_000));
+	const actual = user(repeat("actual", 800));
+	const injected = user("extension instruction");
+	assert.throws(
+		() => selected([old, actual, injected], { tokenBudget: 130, outgoingOnly: [false, false, true] }),
+		(error: unknown) => error instanceof ContextSelectionError && error.code === "ACTIVE_REQUEST_TOO_LARGE",
+	);
+});
+
+test("evicts an old completed turn when measured usage exceeds the budget", () => {
+	const messages = [
+		user(repeat("old request", 40_000)),
+		assistant(repeat("old answer", 40_000)),
+		user("active request"),
+	];
+	const selection = selected(messages, { contextTokens: 70_000 });
+
+	assert.equal(selection.mode, "paged");
+	assert.equal(hasMarker(selection.messages, "old request"), false);
+	assert.equal(hasMarker(selection.messages, "old answer"), false);
+	assert.equal(hasMarker(selection.messages, "active request"), true);
+});
+
+test("uses observed usage instead of an oversized resident heuristic", () => {
+	const messages = [user("active request")];
+	const selection = selectContext({
+		messages: messages as any,
+		systemPrompt: repeat("incorrectly large resident estimate", 300_000),
+		activeTools: [],
+		modelContextWindow: 100_000,
+		tokenBudget: LEGACY_TEST_TOKEN_BUDGET,
+		contextTokens: 1_000,
+	});
+
+	assert.equal(selection.mode, "within-budget");
+	assert.equal(selection.estimatedTokens, 1_000);
+	assert.deepEqual(selection.messages, messages);
 });
 
 test("uses an explicit token budget when model context metadata is absent", () => {
@@ -347,12 +419,16 @@ test("keeps a protected unread trailing parallel tool exchange for one follow-up
 		metadata: { tools: ["read", "read"], files: [], failed: false },
 	}];
 
+	const rawFullEstimate = estimateTokens(user("resident prompt"))
+		+ estimateTokens(user(JSON.stringify([])))
+		+ messages.reduce((total, message) => total + estimateTokens(message as any), 0);
 	const selection = selectContext({
 		messages: messages as any,
 		systemPrompt: "resident prompt",
 		activeTools: [],
 		modelContextWindow: 100_000,
 		tokenBudget: 48_000,
+		contextTokens: rawFullEstimate + 100,
 		rawHistoryItems,
 	});
 
@@ -437,12 +513,16 @@ test("recovers an unread protected result above the actual model limit without m
 	}];
 	const rawBefore = structuredClone(rawHistoryItems);
 
+	const rawFullEstimate = estimateTokens(user("resident prompt"))
+		+ estimateTokens(user(JSON.stringify([])))
+		+ messages.reduce((total, message) => total + estimateTokens(message as any), 0);
 	const recovered = selectContext({
 		messages: messages as any,
 		systemPrompt: "resident prompt",
 		activeTools: [],
 		modelContextWindow: 70_000,
 		tokenBudget: LEGACY_TEST_TOKEN_BUDGET,
+		contextTokens: rawFullEstimate + 100,
 		rawHistoryItems,
 	});
 	const recoveredResult = recovered.messages.find((message: any) => message.role === "toolResult") as any;
@@ -465,7 +545,8 @@ test("recovers an unread protected result above the actual model limit without m
 		recovered.estimatedTokens,
 		estimateTokens(user("resident prompt"))
 			+ estimateTokens(user(JSON.stringify([])))
-			+ recovered.messages.reduce((total, message) => total + estimateTokens(message as any), 0),
+			+ recovered.messages.reduce((total, message) => total + estimateTokens(message as any), 0)
+			+ 100,
 	);
 	assert.deepEqual(messages, canonicalBefore);
 	assert.deepEqual(rawHistoryItems, rawBefore);

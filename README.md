@@ -52,6 +52,8 @@ The packaged configuration enables context paging with a default rolling budget 
 
 When the active model declares a smaller context window, the extension uses that smaller value. Paging notices show the effective rolling budget. The setting does not change output-page sizes or history recovery limits.
 
+After a successful provider response, paging uses its measured context total as an anchor for the exact context it sent. It estimates only later additions, removals, resident-input changes, and generated notices. Outgoing-only extension instructions remain in the measured request, but their later removal does not invalidate a matching persistent session. Until a tracked response provides that anchor, it uses Pi's normal message estimate. The budget stays unchanged at 128,000 tokens (or the smaller model window). A changed request is still an estimate before its next provider response reports usage.
+
 ## Per-project usage
 
 A project can provide Pi without installing the Home Manager module. For a devenv project, add the flake input to `devenv.yaml`:
