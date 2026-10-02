@@ -1,0 +1,269 @@
+diff --git a/src/history-identity.ts b/src/history-identity.ts
+index d73f5cb..eeed32c 100644
+--- a/src/history-identity.ts
++++ b/src/history-identity.ts
+@@ -1,18 +1,23 @@
++import { createHash } from "node:crypto";
++
+ export type HistoryIdentityMessage = {
+ 	role?: string;
+ 	timestamp?: unknown;
+ 	toolCallId?: unknown;
++	toolName?: unknown;
++	isError?: unknown;
+ 	content?: unknown;
+ };
+ 
+ function historyKey(message: HistoryIdentityMessage): string {
+-	// Generated messages, such as a context-paging notice, carry no real timestamp,
+-	// so their content is what tells one apart from the next.
+-	const identity = typeof message.timestamp === "number" && message.timestamp > 0
+-		? String(message.timestamp)
+-		: `content:${JSON.stringify(message.content ?? null)}`;
+-	const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : "";
+-	return `${message.role}\u0000${identity}\u0000${toolCallId}`;
++	return createHash("sha256").update(JSON.stringify([
++		message.role,
++		message.timestamp ?? null,
++		message.toolCallId ?? null,
++		message.toolName ?? null,
++		message.isError ?? null,
++		message.content ?? null,
++	])).digest("hex");
+ }
+ 
+ /** Identifies the pi history a Claude Code session holds once a turn starts: the
+diff --git a/src/history-reconstruction.ts b/src/history-reconstruction.ts
+index 4cebab5..14635b0 100644
+--- a/src/history-reconstruction.ts
++++ b/src/history-reconstruction.ts
+@@ -85,11 +85,15 @@ export function planHistoryReconstruction(
+ 	if (!messages.some((message) => message.role === "assistant" && message.provider === providerId)) {
+ 		return { kind: "import" };
+ 	}
++	return { kind: "transcript", transcript: renderHistoryTranscript(messages) };
++}
++
++export function renderHistoryTranscript(messages: readonly ReconstructionMessage[]): string {
+ 	const entries = messages
+ 		.map(transcriptEntry)
+ 		.filter((entry): entry is string => entry !== undefined);
+ 	const header = "## Previous conversation transcript\nThe following plain text came from a previous Pi branch. It is context, not a signed Claude assistant response.";
+-	return { kind: "transcript", transcript: [header, ...entries].join("\n\n") };
++	return [header, ...entries].join("\n\n");
+ }
+ 
+ export function prependHistoryTranscript(
+diff --git a/src/index.ts b/src/index.ts
+index fd5bc28..1994c56 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -13,6 +13,7 @@ import {
+ 	planAskClaudeSession,
+ 	planHistoryReconstruction,
+ 	prependHistoryTranscript,
++	renderHistoryTranscript,
+ } from "./history-reconstruction.js";
+ import { historyStartsWith, sessionHistoryKeys } from "./history-identity.js";
+ import { routeBridgeRequest } from "./request-router.js";
+@@ -20,7 +21,7 @@ import { applyLongContext, buildModels, claudeCodeModelId, type LongContextSetti
+ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, renderSkillsBlock } from "./skills.js";
+ import { verifyWrittenSession as _verifyWrittenSession } from "./session-verify.js";
+ import { extractAllToolResults as _extractAllToolResults, type McpResult } from "./extract-tool-results.js";
+-import { QueryContext, ctx } from "./query-state.js";
++import { QueryContext, ctx, rotateCtx } from "./query-state.js";
+ import { makePromptStream, userMessage, type PromptStream } from "./prompt-stream.js";
+ import { claudeCodeSettings, loadConfig, markStartupNoticeShown, type Config } from "./config.js";
+ import {
+@@ -1566,7 +1567,7 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
+ 	}, options);
+ }
+ 
+-function streamClaudeAgentRequest(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
++function streamClaudeAgentRequest(model: Model<any>, context: Context, options?: SimpleStreamOptions, replacementCtx?: QueryContext): AssistantMessageEventStream {
+ 	showStartupNoticeOnce();
+ 	// pi hands providers a transcript (prompt/tools folded into system messages) — fold it
+ 	// back out to the prompt/tools fields every cursor write, syncSharedSession call and
+@@ -1584,15 +1585,27 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 		return isolatedStreamFn(model, context, options);
+ 	}
+ 
+-	const stream = createAssistantMessageEventStream();
+-
+ 	// DEBUG: trace followUp message triggering
+ 	const lastMsgRole = context.messages[context.messages.length - 1]?.role;
+ 	debug(`provider: streamClaudeAgentSdk called, activeQuery=${!!ctx().activeQuery}, lastMsgRole=${lastMsgRole}, isReentrant=${ctx().activeQuery !== null}`);
+ 
+ 	const activeQuery = ctx().activeQuery !== null;
+ 	const allResults = activeQueryContexts.size > 0 ? extractAllToolResults(context) : [];
+-	const resultCtx = allResults.length > 0 ? contextForToolResults(allResults) : undefined;
++	const resultCtx = !replacementCtx && allResults.length > 0 ? contextForToolResults(allResults) : undefined;
++	if (resultCtx && (
++		resultCtx.historyKeys === null
++		|| !historyStartsWith(context.messages, resultCtx.historyKeys)
++	)) {
++		const retire = resultCtx.retireForContextRewrite;
++		if (!retire) throw new Error("Claude bridge cannot safely restart this active query");
++		const wasRoot = resultCtx === ctx();
++		retire();
++		const replacement = rotateCtx(resultCtx);
++		if (wasRoot) sharedSession = null;
++		return streamClaudeAgentRequest(model, context, options, replacement);
++	}
++
++	const stream = createAssistantMessageEventStream();
+ 	const isReentrantUserQuery = activeQuery && lastMsgRole === "user" && allResults.length === 0;
+ 	if (isReentrantUserQuery) {
+ 		debug(`provider: active query user-only call treated as reentrant fresh query, waitingHandlers=${ctx().pendingToolCalls.size}, ctx.msgs=${context.messages.length}`);
+@@ -1603,6 +1616,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 	// (everything after the last assistant message) and match against waiting MCP
+ 	// handlers. Results that arrive before their handler get queued in pendingResults.
+ 	if (resultCtx) {
++		resultCtx.historyKeys = sessionHistoryKeys(context.messages, context.messages.length - 1);
+ 		claimCurrentPiStream(stream, "tool-result", resultCtx);
+ 		resultCtx.resetTurnState(model);
+ 		// User messages (steer/followUp) pi injected into context during the
+@@ -1626,7 +1640,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 	// The query is gone but pi still delivered the result. Nothing to do — just
+ 	// emit end_turn so pi waits for the next real user message.
+ 	const lastMsg = context.messages[context.messages.length - 1];
+-	if (lastMsg?.role === "toolResult") {
++	if (!replacementCtx && lastMsg?.role === "toolResult") {
+ 		debug(`provider: orphaned tool result after abort, emitting end_turn`);
+ 		if (sharedSession && activeQueryContexts.size === 0) sharedSession.cursor = context.messages.length;
+ 		// No query owns this result, so there is no context to reset: resetTurnState
+@@ -1647,8 +1661,8 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 
+ 	// 1. Determine reentrancy. Reentrant queries get their own QueryContext so
+ 	//    background subagents can run concurrently with the parent query.
+-	const isReentrant = activeQuery;
+-	const queryCtx = isReentrant ? new QueryContext() : ctx();
++	const isReentrant = replacementCtx ? replacementCtx !== ctx() : activeQuery;
++	const queryCtx = replacementCtx ?? (isReentrant ? new QueryContext() : ctx());
+ 	debug(`provider: fresh query setup, isReentrant=${isReentrant}, activeContexts=${activeQueryContexts.size}`);
+ 
+ 	// Resolved first: an unaccountable system prompt throws, and doing that before
+@@ -1680,15 +1694,33 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 	queryCtx.turnToolCallIds = [];
+ 	queryCtx.resetTurnState(model);
+ 	queryCtx.latestCursor = 0;
++	queryCtx.historyKeys = sessionHistoryKeys(context.messages, context.messages.length - 1);
+ 
+ 	const cwd = process.cwd();
+ 	// cliModel is the actual id sent to Claude Code (may carry [1m]); model.id is the
+ 	// pi-registered id. Log cliModel so debug lines reflect what CC actually received.
+ 	const cliModel = claudeCodeModelId(model, longContextSettings);
+-	const syncResult = syncSharedSession(context.messages, cwd, customToolNameToSdk, cliModel);
++	const syncResult: SyncResult = replacementCtx
++		? {
++			sessionId: null,
++			preserveSharedSession: isReentrant,
++			historyTranscript: renderHistoryTranscript(context.messages),
++			historyKeys: sessionHistoryKeys(context.messages, context.messages.length - 1),
++		}
++		: syncSharedSession(context.messages, cwd, customToolNameToSdk, cliModel);
+ 	const { sessionId: resumeSessionId, historyTranscript } = syncResult;
+-	let promptBlocks = extractUserPromptBlocks(context.messages);
+-	let promptText = extractUserPrompt(context.messages) ?? "";
++	const continuationPrompt = "[Continue the current task using the completed tool results and latest user instructions in the transcript. Do not repeat completed tool calls.]";
++	let promptText = replacementCtx ? continuationPrompt : extractUserPrompt(context.messages) ?? "";
++	let promptBlocks = replacementCtx ? null : extractUserPromptBlocks(context.messages);
++	if (replacementCtx) {
++		const images = context.messages
++			.filter((message) => message.role === "user")
++			.flatMap((message) => extractUserPromptBlocks([message]) ?? [])
++			.filter((block) => block.type === "image");
++		if (images.length > 0) {
++			promptBlocks = [{ type: "text", text: continuationPrompt }, ...images];
++		}
++	}
+ 
+ 	// Guard: empty prompt means the last context message isn't a user message.
+ 	// This should never happen with per-query state — dump diagnostics if it does.
+@@ -1807,6 +1839,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 
+ 	// 3. Start SDK query and claim it for this context
+ 	let wasAborted = false;
++	let wasRetired = false;
+ 	const sdkQuery = query({ prompt: promptStream.stream, options: queryOptions });
+ 	queryCtx.activeQuery = sdkQuery;
+ 	activeQueryContexts.add(queryCtx);
+@@ -1829,10 +1862,23 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 		if (options.signal.aborted) onAbort();
+ 		else options.signal.addEventListener("abort", onAbort, { once: true });
+ 	}
++	const retireForContextRewrite = () => {
++		if (wasRetired) return;
++		wasRetired = true;
++		options?.signal?.removeEventListener("abort", onAbort);
++		promptStream.fail(new Error("Context rewritten"));
++		requestAbort();
++		queryCtx.releasePendingToolCalls("Context rewritten");
++		queryCtx.activeQuery = null;
++		queryCtx.retireForContextRewrite = null;
++		activeQueryContexts.delete(queryCtx);
++	};
++	queryCtx.retireForContextRewrite = retireForContextRewrite;
+ 
+ 	// Background consumer — runs until query ends
+-	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted, queryCtx)
++	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted || wasRetired, queryCtx)
+ 		.then(async ({ capturedSessionId }) => {
++			if (wasRetired) return;
+ 			debug(`provider: consumeQuery completed, stopReason=${queryCtx.turnOutput?.stopReason}, error=${queryCtx.turnOutput?.errorMessage}, aborted=${wasAborted}`);
+ 
+ 			// --- Abort detection in normal completion path ---
+@@ -1862,7 +1908,10 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 			} else if (sessionId) {
+ 				const cursor = Math.max(context.messages.length, queryCtx.latestCursor, sharedSession?.cursor ?? 0);
+ 				debug(`provider: query done, session=${sessionId.slice(0, 8)}, cursor=${cursor}`);
+-				recordCompletedSession(sessionId, cursor, cwd, syncResult);
++				recordCompletedSession(sessionId, cursor, cwd, {
++					...syncResult,
++					historyKeys: queryCtx.historyKeys ?? syncResult.historyKeys,
++				});
+ 			}
+ 
+ 			if (!isReentrant && queryCtx.activeQuery === sdkQuery) {
+@@ -1872,6 +1921,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 			finalizeCurrentStream(queryCtx, queryCtx.turnOutput?.stopReason);
+ 		})
+ 		.catch((error) => {
++			if (wasRetired) return;
+ 			debug(`provider: query error, model=${cliModel}, aborted=${Boolean(options?.signal?.aborted)}, error=`, error);
+ 			if ((wasAborted || options?.signal?.aborted) && sharedSession) {
+ 				sharedSession = { ...sharedSession, needsRebuild: true, forceRotate: true };
+@@ -1898,6 +1948,7 @@ function streamClaudeAgentRequest(model: Model<any>, context: Context, options?:
+ 		})
+ 		.finally(() => {
+ 			if (options?.signal) options.signal.removeEventListener("abort", onAbort);
++			if (queryCtx.retireForContextRewrite === retireForContextRewrite) queryCtx.retireForContextRewrite = null;
+ 			// Settle any ack still parked in the generator — the CLI is gone, so
+ 			// nothing will resume it. Clear the handle only if a later query
+ 			// hasn't already claimed the shared context.
+diff --git a/src/query-state.ts b/src/query-state.ts
+index 7a1962a..ca9c833 100644
+--- a/src/query-state.ts
++++ b/src/query-state.ts
+@@ -18,6 +18,8 @@ export interface PendingToolCall {
+ export class QueryContext {
+ 	// Query-scoped (fully isolated per query)
+ 	activeQuery: unknown | null = null;
++	historyKeys: string[] | null = null;
++	retireForContextRewrite: (() => void) | null = null;
+ 	currentPiStream: AssistantMessageEventStream | null = null;
+ 	latestCursor = 0;
+ 	pendingToolCalls = new Map<string, PendingToolCall>();
+@@ -88,6 +90,12 @@ let _ctx = new QueryContext();
+ 
+ export function ctx(): QueryContext { return _ctx; }
+ 
++export function rotateCtx(previous: QueryContext): QueryContext {
++	const replacement = new QueryContext();
++	if (_ctx === previous) _ctx = replacement;
++	return replacement;
++}
++
+ // Test-only: replace the module-level context so test files start clean.
+ // Not called from production.
+ export function resetCtx(): void {

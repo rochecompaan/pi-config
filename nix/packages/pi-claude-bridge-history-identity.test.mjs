@@ -71,6 +71,16 @@ test("a changed paging notice breaks the recorded session history", () => {
 	assert.equal(historyStartsWith([pagingNotice("turn-2"), secondAnswer, thirdPrompt], keys), false);
 });
 
+test("rewritten tool output with the same timestamp breaks history identity", () => {
+	const original = [firstPrompt, firstReply, firstResult];
+	const keys = sessionHistoryKeys(original, original.length - 1);
+	const replacement = {
+		...firstResult,
+		content: [{ type: "text", text: "Recover this output with load_history." }],
+	};
+	assert.equal(historyStartsWith([firstPrompt, firstReply, replacement], keys), false);
+});
+
 test("a shorter history cannot hold the recorded session history", () => {
 	const keys = sessionHistoryKeys([firstPrompt, firstReply, firstResult, firstAnswer, secondPrompt], 4);
 

@@ -67,6 +67,9 @@ else
     # pi's history still starts with the messages it holds, so context paging
     # (which drops older messages) forces a rebuild instead of a stale resume.
     piClaudeBridgePagingHistorySyncPatch = ./pi-claude-bridge-paging-history-sync.patch;
+    piClaudeBridgeActivePagingPatch = ./pi-claude-bridge-active-paging.patch;
+    piClaudeBridgeActivePagingTest = ./pi-claude-bridge-active-paging.test.mjs;
+    piClaudeBridgeProviderHarness = ./pi-claude-bridge-provider-harness.mjs;
     # main's package-lock.json omits integrity for five nested dev-only
     # @earendil-works entries, which crashes the npm-deps fetcher
     # ("non-git dependencies should have associated integrity"). Add them back.
@@ -105,6 +108,7 @@ else
         patch -p1 < ${piClaudeBridgeLockIntegrityPatch}
         patch -p1 < ${piClaudeBridgePatch}
         patch -p1 < ${piClaudeBridgePagingHistorySyncPatch}
+        patch -p1 < ${piClaudeBridgeActivePagingPatch}
       '';
 
       doInstallCheck = true;
@@ -125,6 +129,12 @@ else
           ${piClaudeBridgeHistoryReconstructionTest} \
           ${piClaudeBridgeDirectCompletionTest} \
           ${piClaudeBridgeHistoryIdentityTest}
+        mkdir -p "$TMPDIR/bridge-provider-tests"
+        cp ${piClaudeBridgeActivePagingTest} "$TMPDIR/bridge-provider-tests/pi-claude-bridge-active-paging.test.mjs"
+        cp ${piClaudeBridgeProviderHarness} "$TMPDIR/bridge-provider-tests/pi-claude-bridge-provider-harness.mjs"
+        BRIDGE_PROVIDER_MODULE="$out/lib/node_modules/pi-claude-bridge/src/index.ts" \
+          ${pkgs.nodejs}/bin/node --test \
+          "$TMPDIR/bridge-provider-tests/pi-claude-bridge-active-paging.test.mjs"
       '';
     };
 
