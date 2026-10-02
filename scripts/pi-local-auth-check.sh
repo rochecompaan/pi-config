@@ -3,278 +3,188 @@ set -eu
 
 : "${PI_LOCAL_AUTH_BIN:?Set PI_LOCAL_AUTH_BIN to the pi-local-auth executable path}"
 
-make_global_home() {
-  local home_dir
-  home_dir=$(mktemp -d)
-  mkdir -p "$home_dir/.pi/agent"
-  cat > "$home_dir/.pi/agent/settings.json" <<'EOF'
-{
-  "globalMarker": "from-home",
-  "defaultModel": "global-model",
-  "nested": { "preserved": { "value": 42 } },
-  "packages": ["global-package"],
-  "voice": { "enabled": true, "localModel": "parakeet-v3" },
-  "sessionDir": "global-session",
-  "extensions": ["global-extension"],
-  "skills": ["global-skill"],
-  "prompts": ["global-prompt"],
-  "themes": ["global-theme"]
-}
-EOF
-  printf '%s\n' "$home_dir"
+# shellcheck disable=SC2016
+auth_line='export PI_CODING_AGENT_AUTH_FILE="$PWD/.pi/local-agent/auth.json"'
+# shellcheck disable=SC2016
+legacy_dir_line='export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"'
+# shellcheck disable=SC2016
+legacy_session_line='export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"'
+
+# The script must not depend on global Pi settings.
+HOME=$(mktemp -d)
+export HOME
+
+new_case() {
+  local case_dir
+  case_dir=$(mktemp -d)
+  cd "$case_dir"
 }
 
-assert_routing_overrides() {
-  local file=$1
-  jq -e '
-    .sessionDir == "~/.pi/agent/sessions" and
-    .extensions == ["~/.pi/agent/extensions"] and
-    .skills == ["~/.pi/agent/skills"] and
-    .prompts == ["~/.pi/agent/prompts"] and
-    .themes == ["~/.pi/agent/themes"]
-  ' "$file"
+assert_line_count() {
+  local pattern=$1
+  local expected=$2
+  [ "$(grep -c -- "$pattern" .envrc)" -eq "$expected" ]
 }
 
-assert_no_temp_settings() {
-  local temp
-  for temp in .pi/local-agent/.settings.json.tmp.* .pi/local-agent/.settings-source.tmp.*; do
-    [ ! -e "$temp" ] || return 1
-  done
-}
-
-global_home=$(make_global_home)
-export HOME="$global_home"
-
-workdir=$(mktemp -d)
-cd "$workdir"
+# A fresh project gets a private, empty auth file and one .envrc export.
+new_case
 "$PI_LOCAL_AUTH_BIN"
+test -f .pi/local-agent/auth.json
+[ "$(cat .pi/local-agent/auth.json)" = '{}' ]
+[ "$(stat -c %a .pi/local-agent/auth.json)" = 600 ]
+[ "$(stat -c %a .pi/local-agent)" = 700 ]
+grep -Fx "$auth_line" .envrc
+[ ! -e .pi/local-agent/settings.json ]
+assert_line_count 'PI_CODING_AGENT_DIR=' 0
+assert_line_count 'PI_CODING_AGENT_SESSION_DIR=' 0
 
-test -f .pi/local-agent/settings.json
-jq -e '
-  .globalMarker == "from-home" and
-  .defaultModel == "global-model" and
-  .nested.preserved.value == 42 and
-  .packages == ["global-package"] and
-  .voice.enabled == true and
-  .voice.localModel == "parakeet-v3"
-' .pi/local-agent/settings.json
-assert_routing_overrides .pi/local-agent/settings.json
-grep -Fx 'export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"' .envrc
-grep -Fx 'export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"' .envrc
+# Running again changes nothing.
+cp .envrc envrc.before
+cp .pi/local-agent/auth.json auth.before
+"$PI_LOCAL_AUTH_BIN"
+cmp envrc.before .envrc
+cmp auth.before .pi/local-agent/auth.json
 
-case_existing_settings=$(mktemp -d)
-cd "$case_existing_settings"
+# Existing credentials are kept byte for byte.
+new_case
 mkdir -p .pi/local-agent
-printf '%s\n' '{"custom":true}' > .pi/local-agent/settings.json
-"$PI_LOCAL_AUTH_BIN"
-jq -e '.globalMarker == "from-home" and (.custom | not)' .pi/local-agent/settings.json
-assert_routing_overrides .pi/local-agent/settings.json
-
-case_existing_symlink=$(mktemp -d)
-cd "$case_existing_symlink"
-mkdir -p .pi/local-agent
-printf '%s\n' '{"stale":true}' > stale-settings.json
-ln -s "$case_existing_symlink/stale-settings.json" .pi/local-agent/settings.json
-"$PI_LOCAL_AUTH_BIN"
-[ ! -L .pi/local-agent/settings.json ]
-jq -e '.globalMarker == "from-home" and (.stale | not)' .pi/local-agent/settings.json
-grep -Fx '{"stale":true}' stale-settings.json
-
-updated_global=$(mktemp "$HOME/.pi/agent/.settings.json.tmp.XXXXXX")
-jq '.globalMarker = "updated-home" | .nested.preserved.value = 84' \
-  "$HOME/.pi/agent/settings.json" > "$updated_global"
-mv "$updated_global" "$HOME/.pi/agent/settings.json"
-cd "$workdir"
-"$PI_LOCAL_AUTH_BIN"
-jq -e '.globalMarker == "updated-home" and .nested.preserved.value == 84' \
-  .pi/local-agent/settings.json
-
-case_auth=$(mktemp -d)
-cd "$case_auth"
-mkdir -p .pi/local-agent
-printf '%s\n' 'project-auth-contents' > .pi/local-agent/auth.json
+printf '%s\n' '{"openai-codex":{"type":"oauth"}}' > .pi/local-agent/auth.json
 cp .pi/local-agent/auth.json auth.expected
 "$PI_LOCAL_AUTH_BIN"
 cmp auth.expected .pi/local-agent/auth.json
+grep -Fx "$auth_line" .envrc
 
-case_existing_dir=$(mktemp -d)
-cd "$case_existing_dir"
-printf '%s\n' 'export PI_CODING_AGENT_DIR="custom"' > .envrc
-"$PI_LOCAL_AUTH_BIN"
-grep -Fx 'export PI_CODING_AGENT_DIR="custom"' .envrc
-grep -Fx 'export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"' .envrc
-[ "$(grep -c 'PI_CODING_AGENT_DIR=' .envrc)" -eq 1 ]
-
-case_existing_session=$(mktemp -d)
-cd "$case_existing_session"
-printf '%s\n' 'PI_CODING_AGENT_SESSION_DIR=custom-session' > .envrc
-"$PI_LOCAL_AUTH_BIN"
-grep -Fx 'PI_CODING_AGENT_SESSION_DIR=custom-session' .envrc
-grep -Fx 'export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"' .envrc
-[ "$(grep -c 'PI_CODING_AGENT_SESSION_DIR=' .envrc)" -eq 1 ]
-
-case_idempotent=$(mktemp -d)
-cd "$case_idempotent"
-"$PI_LOCAL_AUTH_BIN"
-cp .pi/local-agent/settings.json settings.expected
-"$PI_LOCAL_AUTH_BIN"
-cmp settings.expected .pi/local-agent/settings.json
-[ "$(grep -c 'PI_CODING_AGENT_DIR=' .envrc)" -eq 1 ]
-[ "$(grep -c 'PI_CODING_AGENT_SESSION_DIR=' .envrc)" -eq 1 ]
-
-invalid_home=$(mktemp -d)
-mkdir -p "$invalid_home/.pi/agent"
-printf '%s\n' '{invalid' > "$invalid_home/.pi/agent/settings.json"
-case_invalid=$(mktemp -d)
-cd "$case_invalid"
+# A legacy setup is migrated: the lines the old script wrote are removed and
+# unrelated lines keep their order.
+new_case
 mkdir -p .pi/local-agent
-printf '%s\n' '{"sentinel":"settings"}' > .pi/local-agent/settings.json
-printf '%s\n' 'KEEP=invalid' > .envrc
-cp .pi/local-agent/settings.json settings.before
-cp .envrc envrc.before
-set +e
-HOME="$invalid_home" "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-invalid_status=$?
-set -e
-[ "$invalid_status" -ne 0 ]
-grep -F 'pi-local-auth: invalid global settings:' command.stderr
-cmp settings.before .pi/local-agent/settings.json
-cmp envrc.before .envrc
-assert_no_temp_settings
+printf '%s\n' '{}' > .pi/local-agent/auth.json
+printf '%s\n' '{"stale":true}' > .pi/local-agent/settings.json
+cat > .envrc <<EOF
+use flake
+$legacy_dir_line
+export OPENAI_API_KEY=\$(op read "op://Private/key/credential")
+$legacy_session_line
+EOF
+"$PI_LOCAL_AUTH_BIN"
+cat > envrc.expected <<EOF
+use flake
+export OPENAI_API_KEY=\$(op read "op://Private/key/credential")
+$auth_line
+EOF
+cmp envrc.expected .envrc
 
-missing_home=$(mktemp -d)
-case_missing=$(mktemp -d)
-cd "$case_missing"
-mkdir -p .pi/local-agent
-printf '%s\n' '{"sentinel":"settings"}' > .pi/local-agent/settings.json
-printf '%s\n' 'KEEP=missing' > .envrc
-cp .pi/local-agent/settings.json settings.before
-cp .envrc envrc.before
-set +e
-HOME="$missing_home" "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-missing_status=$?
-set -e
-[ "$missing_status" -ne 0 ]
-grep -F 'pi-local-auth: global settings not found or unreadable:' command.stderr
-cmp settings.before .pi/local-agent/settings.json
-cmp envrc.before .envrc
-assert_no_temp_settings
+# Migration keeps the .envrc mode, and a symlinked .envrc stays a symlink.
+new_case
+printf '%s\n' 'use flake' "$legacy_dir_line" > envrc.target
+chmod 640 envrc.target
+ln -s envrc.target .envrc
+"$PI_LOCAL_AUTH_BIN"
+[ -L .envrc ]
+[ "$(stat -c %a envrc.target)" = 640 ]
+printf '%s\n' 'use flake' "$auth_line" > envrc.expected
+cmp envrc.expected envrc.target
 
-assert_rejected_global_content() {
-  local label=$1
-  local content=$2
-  local rejected_home
-  local case_dir
-  local command_status
+# The export starts on its own line when .envrc lacks a final newline.
+new_case
+printf '%s' 'use flake' > .envrc
+"$PI_LOCAL_AUTH_BIN"
+printf '%s\n' 'use flake' "$auth_line" > envrc.expected
+cmp envrc.expected .envrc
 
-  rejected_home=$(mktemp -d)
-  mkdir -p "$rejected_home/.pi/agent"
-  printf '%s' "$content" > "$rejected_home/.pi/agent/settings.json"
-
-  case_dir=$(mktemp -d)
-  cd "$case_dir"
-  mkdir -p .pi/local-agent
-  printf '%s\n' '{"sentinel":"settings"}' > .pi/local-agent/settings.json
-  printf '%s\n' "KEEP=$label" > .envrc
-  cp .pi/local-agent/settings.json settings.before
-  cp .envrc envrc.before
-
+# An unreadable .envrc stops the script before it writes anything.
+if [ "$(id -u)" -ne 0 ]; then
+  new_case
+  printf '%s\n' "$legacy_dir_line" > .envrc
+  chmod 200 .envrc
   set +e
-  HOME="$rejected_home" "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-  command_status=$?
+  "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
+  unreadable_status=$?
   set -e
+  chmod 600 .envrc
+  [ "$unreadable_status" -ne 0 ]
+  grep -F 'pi-local-auth: could not read .envrc' command.stderr
+  printf '%s\n' "$legacy_dir_line" > envrc.expected
+  cmp envrc.expected .envrc
 
-  [ "$command_status" -ne 0 ]
-  grep -F 'pi-local-auth: invalid global settings:' command.stderr
-  cmp settings.before .pi/local-agent/settings.json
+  # A read-only .envrc is left unchanged rather than half migrated.
+  for content in 'use flake' "$legacy_dir_line"; do
+    new_case
+    printf '%s\n' "$content" > .envrc
+    chmod 400 .envrc
+    cp .envrc envrc.before
+    set +e
+    "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
+    read_only_status=$?
+    set -e
+    [ "$read_only_status" -ne 0 ]
+    grep -F 'pi-local-auth: could not write .envrc' command.stderr
+    cmp envrc.before .envrc
+    [ "$(stat -c %a .envrc)" = 400 ]
+  done
+fi
+
+# A custom auth file assignment is kept and not duplicated.
+new_case
+# shellcheck disable=SC2016
+printf '%s\n' 'export PI_CODING_AGENT_AUTH_FILE="$HOME/.pi/profiles/work/auth.json"' > .envrc
+cp .envrc envrc.before
+"$PI_LOCAL_AUTH_BIN"
+cmp envrc.before .envrc
+
+# A custom agent directory is kept, with a warning that it still moves all
+# Pi settings away from the global agent directory.
+new_case
+printf '%s\n' 'export PI_CODING_AGENT_DIR="custom"' > .envrc
+"$PI_LOCAL_AUTH_BIN" 2> command.stderr
+grep -Fx 'export PI_CODING_AGENT_DIR="custom"' .envrc
+grep -Fx "$auth_line" .envrc
+grep -F 'pi-local-auth: warning: .envrc still sets PI_CODING_AGENT_DIR' command.stderr
+
+# An auth file symlink is rejected: Pi would read and write its target.
+for target in "$HOME/global-auth.json" "$HOME/missing-auth.json"; do
+  new_case
+  printf '%s\n' '{"openai":{"type":"api_key","key":"sk-global"}}' > "$HOME/global-auth.json"
+  mkdir -p .pi/local-agent
+  ln -s "$target" .pi/local-agent/auth.json
+  printf '%s\n' 'KEEP=auth-symlink' > .envrc
+  cp .envrc envrc.before
+  set +e
+  "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
+  auth_symlink_status=$?
+  set -e
+  [ "$auth_symlink_status" -ne 0 ]
+  grep -F 'pi-local-auth: auth file is a symlink: .pi/local-agent/auth.json' command.stderr
   cmp envrc.before .envrc
-  assert_no_temp_settings
+  [ ! -e "$HOME/missing-auth.json" ]
+done
+
+assert_rejected_symlink() {
+  local status
+  printf '%s\n' 'KEEP=symlink' > .envrc
+  cp .envrc envrc.before
+  set +e
+  "$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
+  status=$?
+  set -e
+  [ "$status" -ne 0 ]
+  grep -F 'pi-local-auth: local agent directory resolves outside the project:' command.stderr
+  cmp envrc.before .envrc
 }
 
-assert_rejected_global_content empty ''
-assert_rejected_global_content multiple $'{"one":1}\n{"two":2}\n'
-assert_rejected_global_content non-object '[]'
-assert_rejected_global_content nan '{"bad":NaN}'
-assert_rejected_global_content infinity '{"bad":Infinity}'
-assert_rejected_global_content plus-number '{"bad":+1}'
-assert_rejected_global_content leading-zero '{"bad":01}'
-assert_rejected_global_content leading-decimal '{"bad":.5}'
-
-case_settings_directory=$(mktemp -d)
-cd "$case_settings_directory"
-mkdir -p .pi/local-agent/settings.json
-printf '%s\n' 'keep-directory-content' > .pi/local-agent/settings.json/keep
-printf '%s\n' 'KEEP=directory' > .envrc
-cp .envrc envrc.before
-set +e
-"$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-directory_status=$?
-set -e
-[ "$directory_status" -ne 0 ]
-grep -F 'pi-local-auth: could not replace local settings:' command.stderr
-test -d .pi/local-agent/settings.json
-grep -Fx 'keep-directory-content' .pi/local-agent/settings.json/keep
-cmp envrc.before .envrc
-assert_no_temp_settings
-
-case_settings_symlink_directory=$(mktemp -d)
-cd "$case_settings_symlink_directory"
-mkdir -p .pi/local-agent settings-target
-printf '%s\n' 'keep-target-content' > settings-target/keep
-ln -s "$case_settings_symlink_directory/settings-target" .pi/local-agent/settings.json
-"$PI_LOCAL_AUTH_BIN"
-[ ! -L .pi/local-agent/settings.json ]
-test -f .pi/local-agent/settings.json
-jq -e '.globalMarker == "updated-home"' .pi/local-agent/settings.json
-assert_routing_overrides .pi/local-agent/settings.json
-grep -Fx 'keep-target-content' settings-target/keep
-grep -Fx 'export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"' .envrc
-
-case_python_shadow=$(mktemp -d)
-cd "$case_python_shadow"
-cat > json.py <<'PY'
-from pathlib import Path
-
-Path("json-imported").write_text("yes")
-raise RuntimeError("project json.py imported")
-PY
-"$PI_LOCAL_AUTH_BIN"
-[ ! -e json-imported ]
-jq -e '.globalMarker == "updated-home"' .pi/local-agent/settings.json
-
-case_agent_dir_symlink=$(mktemp -d)
-cd "$case_agent_dir_symlink"
+# Symlinked .pi or .pi/local-agent directories are rejected without writes.
+new_case
+agent_dir_target=$(mktemp -d)
 mkdir -p .pi
-ln -s "$HOME/.pi/agent" .pi/local-agent
-cp "$HOME/.pi/agent/settings.json" global-settings.before
-printf '%s\n' 'KEEP=agent-dir-symlink' > .envrc
-cp .envrc envrc.before
-set +e
-"$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-agent_dir_symlink_status=$?
-set -e
-[ "$agent_dir_symlink_status" -ne 0 ]
-grep -F 'pi-local-auth: local agent directory resolves outside the project:' command.stderr
-cmp global-settings.before "$HOME/.pi/agent/settings.json"
-cmp envrc.before .envrc
-[ -L .pi/local-agent ]
+ln -s "$agent_dir_target" .pi/local-agent
+assert_rejected_symlink
+[ ! -e "$agent_dir_target/auth.json" ]
 
-case_pi_dir_symlink=$(mktemp -d)
+new_case
 pi_dir_target=$(mktemp -d)
-cd "$case_pi_dir_symlink"
 ln -s "$pi_dir_target" .pi
-cp "$HOME/.pi/agent/settings.json" global-settings.before
-printf '%s\n' 'KEEP=pi-dir-symlink' > .envrc
-cp .envrc envrc.before
-set +e
-"$PI_LOCAL_AUTH_BIN" > command.stdout 2> command.stderr
-pi_dir_symlink_status=$?
-set -e
-[ "$pi_dir_symlink_status" -ne 0 ]
-grep -F 'pi-local-auth: local agent directory resolves outside the project:' command.stderr
-cmp global-settings.before "$HOME/.pi/agent/settings.json"
-cmp envrc.before .envrc
-[ -L .pi ]
+assert_rejected_symlink
+[ ! -e "$pi_dir_target/local-agent" ]
 
 if [ -n "${out:-}" ]; then
   touch "$out"

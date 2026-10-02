@@ -9,7 +9,7 @@
     }:
     let
       upstreamPi = inputs.llm-agents.packages.${system}.pi;
-      piPackage = import ../../nix/packages/pi-with-tool-result-preview.nix {
+      piPackage = import ../../nix/packages/pi-patched.nix {
         inherit pkgs upstreamPi;
       };
       piDeps = import ../../nix/packages/pi-deps.nix {

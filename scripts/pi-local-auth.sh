@@ -2,110 +2,111 @@
 set -eu
 
 local_agent_dir=".pi/local-agent"
-settings_file="$local_agent_dir/settings.json"
-global_settings_file="$HOME/.pi/agent/settings.json"
+auth_file="$local_agent_dir/auth.json"
 envrc_file=".envrc"
-settings_source_tmp=""
-settings_tmp=""
+# shellcheck disable=SC2016
+auth_line='export PI_CODING_AGENT_AUTH_FILE="$PWD/.pi/local-agent/auth.json"'
+# Lines written by earlier versions, which moved the whole agent directory.
+# shellcheck disable=SC2016
+legacy_dir_line='export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"'
+# shellcheck disable=SC2016
+legacy_session_line='export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"'
+envrc_tmp=""
 
-cleanup_settings_tmp() {
-  if [ -n "$settings_source_tmp" ]; then
-    rm -f -- "$settings_source_tmp"
-  fi
-  if [ -n "$settings_tmp" ]; then
-    rm -f -- "$settings_tmp"
+cleanup_envrc_tmp() {
+  if [ -n "$envrc_tmp" ]; then
+    rm -f -- "$envrc_tmp"
   fi
 }
 
-if [ ! -r "$global_settings_file" ]; then
-  printf 'pi-local-auth: global settings not found or unreadable: %s\n' \
-    "$global_settings_file" >&2
+reject_unreadable_envrc() {
+  printf 'pi-local-auth: could not read %s\n' "$envrc_file" >&2
   exit 1
-fi
+}
 
-if [ -L ".pi" ] || [ -L "$local_agent_dir" ]; then
+# grep exits 1 when nothing matches; a higher status means it could not read.
+envrc_contains() {
+  local status=0
+  grep -q "$@" -- "$envrc_file" || status=$?
+  if [ "$status" -gt 1 ]; then
+    reject_unreadable_envrc
+  fi
+  [ "$status" -eq 0 ]
+}
+
+reject_outside_project() {
   printf 'pi-local-auth: local agent directory resolves outside the project: %s\n' \
     "$local_agent_dir" >&2
   exit 1
+}
+
+if [ -L ".pi" ] || [ -L "$local_agent_dir" ]; then
+  reject_outside_project
 fi
 
-mkdir -p "$local_agent_dir"
+if [ ! -d "$local_agent_dir" ]; then
+  mkdir -p .pi
+  mkdir -m 700 "$local_agent_dir"
+fi
 project_dir=$(pwd -P)
 resolved_local_agent_dir=$(cd "$local_agent_dir" && pwd -P)
 if [ "$resolved_local_agent_dir" != "$project_dir/$local_agent_dir" ]; then
-  printf 'pi-local-auth: local agent directory resolves outside the project: %s\n' \
-    "$local_agent_dir" >&2
+  reject_outside_project
+fi
+
+# Pi reads and writes through a symlink, which could expose another project's
+# or the global credentials. Point PI_CODING_AGENT_AUTH_FILE at a shared file
+# instead.
+if [ -L "$auth_file" ]; then
+  printf 'pi-local-auth: auth file is a symlink: %s\n' "$auth_file" >&2
   exit 1
 fi
 
-trap cleanup_settings_tmp EXIT HUP INT TERM
-settings_source_tmp=$(mktemp "$local_agent_dir/.settings-source.tmp.XXXXXX")
-
-if ! cp -- "$global_settings_file" "$settings_source_tmp"; then
-  printf 'pi-local-auth: global settings not found or unreadable: %s\n' \
-    "$global_settings_file" >&2
-  exit 1
+if [ ! -e "$auth_file" ]; then
+  (umask 077 && printf '%s' '{}' > "$auth_file")
 fi
 
-if ! python3 -I - "$settings_source_tmp" <<'PY'
-import json
-import sys
-
-
-def reject_constant(value):
-    raise ValueError(f"non-standard JSON constant: {value}")
-
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as settings_file:
-        settings = json.load(settings_file, parse_constant=reject_constant)
-except (OSError, UnicodeError, ValueError):
-    raise SystemExit(1)
-
-if not isinstance(settings, dict):
-    raise SystemExit(1)
-PY
-then
-  printf 'pi-local-auth: invalid global settings: %s\n' "$global_settings_file" >&2
-  exit 1
+if [ ! -e "$envrc_file" ]; then
+  : > "$envrc_file"
 fi
 
-settings_tmp=$(mktemp "$local_agent_dir/.settings.json.tmp.XXXXXX")
-
-if ! jq --slurp '
-  if length != 1 or (.[0] | type) != "object" then
-    error("settings must contain exactly one JSON object")
-  else
-    .[0] + {
-      sessionDir: "~/.pi/agent/sessions",
-      extensions: ["~/.pi/agent/extensions"],
-      skills: ["~/.pi/agent/skills"],
-      prompts: ["~/.pi/agent/prompts"],
-      themes: ["~/.pi/agent/themes"]
-    }
-  end
-' "$settings_source_tmp" > "$settings_tmp"; then
-  printf 'pi-local-auth: invalid global settings: %s\n' "$global_settings_file" >&2
-  exit 1
+has_legacy_lines=false
+if envrc_contains -Fx -e "$legacy_dir_line" -e "$legacy_session_line"; then
+  has_legacy_lines=true
+fi
+has_auth_line=false
+if envrc_contains -e '^[[:space:]]*\(export[[:space:]]\+\)\?PI_CODING_AGENT_AUTH_FILE='; then
+  has_auth_line=true
 fi
 
-if ! mv -fT -- "$settings_tmp" "$settings_file"; then
-  printf 'pi-local-auth: could not replace local settings: %s\n' "$settings_file" >&2
-  exit 1
+if [ "$has_legacy_lines" = true ] || [ "$has_auth_line" = false ]; then
+  envrc_target=$(realpath -- "$envrc_file")
+  if [ ! -w "$envrc_target" ]; then
+    printf 'pi-local-auth: could not write %s\n' "$envrc_file" >&2
+    exit 1
+  fi
+  # Build the new file beside the resolved target and rename it once, so a
+  # failure leaves either the old or the new contents.
+  trap cleanup_envrc_tmp EXIT HUP INT TERM
+  envrc_tmp=$(mktemp "$(dirname -- "$envrc_target")/.envrc.tmp.XXXXXX")
+  filter_status=0
+  grep -vFx -e "$legacy_dir_line" -e "$legacy_session_line" -- "$envrc_target" \
+    > "$envrc_tmp" || filter_status=$?
+  if [ "$filter_status" -gt 1 ]; then
+    reject_unreadable_envrc
+  fi
+  if [ "$has_auth_line" = false ]; then
+    if [ -n "$(tail -c 1 -- "$envrc_tmp")" ]; then
+      printf '\n' >> "$envrc_tmp"
+    fi
+    printf '%s\n' "$auth_line" >> "$envrc_tmp"
+  fi
+  chmod --reference="$envrc_target" -- "$envrc_tmp"
+  mv -f -- "$envrc_tmp" "$envrc_target"
+  envrc_tmp=""
 fi
-settings_tmp=""
-rm -f -- "$settings_source_tmp"
-settings_source_tmp=""
-trap - EXIT HUP INT TERM
 
-touch "$envrc_file"
-
-if ! grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?PI_CODING_AGENT_DIR=' "$envrc_file"; then
-  # shellcheck disable=SC2016
-  printf '%s\n' 'export PI_CODING_AGENT_DIR="$PWD/.pi/local-agent"' >> "$envrc_file"
-fi
-
-if ! grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?PI_CODING_AGENT_SESSION_DIR=' "$envrc_file"; then
-  # shellcheck disable=SC2016
-  printf '%s\n' 'export PI_CODING_AGENT_SESSION_DIR="$HOME/.pi/agent/sessions"' >> "$envrc_file"
+if envrc_contains -e '^[[:space:]]*\(export[[:space:]]\+\)\?PI_CODING_AGENT_DIR='; then
+  printf '%s\n' \
+    'pi-local-auth: warning: .envrc still sets PI_CODING_AGENT_DIR, so Pi will not use global settings' >&2
 fi

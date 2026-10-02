@@ -1,0 +1,74 @@
+--- a/dist/config.js
++++ b/dist/config.js
+@@ -434,6 +434,7 @@
+ // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
+ export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
+ export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
++export const ENV_AUTH_FILE = `${APP_NAME.toUpperCase()}_CODING_AGENT_AUTH_FILE`;
+ export function expandTildePath(path) {
+     return normalizePath(path);
+ }
+@@ -464,8 +465,16 @@
+ }
+ /** Get path to auth.json */
+ export function getAuthPath() {
++    const envFile = process.env[ENV_AUTH_FILE];
++    if (envFile) {
++        return expandTildePath(envFile);
++    }
+     return join(getAgentDir(), "auth.json");
+ }
++/** Redirect the agent directory's auth.json to the configured auth file */
++export function resolveAuthPath(authPath) {
++    return resolve(authPath) === resolve(getAgentDir(), "auth.json") ? getAuthPath() : authPath;
++}
+ /** Get path to settings.json */
+ export function getSettingsPath() {
+     return join(getAgentDir(), "settings.json");
+--- a/dist/core/auth-storage.js
++++ b/dist/core/auth-storage.js
+@@ -6,7 +6,7 @@
+ import { dirname, join } from "path";
+ import lockfile from "proper-lockfile";
+ import { setTimeout as sleep } from "timers/promises";
+-import { getAgentDir } from "../config.js";
++import { getAgentDir, resolveAuthPath } from "../config.js";
+ import { raceWithAbortSignal } from "../utils/abort.js";
+ import { getFileRevision, normalizePath } from "../utils/paths.js";
+ import { stripBom } from "../utils/text.js";
+@@ -17,7 +17,7 @@
+ export class FileAuthStorageBackend {
+     authPath;
+     constructor(authPath = join(getAgentDir(), "auth.json")) {
+-        this.authPath = normalizePath(authPath);
++        this.authPath = resolveAuthPath(normalizePath(authPath));
+     }
+     ensureParentDir() {
+         const dir = dirname(this.authPath);
+@@ -158,7 +158,7 @@
+     authPath;
+     data;
+     constructor(authPath = join(getAgentDir(), "auth.json")) {
+-        this.authPath = normalizePath(authPath);
++        this.authPath = resolveAuthPath(normalizePath(authPath));
+     }
+     load() {
+         if (this.data)
+@@ -280,7 +280,7 @@
+         this.reload();
+     }
+     static create(authPath = join(getAgentDir(), "auth.json")) {
+-        const normalizedAuthPath = normalizePath(authPath);
++        const normalizedAuthPath = resolveAuthPath(normalizePath(authPath));
+         return new AuthStorage(new FileAuthStorageBackend(normalizedAuthPath), normalizedAuthPath);
+     }
+     static fromStorage(storage) {
+@@ -416,7 +416,7 @@
+  */
+ export function readStoredCredential(providerId, authPath = join(getAgentDir(), "auth.json")) {
+     try {
+-        const data = JSON.parse(stripBom(readFileSync(normalizePath(authPath), "utf-8")));
++        const data = JSON.parse(stripBom(readFileSync(resolveAuthPath(normalizePath(authPath)), "utf-8")));
+         return data[providerId];
+     }
+     catch {

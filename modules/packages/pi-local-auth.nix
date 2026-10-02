@@ -8,8 +8,6 @@
         runtimeInputs = [
           pkgs.coreutils
           pkgs.gnugrep
-          pkgs.jq
-          pkgs.python3
         ];
         text = ''
           # shellcheck disable=SC1091
@@ -21,7 +19,7 @@
       packages."pi-local-auth" = piLocalAuth;
 
       checks."pi-local-auth" =
-        pkgs.runCommand "pi-local-auth-check" { nativeBuildInputs = [ pkgs.jq ]; }
+        pkgs.runCommand "pi-local-auth-check" { }
           ''
             export PI_LOCAL_AUTH_BIN=${piLocalAuth}/bin/pi-local-auth
             # shellcheck disable=SC1091

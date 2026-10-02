@@ -35,6 +35,18 @@ pi-matt
 
 `ROCHE_PI_SKILLSET` accepts `superpowers` and `matt`; an unset value defaults to `superpowers`. For normal agent launches, `pi-matt` always selects Matt, even when `ROCHE_PI_SKILLSET=superpowers`. Both commands change the workflow skills and routing instructions only. Authentication, sessions, common extensions, local skills, models, and trust state remain under the same `~/.pi/agent` directory.
 
+### Project credentials
+
+The packaged Pi reads its credentials from `PI_CODING_AGENT_AUTH_FILE` when that variable is set. `/login`, `/logout` and `pi auth` then use that file instead of `~/.pi/agent/auth.json`. Settings, extensions, skills, sessions and MCP credentials (`mcp-auth.json`) stay in `~/.pi/agent`. A patch in this flake adds the variable; upstream Pi does not support it.
+
+To give a direnv project its own credentials, run `pi-local-auth` (the `pi-local-auth` package) once in the project root, then `direnv allow`. It creates `.pi/local-agent/auth.json` with mode 0600 and adds this line to `.envrc`:
+
+```sh
+export PI_CODING_AGENT_AUTH_FILE="$PWD/.pi/local-agent/auth.json"
+```
+
+It also removes the `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` lines that earlier versions added. Keep `.pi/local-agent/` out of version control. `pi-local-auth` refuses a symlinked `auth.json`, because Pi reads and writes through it; to share credentials between projects, set `PI_CODING_AGENT_AUTH_FILE` to the same file in each `.envrc`. The status line shows `auth: LOCAL` when Pi uses a credentials file other than `~/.pi/agent/auth.json`.
+
 ## Context paging
 
 The packaged configuration enables context paging with a default rolling budget of 128,000 estimated tokens:

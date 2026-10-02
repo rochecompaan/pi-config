@@ -10,7 +10,7 @@
     let
       piRemote = self'.packages."pi-remote";
       upstreamPi = inputs.llm-agents.packages.${system}.pi;
-      piPackage = import ../../nix/packages/pi-with-tool-result-preview.nix {
+      piPackage = import ../../nix/packages/pi-patched.nix {
         inherit pkgs upstreamPi;
       };
       piIntervals = self'.packages."pi-intervals";
