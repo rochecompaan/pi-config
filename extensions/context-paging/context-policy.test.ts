@@ -33,6 +33,12 @@ const toolAssistant = (...calls: ReturnType<typeof toolCall>[]) => ({
 	content: calls,
 	timestamp: 0,
 });
+const interruptedAssistant = (stopReason: "aborted" | "error", ...calls: ReturnType<typeof toolCall>[]) => ({
+	role: "assistant" as const,
+	content: calls,
+	stopReason,
+	timestamp: 0,
+});
 const result = (toolCallId: string, text: string, toolName = "read") => ({
 	role: "toolResult" as const,
 	toolCallId,
@@ -207,7 +213,7 @@ test("matches Pi 0.85.1 user-image estimation", () => {
 test("removes prefix summaries and completed turns before later user turns", () => {
 	const messages = [
 		{ role: "compactionSummary", summary: repeat("PREFIX_SUMMARY", 100_000), timestamp: 0 },
-		user(repeat("old request", 160_000)),
+		user(repeat("old request", 300_000)),
 		assistant(repeat("old answer", 160_000)),
 		user("new request"),
 		assistant("new answer"),
@@ -335,6 +341,107 @@ test("rejects orphan results and incomplete older exchanges", () => {
 		() => selected([user("active"), toolAssistant(toolCall("duplicate"), toolCall("duplicate")), result("duplicate", "bad")]),
 		(error: unknown) => error instanceof ContextSelectionError && error.code === "INVALID_MESSAGE_STRUCTURE",
 	);
+});
+
+test("keeps active-request provenance aligned after omitting interrupted exchanges", () => {
+	for (const stopReason of ["aborted", "error"] as const) {
+		for (const resultCount of [0, 1, 2]) {
+			const old = user(repeat("old request", 1_000));
+			const failed = interruptedAssistant(stopReason, toolCall("failed-a"), toolCall("failed-b"));
+			const results = [result("failed-a", "first"), result("failed-b", "second")].slice(0, resultCount);
+			const actual = user(repeat("actual request", 800));
+			const injected = user("extension instruction");
+			const messages = [old, failed, ...results, actual, injected];
+			const outgoingOnly = messages.map((message) => message === injected);
+			const before = structuredClone({ messages, outgoingOnly });
+			assert.deepEqual(selected(messages, { outgoingOnly }).messages, [old, actual, injected]);
+			assert.throws(
+				() => selected(messages, { tokenBudget: 130, outgoingOnly }),
+				(error: unknown) => error instanceof ContextSelectionError && error.code === "ACTIVE_REQUEST_TOO_LARGE",
+			);
+			const paged = selected(messages, { tokenBudget: 350, outgoingOnly });
+			assert.equal(paged.mode, "paged");
+			assert.equal(hasMarker(paged.messages, "old request"), false);
+			assert.equal(paged.messages.includes(actual), true);
+			assert.equal(paged.messages.includes(injected), true);
+			assert.deepEqual({ messages, outgoingOnly }, before);
+		}
+	}
+});
+
+test("subtracts omitted interrupted exchanges from measured context without losing calibration", () => {
+	for (const stopReason of ["aborted", "error"] as const) {
+		const request = user("active request");
+		const failed = interruptedAssistant(stopReason, toolCall("failed-a"), toolCall("failed-b"));
+		const results = [result("failed-a", repeat("first", 1_000)), result("failed-b", "second")];
+		const messages = [request, failed, ...results];
+		const removedTokens = [failed, ...results].reduce((total, message) => total + estimateTokens(message as any), 0);
+		const contextTokens = 1_000;
+		const selection = selected(messages, { contextTokens, tokenBudget: contextTokens - removedTokens });
+		assert.equal(selection.mode, "within-budget");
+		assert.deepEqual(selection.messages, [request]);
+		assert.equal(selection.estimatedTokens, contextTokens - removedTokens);
+	}
+});
+
+test("omits interrupted exchanges before within-budget provider selection", () => {
+	for (const stopReason of ["aborted", "error"] as const) {
+		const failed = interruptedAssistant(stopReason, toolCall(`${stopReason}-call-a`), toolCall(`${stopReason}-call-b`));
+		const results = [
+			result(`${stopReason}-call-a`, "first actual result"),
+			result(`${stopReason}-call-b`, "second actual result"),
+		];
+		const messages = [failed, ...results, user("continue")];
+		const before = structuredClone(messages);
+		const selection = selected(messages);
+
+		assert.deepEqual(selection.messages, [messages.at(-1)]);
+		assert.deepEqual(messages, before);
+	}
+});
+
+test("omits failed text and partial tool exchanges before paging each context segment", () => {
+	const prefixFailed = interruptedAssistant("aborted", toolCall("prefix-call"));
+	const completedFailed = interruptedAssistant("error", toolCall("completed-call"));
+	const activeFailed = interruptedAssistant("aborted", toolCall("active-call"));
+	const failedText = { ...assistant("partial text"), stopReason: "error" as const };
+	const messages = [
+		prefixFailed,
+		result("prefix-call", "PREFIX_FAILED_RESULT"),
+		user(repeat("old request", 300_000)),
+		completedFailed,
+		user("active request"),
+		failedText,
+		activeFailed,
+		result("active-call", "ACTIVE_FAILED_RESULT"),
+	];
+	const selection = selected(messages, { modelContextWindow: 100_000 });
+
+	assert.equal(selection.mode, "paged");
+	assert.equal(selection.messages.some((message) => message === prefixFailed || message === completedFailed || message === activeFailed || message === failedText), false);
+	assert.equal(selection.messages.some((message) => message.role === "toolResult"), false);
+	assert.equal(hasMarker(selection.messages, "active request"), true);
+});
+
+test("validates actual results from interrupted exchanges before omitting them", () => {
+	for (const messages of [
+		[
+			user("active"),
+			interruptedAssistant("aborted", toolCall("duplicate-call")),
+			result("duplicate-call", "first"),
+			result("duplicate-call", "second"),
+		],
+		[
+			user("active"),
+			interruptedAssistant("error", toolCall("expected-call")),
+			result("wrong-call", "wrong"),
+		],
+	]) {
+		assert.throws(
+			() => selected(messages),
+			(error: unknown) => error instanceof ContextSelectionError && error.code === "INVALID_MESSAGE_STRUCTURE",
+		);
+	}
 });
 
 test("preserves a complete output larger than 16,000 bytes", () => {

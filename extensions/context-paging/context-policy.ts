@@ -1,7 +1,7 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
-import type { HistoryItem } from "./history.ts";
+import { isInterruptedAssistantMessage, type HistoryItem } from "./history.ts";
 
 export const DEFAULT_CONTEXT_TOKEN_BUDGET = 128_000;
 
@@ -119,7 +119,11 @@ function structureError(message: string): ContextSelectionError {
 	return new ContextSelectionError("INVALID_MESSAGE_STRUCTURE", message);
 }
 
-function exchangeAt(messages: readonly AgentMessage[], index: number): { exchange: ToolExchange; nextIndex: number } {
+function exchangeAt(
+	messages: readonly AgentMessage[],
+	index: number,
+	allowIncomplete = false,
+): { exchange: ToolExchange; nextIndex: number } {
 	const assistant = messages[index] as AssistantMessage;
 	const calls = assistant.content.filter(isToolCallBlock);
 	if (calls.length === 0) {
@@ -142,10 +146,42 @@ function exchangeAt(messages: readonly AgentMessage[], index: number): { exchang
 		results.push(result);
 		nextIndex++;
 	}
-	if (seenIds.size !== expectedIds.size) {
+	if (seenIds.size !== expectedIds.size && !allowIncomplete) {
 		throw structureError("Canonical tool-call exchange is incomplete.");
 	}
 	return { exchange: { assistant, results, messages: [assistant, ...results] }, nextIndex };
+}
+
+function normalizeInterruptedExchanges(
+	messages: readonly AgentMessage[],
+	outgoingOnly: readonly boolean[],
+): { messages: AgentMessage[]; outgoingOnly: readonly boolean[] } {
+	const normalized: AgentMessage[] = [];
+	const normalizedOutgoingOnly: boolean[] = [];
+	let removedInterruptedExchange = false;
+	for (let index = 0; index < messages.length;) {
+		const message = messages[index]!;
+		if (message.role === "toolResult") {
+			throw structureError("Canonical context contains an orphan tool result.");
+		}
+		if (message.role !== "assistant") {
+			normalized.push(message);
+			normalizedOutgoingOnly.push(outgoingOnly[index]!);
+			index++;
+			continue;
+		}
+		const interrupted = isInterruptedAssistantMessage(message);
+		const { exchange, nextIndex } = exchangeAt(messages, index, interrupted);
+		if (interrupted) removedInterruptedExchange = true;
+		else {
+			normalized.push(...exchange.messages);
+			normalizedOutgoingOnly.push(...outgoingOnly.slice(index, nextIndex));
+		}
+		index = nextIndex;
+	}
+	return removedInterruptedExchange
+		? { messages: normalized, outgoingOnly: normalizedOutgoingOnly }
+		: { messages: messages as AgentMessage[], outgoingOnly };
 }
 
 function unitsForSegment(messages: readonly AgentMessage[]): AgentMessage[][] {
@@ -467,14 +503,19 @@ export function selectContext(input: ContextSelectionInput): ContextSelection {
 		: Math.min(input.tokenBudget, input.modelContextWindow);
 	const modelLimit = input.modelContextWindow ?? Number.POSITIVE_INFINITY;
 	const residentTokens = residentTokenEstimate(input);
-	const outgoingOnly = input.outgoingOnly?.length === input.messages.length
+	const inputOutgoingOnly = input.outgoingOnly?.length === input.messages.length
 		? input.outgoingOnly
 		: input.messages.map(() => false);
-	const grouped = groupContext(input.messages, outgoingOnly);
+	const { messages, outgoingOnly } = normalizeInterruptedExchanges(input.messages, inputOutgoingOnly);
+	const grouped = groupContext(messages, outgoingOnly);
 	const tokenCache: TokenCache = { messages: new Map(), units: new WeakMap() };
-	const rawFullEstimate = residentTokens + unitEstimate(input.messages, tokenCache);
+	const rawInputEstimate = residentTokens + unitEstimate(input.messages, tokenCache);
+	const rawFullEstimate = messages === input.messages
+		? rawInputEstimate
+		: residentTokens + unitEstimate(messages, tokenCache);
 	const contextTokens = validContextTokens(input.contextTokens) ? input.contextTokens : undefined;
-	const calibration = contextTokens === undefined ? 0 : contextTokens - rawFullEstimate;
+	// Usage describes the incoming snapshot; normalization removes tokens, not its calibration.
+	const calibration = contextTokens === undefined ? 0 : contextTokens - rawInputEstimate;
 	// Keep one adjustment for this selection so each FIFO removal changes only its own estimate.
 	const calibrated = (rawEstimate: number): number => rawEstimate + calibration;
 	const reported = (rawEstimate: number): number => Math.max(0, calibrated(rawEstimate));
@@ -484,7 +525,7 @@ export function selectContext(input: ContextSelectionInput): ContextSelection {
 
 	const fullEstimate = calibrated(rawFullEstimate);
 	if (fullEstimate <= budgetTokens) {
-		return { messages: input.messages as AgentMessage[], estimatedTokens: reported(rawFullEstimate), budgetTokens, mode: "within-budget" };
+		return { messages, estimatedTokens: reported(rawFullEstimate), budgetTokens, mode: "within-budget" };
 	}
 	const history = new SelectionHistoryLookup(input.rawHistoryItems);
 	if (!grouped.activeTurn) {

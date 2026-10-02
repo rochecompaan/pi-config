@@ -253,6 +253,30 @@ test("refreshes navigation history for session lifecycle changes without cancell
 	assert.equal(harness.abortCalls(), 0);
 });
 
+test("keeps interrupted exchanges in raw lifecycle history while omitting them from provider context", async () => {
+	const harness = createHarness();
+	const failed = { ...toolAssistant("failed-call"), stopReason: "aborted" as const };
+	const rawBranch = [
+		entry("failed-turn", failed),
+		entry("next-user", user("continue after interruption")),
+	];
+	const rawBefore = structuredClone(rawBranch);
+	for (const reason of ["startup", "resume"] as const) {
+		harness.setBranch(rawBranch);
+		await emit(harness, "session_start", { reason });
+		assert.deepEqual(harness.branch(), rawBefore);
+	}
+	harness.setBranch(rawBranch);
+	await emit(harness, "session_tree", {});
+	assert.deepEqual(harness.branch(), rawBefore);
+
+	const canonical = [failed, user("continue after interruption")];
+	const selection = await emit(harness, "context", { messages: canonical }) as any;
+	assert.deepEqual(selection.messages, [canonical[1]]);
+	assert.equal(harness.abortCalls(), 0);
+	assert.deepEqual(harness.branch(), rawBefore);
+});
+
 test("selects canonical context and isolates raw-history failures", async () => {
 	const harness = createHarness();
 	const canonicalMessages = [user("CANONICAL_ONLY")];

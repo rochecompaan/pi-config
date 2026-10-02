@@ -15,7 +15,7 @@ const userEntry = (id: string, content: string) => ({
 	message: { role: "user", content, timestamp: 1 },
 });
 
-const assistantEntry = (id: string, content: unknown[]) => ({
+const assistantEntry = (id: string, content: unknown[], stopReason = "toolUse") => ({
 	type: "message",
 	id,
 	parentId: null,
@@ -34,7 +34,7 @@ const assistantEntry = (id: string, content: unknown[]) => ({
 			totalTokens: 0,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
-		stopReason: "toolUse",
+		stopReason,
 		timestamp: 2,
 	},
 });
@@ -185,4 +185,90 @@ test("omits only the newest incomplete assistant exchange", () => {
 		projectActiveBranch(entries as any).map((item) => item.id),
 		["user-1", "assistant-1", "user-2"],
 	);
+});
+
+test("projects interrupted exchanges with every actual result and marks them failed", () => {
+	for (const stopReason of ["aborted", "error"]) {
+		for (const resultCount of [0, 1, 2]) {
+			const entries = [
+				assistantEntry("failed-turn", [
+					{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "src/a.ts" } },
+					{ type: "toolCall", id: "call-2", name: "read", arguments: { path: "src/b.ts" } },
+				], stopReason),
+				...[
+					resultEntry("result-1", "call-1", "first"),
+					resultEntry("result-2", "call-2", "second"),
+				].slice(0, resultCount),
+				userEntry("next-user", "continue"),
+			];
+			const before = structuredClone(entries);
+			const projected = projectActiveBranch(entries as any);
+
+			assert.deepEqual(projected.map((item) => item.id), ["failed-turn", "next-user"]);
+			assert.equal(projected[0].kind, "modelTurn");
+			if (projected[0].kind === "modelTurn") {
+				assert.equal(projected[0].metadata.failed, true);
+				assert.equal(projected[0].assistantMessage, entries[0].message);
+				assert.deepEqual(projected[0].toolResults, entries.slice(1, 1 + resultCount).map((entry) => entry.message));
+			}
+			assert.deepEqual(entries, before);
+		}
+	}
+});
+
+test("retains interrupted exchanges at the branch tail with every actual result", () => {
+	for (const stopReason of ["aborted", "error"]) {
+		for (const resultCount of [0, 1, 2]) {
+			const entries = [
+				userEntry("request", "read files"),
+				assistantEntry("failed-tail", [
+					{ type: "toolCall", id: "call-1", name: "read", arguments: {} },
+					{ type: "toolCall", id: "call-2", name: "read", arguments: {} },
+				], stopReason),
+				...[resultEntry("result-1", "call-1", "first"), resultEntry("result-2", "call-2", "second")].slice(0, resultCount),
+			];
+			const before = structuredClone(entries);
+			const projected = projectActiveBranch(entries as any);
+			assert.deepEqual(projected.map((item) => item.id), ["request", "failed-tail"]);
+			const tail = projected[1];
+			assert.equal(tail.kind, "modelTurn");
+			if (tail.kind === "modelTurn") {
+				assert.equal(tail.metadata.failed, true);
+				assert.equal(tail.assistantMessage, entries[1].message);
+				assert.equal(tail.toolResults.length, resultCount);
+				for (let index = 0; index < resultCount; index++) assert.equal(tail.toolResults[index], entries[index + 2].message);
+			}
+			assert.deepEqual(entries, before);
+		}
+	}
+});
+
+test("marks interrupted text responses failed without removing them from raw history", () => {
+	for (const stopReason of ["aborted", "error"]) {
+		const entries = [
+			assistantEntry("failed-text", [{ type: "text", text: "partial response" }], stopReason),
+			userEntry("next-user", "continue"),
+		];
+		const projected = projectActiveBranch(entries as any);
+
+		assert.deepEqual(projected.map((item) => item.id), ["failed-text", "next-user"]);
+		assert.equal(projected[0].kind, "modelTurn");
+		assert.equal(projected[0].kind && projected[0].metadata.failed, true);
+	}
+});
+
+test("rejects invalid actual results after interrupted exchanges", () => {
+	for (const entries of [
+		[
+			assistantEntry("failed-turn", [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], "aborted"),
+			resultEntry("first", "call-1", "first"),
+			resultEntry("duplicate", "call-1", "second"),
+		],
+		[
+			assistantEntry("failed-turn", [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], "error"),
+			resultEntry("mismatched", "other-call", "wrong"),
+		],
+	]) {
+		assert.throws(() => projectActiveBranch(entries as any), HistoryProjectionError);
+	}
 });

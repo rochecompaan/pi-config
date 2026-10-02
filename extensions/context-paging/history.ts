@@ -75,6 +75,10 @@ function toolCalls(message: AssistantMessage): ToolCallBlock[] {
 	return message.content.filter(isToolCallBlock);
 }
 
+export function isInterruptedAssistantMessage(message: AssistantMessage): boolean {
+	return message.stopReason === "aborted" || message.stopReason === "error";
+}
+
 function collectFiles(value: unknown, files: string[], seen: Set<string>): void {
 	if (Array.isArray(value)) {
 		for (const item of value) collectFiles(item, files, seen);
@@ -106,7 +110,7 @@ function metadataFor(message: AssistantMessage, results: ToolResultMessage[]): H
 	return {
 		tools: calls.map((call) => call.name),
 		files,
-		failed: results.some((result) => result.isError),
+		failed: isInterruptedAssistantMessage(message) || results.some((result) => result.isError),
 	};
 }
 
@@ -155,7 +159,7 @@ export function projectActiveBranch(entries: readonly SessionEntry[]): HistoryIt
 			resultIndex++;
 		}
 
-		if (seenIds.size !== expectedIds.size) {
+		if (seenIds.size !== expectedIds.size && !isInterruptedAssistantMessage(entry.message)) {
 			if (resultIndex === messages.length) break;
 			throw new HistoryProjectionError("INCOMPLETE_TOOL_RESULTS");
 		}
