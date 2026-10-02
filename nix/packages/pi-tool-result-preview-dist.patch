@@ -14,7 +14,7 @@
      contentBox;
      contentText;
 @@ -91,16 +93,13 @@
-         return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
+         return new Text(formatToolCallWithArgs(this.toolName, this.args, theme, this.expanded), 0, 0);
      }
      createResultFallback() {
 -        const output = this.getTextOutput();
