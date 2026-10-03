@@ -1,0 +1,359 @@
+{
+  "sources": {
+    "codegraph": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "@colbymchenry/codegraph"
+    },
+    "codegraph-linux-x64": {
+      "channel": "companion",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "@colbymchenry/codegraph-linux-x64",
+      "primary": "codegraph",
+      "rule": "same-version"
+    },
+    "context-mode": {
+      "channel": "npm-latest",
+      "fetcher": "fetchurl",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "maintained",
+        "path": "context-mode-package-lock.json"
+      },
+      "package": "context-mode"
+    },
+    "diff": {
+      "channel": "npm-latest",
+      "fetcher": "fetchurl",
+      "hash_field": "sha256",
+      "package": "diff"
+    },
+    "matrix-sdk-crypto-nodejs": {
+      "asset": "matrix-sdk-crypto.linux-x64-gnu.node",
+      "channel": "companion",
+      "dependency": "@matrix-org/matrix-sdk-crypto-nodejs",
+      "fetcher": "fetchurl",
+      "hash_field": "hash",
+      "primary": "pi-messenger-bridge",
+      "repo": "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs.git",
+      "rule": "lock-version"
+    },
+    "mattpocock-skills": {
+      "channel": "git-default-head",
+      "fetcher": "fetchgit",
+      "hash_field": "sha256",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "submodules": true
+    },
+    "pi-claude-bridge": {
+      "channel": "git-default-head",
+      "fetcher": "github-archive",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "patched-upstream",
+        "patch": "nix/packages/pi-claude-bridge-lock-integrity.patch"
+      },
+      "package": "pi-claude-bridge",
+      "repo": "https://github.com/elidickinson/pi-claude-bridge.git",
+      "version_style": "commit-date"
+    },
+    "pi-codegraph": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "@vndv/pi-codegraph"
+    },
+    "pi-intervals": {
+      "channel": "git-default-head",
+      "fetcher": "github-archive",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "upstream"
+      },
+      "package": "pi-intervals",
+      "repo": "https://github.com/sixfeetup/pi-intervals.git",
+      "version_style": "short-rev"
+    },
+    "pi-listen": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "@codexstar/pi-listen"
+    },
+    "pi-loadout": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "pi-loadout"
+    },
+    "pi-messenger-bridge": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "maintained",
+        "path": "nix/packages/pi-messenger-bridge-package-lock.json"
+      },
+      "package": "pi-messenger-bridge"
+    },
+    "pi-remote": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "maintained",
+        "path": "pi-remote-package-lock.json"
+      },
+      "package": "@noahsaso/pi-remote"
+    },
+    "pi-subagents": {
+      "channel": "git-stable-tag",
+      "fetcher": "fetchgit",
+      "hash_field": "sha256",
+      "lock": {
+        "kind": "upstream"
+      },
+      "package": "pi-subagents",
+      "repo": "https://github.com/nicobailon/pi-subagents.git",
+      "submodules": true
+    },
+    "pi-vim": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "maintained",
+        "path": "nix/packages/pi-vim-package-lock.json"
+      },
+      "package": "pi-vim"
+    },
+    "remote-pi-extension": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "lock": {
+        "kind": "maintained",
+        "path": "nix/packages/remote-pi-package-lock.json"
+      },
+      "package": "remote-pi"
+    },
+    "sherpa-onnx-linux-x64": {
+      "channel": "companion",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "sherpa-onnx-linux-x64",
+      "primary": "sherpa-onnx-node",
+      "rule": "same-version"
+    },
+    "sherpa-onnx-node": {
+      "channel": "companion",
+      "dependency": "sherpa-onnx-node",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "sherpa-onnx-node",
+      "primary": "pi-listen",
+      "rule": "manifest-range"
+    },
+    "simple-english": {
+      "channel": "git-stable-tag",
+      "fetcher": "fetchgit",
+      "hash_field": "sha256",
+      "repo": "https://github.com/AminBlg/SimpleEnglish.git",
+      "submodules": true
+    },
+    "superpowers": {
+      "channel": "git-stable-tag",
+      "fetcher": "fetchgit",
+      "hash_field": "sha256",
+      "repo": "https://github.com/obra/superpowers.git",
+      "submodules": true
+    }
+  },
+  "units": {
+    "codegraph": {
+      "builds": [
+        "pi-codegraph",
+        "codegraph"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-codegraph",
+        "codegraph",
+        "codegraph-linux-x64"
+      ]
+    },
+    "context-mode": {
+      "builds": [
+        "context-mode"
+      ],
+      "paths": [
+        "nix/dependency-pins.json",
+        "context-mode-package-lock.json"
+      ],
+      "sources": [
+        "context-mode"
+      ]
+    },
+    "diff-package": {
+      "builds": [
+        "diff-package"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "diff"
+      ]
+    },
+    "flake-inputs": {
+      "builds": [],
+      "paths": [
+        "flake.lock"
+      ],
+      "sources": []
+    },
+    "mattpocock-skills": {
+      "builds": [
+        "mattpocock-skills"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "mattpocock-skills"
+      ]
+    },
+    "pi-claude-bridge": {
+      "builds": [
+        "pi-claude-bridge"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-claude-bridge"
+      ]
+    },
+    "pi-intervals": {
+      "builds": [
+        "pi-intervals"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-intervals"
+      ]
+    },
+    "pi-listen": {
+      "builds": [
+        "pi-listen"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-listen",
+        "sherpa-onnx-node",
+        "sherpa-onnx-linux-x64"
+      ]
+    },
+    "pi-loadout": {
+      "builds": [
+        "pi-loadout"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-loadout"
+      ]
+    },
+    "pi-messenger-bridge": {
+      "builds": [
+        "pi-messenger-bridge"
+      ],
+      "paths": [
+        "nix/dependency-pins.json",
+        "nix/packages/pi-messenger-bridge-package-lock.json"
+      ],
+      "sources": [
+        "pi-messenger-bridge",
+        "matrix-sdk-crypto-nodejs"
+      ]
+    },
+    "pi-remote": {
+      "builds": [
+        "pi-remote"
+      ],
+      "paths": [
+        "nix/dependency-pins.json",
+        "pi-remote-package-lock.json"
+      ],
+      "sources": [
+        "pi-remote"
+      ]
+    },
+    "pi-subagents": {
+      "builds": [
+        "pi-subagents"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-subagents"
+      ]
+    },
+    "pi-vim": {
+      "builds": [
+        "pi-vim"
+      ],
+      "paths": [
+        "nix/dependency-pins.json",
+        "nix/packages/pi-vim-package-lock.json"
+      ],
+      "sources": [
+        "pi-vim"
+      ]
+    },
+    "remote-pi-extension": {
+      "builds": [
+        "remote-pi-extension"
+      ],
+      "paths": [
+        "nix/dependency-pins.json",
+        "nix/packages/remote-pi-package-lock.json"
+      ],
+      "sources": [
+        "remote-pi-extension"
+      ]
+    },
+    "simple-english": {
+      "builds": [
+        "simple-english-source"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "simple-english"
+      ]
+    },
+    "superpowers": {
+      "builds": [
+        "superpowers-source"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "superpowers"
+      ]
+    }
+  }
+}

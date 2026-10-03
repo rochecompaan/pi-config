@@ -1,0 +1,111 @@
+{
+  "codegraph": {
+    "hash": "sha256-ZHTn1NdPp+gaTYKChscEMYr+maUwdAqzyKguUfwBXG4=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.5.0.tgz",
+    "version": "1.5.0"
+  },
+  "codegraph-linux-x64": {
+    "hash": "sha256-jueJv5/6tw8MeL4fKwEz6hTjLJ9IrxzrZmoPELA5v0Y=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.5.0.tgz",
+    "version": "1.5.0"
+  },
+  "context-mode": {
+    "hash": "sha256-CcQeTPd7IVZsdrjqL9vX89gjBV/uLwLCFm/Vu1ddryw=",
+    "npmDepsHash": "sha256-0e3oGyZMLYA8Li1rRxpmqTa222v0u7nK5+5cjSgZnrM=",
+    "url": "https://registry.npmjs.org/context-mode/-/context-mode-1.0.169.tgz",
+    "version": "1.0.169"
+  },
+  "diff": {
+    "sha256": "sha256-uJi/I8lVlGB1duJd3UAT8dUe0OhiqvBzKBWDDIeztY8=",
+    "url": "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz",
+    "version": "9.0.0"
+  },
+  "matrix-sdk-crypto-nodejs": {
+    "hash": "sha256-cHjU3ZhxKPea/RksT2IfZK3s435D8qh1bx0KnwNN5xg=",
+    "url": "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node",
+    "version": "0.4.0"
+  },
+  "mattpocock-skills": {
+    "rev": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
+    "sha256": "sha256-pseSJJb5nBBGPzpxA1GzjGLB9OrT+u0At1saJ4NqZ1E=",
+    "url": "https://github.com/mattpocock/skills.git"
+  },
+  "pi-claude-bridge": {
+    "hash": "sha256-tJFAMykelEeQC0Pq1UxN6ZcB36jO6VsM3A0ThUKaVJ4=",
+    "npmDepsHash": "sha256-o/gjQyT/Y9hnBzp8YJeG7lm4RS4tVc0bzUg8V5Fxwnk=",
+    "rev": "227f5eb4450a070dfbc083a7fe75b8b35366b941",
+    "version": "0.8.0-unstable-2026-09-23"
+  },
+  "pi-codegraph": {
+    "hash": "sha256-QV7TBdbzuZwdNNAffOqeoXRVKjeJumpNF4S57KzAGmU=",
+    "url": "https://registry.npmjs.org/@vndv/pi-codegraph/-/pi-codegraph-0.1.10.tgz",
+    "version": "0.1.10"
+  },
+  "pi-intervals": {
+    "hash": "sha256-uP9/4z08IMadNETWb3UnEsWP0Mzk71lPgKcvt0+JqQk=",
+    "npmDepsHash": "sha256-DJWK6Vw7H8GJJQSkoFNAbI5Mkecq5S3LpQtOdqZVSO0=",
+    "rev": "17b7a283f970beb8d493bf7f613e7b4d043c9213",
+    "version": "0.1.0-17b7a28"
+  },
+  "pi-listen": {
+    "hash": "sha256-MbYQiwQMvXkN0dRYdMTTX+4whLjey/yGcke5zq6BRO0=",
+    "url": "https://registry.npmjs.org/@codexstar/pi-listen/-/pi-listen-7.2.2.tgz",
+    "version": "7.2.2"
+  },
+  "pi-loadout": {
+    "hash": "sha256-nTa3E3KzIky1fYVC3xCI364iCnkVM7GTi/IXo9K3P2Q=",
+    "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.35.tgz",
+    "version": "0.0.35"
+  },
+  "pi-messenger-bridge": {
+    "hash": "sha256-sbI1Diu0Ii/zU9p5Ar0RnwQJ5hbr3BM1ShNNc85PFqs=",
+    "npmDepsHash": "sha256-NoSzGuRXBu0ph2MpqC9bVx+/1FvG3Po/VsCQCyBPhT8=",
+    "url": "https://registry.npmjs.org/pi-messenger-bridge/-/pi-messenger-bridge-0.4.0.tgz",
+    "version": "0.4.0"
+  },
+  "pi-remote": {
+    "hash": "sha256-d8tSk12rnZqHr2HDVnXclZBRPbqRPVft9CKYSdBJHr8=",
+    "npmDepsHash": "sha256-DucFlnKAAd8sFUptf5zapAXqYrf7OZn3/xNFHySAApc=",
+    "url": "https://registry.npmjs.org/@noahsaso/pi-remote/-/pi-remote-0.3.1.tgz",
+    "version": "0.3.1"
+  },
+  "pi-subagents": {
+    "npmDepsHash": "sha256-dLLyib2Bgz4bAdslKaiIhqd24eycuiHxpZWVdIpWPYg=",
+    "rev": "v0.74.0",
+    "sha256": "sha256-QKf8Y8x90TLBKy3AkTRUc0+FxXAy/GKkHK2WQL2+a+k=",
+    "url": "https://github.com/nicobailon/pi-subagents.git",
+    "version": "0.74.0"
+  },
+  "pi-vim": {
+    "hash": "sha256-2Mv39IBm/vIKTYIa5g/RpQmlJ+O3aabY4KbRf5VPvF0=",
+    "npmDepsHash": "sha256-6BI/fEQ2C6U/oip1fNh+7HG6UfeXNHmlpIQDKi1TmaI=",
+    "url": "https://registry.npmjs.org/pi-vim/-/pi-vim-0.14.1.tgz",
+    "version": "0.14.1"
+  },
+  "remote-pi-extension": {
+    "hash": "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=",
+    "npmDepsHash": "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=",
+    "url": "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz",
+    "version": "0.7.0"
+  },
+  "sherpa-onnx-linux-x64": {
+    "hash": "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=",
+    "url": "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.4.tgz",
+    "version": "1.13.4"
+  },
+  "sherpa-onnx-node": {
+    "hash": "sha256-cbdaglSWW0PFQALKrjKXbUQTQJ7ddFDW+7Nuhi0zmBg=",
+    "url": "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz",
+    "version": "1.13.4"
+  },
+  "simple-english": {
+    "rev": "v1.2.0",
+    "sha256": "sha256-62IdviEpLgMXYzJwjdM6G7VVJtyaAHGhQGHw2oFCAHE=",
+    "url": "https://github.com/AminBlg/SimpleEnglish.git"
+  },
+  "superpowers": {
+    "rev": "v6.4.2",
+    "sha256": "sha256-BWPiXoXV+jePP+wn/Z+Af4iehIL7oei00plaWaTzq8s=",
+    "url": "https://github.com/obra/superpowers.git"
+  }
+}

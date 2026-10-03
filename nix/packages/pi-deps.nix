@@ -3,23 +3,25 @@ if pkgs.stdenv.hostPlatform.system != "x86_64-linux" then
   throw "pi-deps only supports x86_64-linux because bundled native artifacts are linux-x64"
 else
   let
+    pins = builtins.fromJSON (builtins.readFile ../dependency-pins.json);
+
+    # dependency-source: pi-listen
     piListenSrc = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/@codexstar/pi-listen/-/pi-listen-7.2.2.tgz";
-      hash = "sha256-MbYQiwQMvXkN0dRYdMTTX+4whLjey/yGcke5zq6BRO0=";
+      inherit (pins."pi-listen") url hash;
     };
 
+    # dependency-source: sherpa-onnx-node
     sherpaOnnxNode = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz";
-      hash = "sha256-cbdaglSWW0PFQALKrjKXbUQTQJ7ddFDW+7Nuhi0zmBg=";
+      inherit (pins."sherpa-onnx-node") url hash;
     };
 
+    # dependency-source: sherpa-onnx-linux-x64
     sherpaOnnxLinuxX64 = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.4.tgz";
-      hash = "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=";
+      inherit (pins."sherpa-onnx-linux-x64") url hash;
     };
 
     piListen =
-      pkgs.runCommand "pi-listen-7.2.2"
+      pkgs.runCommand "pi-listen-${pins."pi-listen".version}"
         {
           nativeBuildInputs = [ pkgs.autoPatchelfHook ];
           buildInputs = [ pkgs.stdenv.cc.cc.lib ];
@@ -33,25 +35,25 @@ else
           autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
         '';
 
+    # dependency-source: pi-loadout
     piLoadout = pkgs.fetchzip {
-      name = "pi-loadout-0.0.35";
-      url = "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.35.tgz";
-      hash = "sha256-nTa3E3KzIky1fYVC3xCI364iCnkVM7GTi/IXo9K3P2Q=";
+      name = "pi-loadout-${pins."pi-loadout".version}";
+      inherit (pins."pi-loadout") url hash;
     };
 
     piVimPackageLock = ./pi-vim-package-lock.json;
 
+    # dependency-source: pi-vim
     piVimSrc = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/pi-vim/-/pi-vim-0.14.1.tgz";
-      hash = "sha256-2Mv39IBm/vIKTYIa5g/RpQmlJ+O3aabY4KbRf5VPvF0=";
+      inherit (pins."pi-vim") url hash;
     };
 
     piVim = pkgs.buildNpmPackage {
       pname = "pi-vim";
-      version = "0.14.1";
+      inherit (pins."pi-vim") version;
       src = piVimSrc;
 
-      npmDepsHash = "sha256-6BI/fEQ2C6U/oip1fNh+7HG6UfeXNHmlpIQDKi1TmaI=";
+      inherit (pins."pi-vim") npmDepsHash;
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -80,22 +82,22 @@ else
 
     # GitHub main snapshot (unreleased): adds Pi 0.87 compatibility and
     # claude-opus-5-5 with its measured 1M context window.
+    # dependency-source: pi-claude-bridge
     piClaudeBridgeSrc = pkgs.fetchFromGitHub {
       owner = "elidickinson";
       repo = "pi-claude-bridge";
-      rev = "227f5eb4450a070dfbc083a7fe75b8b35366b941";
-      hash = "sha256-tJFAMykelEeQC0Pq1UxN6ZcB36jO6VsM3A0ThUKaVJ4=";
+      inherit (pins."pi-claude-bridge") rev hash;
     };
 
     piClaudeBridge = pkgs.buildNpmPackage {
       pname = "pi-claude-bridge";
-      version = "0.8.0-unstable-2026-09-23";
+      inherit (pins."pi-claude-bridge") version;
       src = piClaudeBridgeSrc;
 
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
       buildInputs = [ pkgs.stdenv.cc.cc.lib ];
 
-      npmDepsHash = "sha256-o/gjQyT/Y9hnBzp8YJeG7lm4RS4tVc0bzUg8V5Fxwnk=";
+      inherit (pins."pi-claude-bridge") npmDepsHash;
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -140,24 +142,24 @@ else
 
     matrixSdkCryptoNodeFile = "matrix-sdk-crypto.linux-x64-gnu.node";
 
+    # dependency-source: matrix-sdk-crypto-nodejs
     matrixSdkCryptoNode = pkgs.fetchurl {
-      url = "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node";
-      hash = "sha256-cHjU3ZhxKPea/RksT2IfZK3s435D8qh1bx0KnwNN5xg=";
+      inherit (pins."matrix-sdk-crypto-nodejs") url hash;
     };
 
     piMessengerBridgePackageLock = ./pi-messenger-bridge-package-lock.json;
 
+    # dependency-source: pi-messenger-bridge
     piMessengerBridgeSrc = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/pi-messenger-bridge/-/pi-messenger-bridge-0.4.0.tgz";
-      hash = "sha256-sbI1Diu0Ii/zU9p5Ar0RnwQJ5hbr3BM1ShNNc85PFqs=";
+      inherit (pins."pi-messenger-bridge") url hash;
     };
 
     piMessengerBridge = pkgs.buildNpmPackage {
       pname = "pi-messenger-bridge";
-      version = "0.4.0";
+      inherit (pins."pi-messenger-bridge") version;
       src = piMessengerBridgeSrc;
 
-      npmDepsHash = "sha256-NoSzGuRXBu0ph2MpqC9bVx+/1FvG3Po/VsCQCyBPhT8=";
+      inherit (pins."pi-messenger-bridge") npmDepsHash;
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -172,18 +174,18 @@ else
       '';
     };
 
+    # dependency-source: pi-subagents
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
-      rev = "v0.74.0";
-      sha256 = "sha256-QKf8Y8x90TLBKy3AkTRUc0+FxXAy/GKkHK2WQL2+a+k=";
+      inherit (pins."pi-subagents") rev sha256;
     };
 
     piSubagents = pkgs.buildNpmPackage {
       pname = "pi-subagents";
-      version = "0.74.0";
+      inherit (pins."pi-subagents") version;
       src = piSubagentsSrc;
 
-      npmDepsHash = "sha256-dLLyib2Bgz4bAdslKaiIhqd24eycuiHxpZWVdIpWPYg=";
+      inherit (pins."pi-subagents") npmDepsHash;
 
       dontNpmBuild = true;
       npmInstallFlags = [
@@ -192,20 +194,20 @@ else
       ];
     };
 
+    # dependency-source: remote-pi-extension
     remotePiExtensionSrc = pkgs.fetchzip {
-      url = "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz";
-      hash = "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=";
+      inherit (pins."remote-pi-extension") url hash;
     };
 
     remotePiExtension = pkgs.buildNpmPackage {
       pname = "remote-pi";
-      version = "0.7.0";
+      inherit (pins."remote-pi-extension") version;
       src = remotePiExtensionSrc;
 
       # Keep its shared CLI entry usable without Pi's extension-only modules.
       patches = [ ../../patches/remote-pi-host-imports.patch ];
 
-      npmDepsHash = "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=";
+      inherit (pins."remote-pi-extension") npmDepsHash;
 
       dontNpmBuild = true;
       makeCacheWritable = true;
@@ -250,16 +252,16 @@ else
       '';
     };
 
+    # dependency-source: simple-english
     simpleEnglishSrc = pkgs.fetchgit {
       url = "https://github.com/AminBlg/SimpleEnglish.git";
-      rev = "v1.2.0";
-      sha256 = "sha256-62IdviEpLgMXYzJwjdM6G7VVJtyaAHGhQGHw2oFCAHE=";
+      inherit (pins."simple-english") rev sha256;
     };
 
+    # dependency-source: superpowers
     superpowersSrc = pkgs.fetchgit {
       url = "https://github.com/obra/superpowers.git";
-      rev = "v6.4.2";
-      sha256 = "sha256-BWPiXoXV+jePP+wn/Z+Af4iehIL7oei00plaWaTzq8s=";
+      inherit (pins.superpowers) rev sha256;
     };
 
     superpowers = pkgs.applyPatches {
@@ -268,10 +270,10 @@ else
       patches = [ ../../patches/superpowers-loadout-bootstrap.patch ];
     };
 
+    # dependency-source: mattpocock-skills
     mattPocockSkillsSrc = pkgs.fetchgit {
       url = "https://github.com/mattpocock/skills.git";
-      rev = "84fdeffd12f2ee307994d1eb6feb48173b6e0502";
-      sha256 = "sha256-pseSJJb5nBBGPzpxA1GzjGLB9OrT+u0At1saJ4NqZ1E=";
+      inherit (pins."mattpocock-skills") rev sha256;
     };
 
     mattPocockSkills = pkgs.runCommand "mattpocock-skills" { } ''
@@ -280,9 +282,9 @@ else
       cp -r ${mattPocockSkillsSrc}/skills/productivity "$out/skills/productivity"
     '';
 
+    # dependency-source: diff
     diffPackageSrc = pkgs.fetchurl {
-      url = "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz";
-      sha256 = "sha256-uJi/I8lVlGB1duJd3UAT8dUe0OhiqvBzKBWDDIeztY8=";
+      inherit (pins.diff) url sha256;
     };
 
     diffPackage = pkgs.runCommand "diff-npm" { } ''
@@ -291,27 +293,27 @@ else
       ${pkgs.gnutar}/bin/tar -xzf ${diffPackageSrc} --strip-components=1
     '';
 
+    # dependency-source: context-mode
     contextModeSrc = pkgs.fetchurl {
-      url = "https://registry.npmjs.org/context-mode/-/context-mode-1.0.169.tgz";
-      hash = "sha256-CcQeTPd7IVZsdrjqL9vX89gjBV/uLwLCFm/Vu1ddryw=";
+      inherit (pins."context-mode") url hash;
     };
 
+    # dependency-source: pi-codegraph
     piCodegraph = pkgs.fetchzip {
-      name = "pi-codegraph-0.1.10";
-      url = "https://registry.npmjs.org/@vndv/pi-codegraph/-/pi-codegraph-0.1.10.tgz";
-      hash = "sha256-QV7TBdbzuZwdNNAffOqeoXRVKjeJumpNF4S57KzAGmU=";
+      name = "pi-codegraph-${pins."pi-codegraph".version}";
+      inherit (pins."pi-codegraph") url hash;
     };
 
+    # dependency-source: codegraph
     codegraphShimSrc = pkgs.fetchzip {
-      name = "codegraph-shim-1.5.0";
-      url = "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.5.0.tgz";
-      hash = "sha256-ZHTn1NdPp+gaTYKChscEMYr+maUwdAqzyKguUfwBXG4=";
+      name = "codegraph-shim-${pins.codegraph.version}";
+      inherit (pins.codegraph) url hash;
     };
 
+    # dependency-source: codegraph-linux-x64
     codegraphLinuxX64Src = pkgs.fetchzip {
-      name = "codegraph-linux-x64-1.5.0";
-      url = "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.5.0.tgz";
-      hash = "sha256-jueJv5/6tw8MeL4fKwEz6hTjLJ9IrxzrZmoPELA5v0Y=";
+      name = "codegraph-linux-x64-${pins."codegraph-linux-x64".version}";
+      inherit (pins."codegraph-linux-x64") url hash;
     };
 
     # The npm thin installer (npm-shim.js) resolves the platform bundle as a
@@ -320,7 +322,7 @@ else
     # CODEGRAPH_NO_DOWNLOAD keeps the shim's network self-heal fallback off so
     # the CLI stays fully store-resolved.
     codegraphCli =
-      pkgs.runCommand "codegraph-1.5.0"
+      pkgs.runCommand "codegraph-${pins.codegraph.version}"
         {
           nativeBuildInputs = [ pkgs.autoPatchelfHook ];
           buildInputs = [ pkgs.stdenv.cc.cc.lib ];
@@ -345,10 +347,10 @@ else
 
     contextMode = pkgs.buildNpmPackage {
       pname = "context-mode";
-      version = "1.0.169";
+      inherit (pins."context-mode") version;
       src = contextModeSrc;
 
-      npmDepsHash = "sha256-0e3oGyZMLYA8Li1rRxpmqTa222v0u7nK5+5cjSgZnrM=";
+      inherit (pins."context-mode") npmDepsHash;
 
       dontNpmBuild = true;
       makeCacheWritable = true;

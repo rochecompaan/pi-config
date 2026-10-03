@@ -1,18 +1,19 @@
 { pkgs }:
 let
+  pins = (builtins.fromJSON (builtins.readFile ../dependency-pins.json))."pi-remote";
   packageLock = ../../pi-remote-package-lock.json;
 
+  # dependency-source: pi-remote
   src = pkgs.fetchzip {
-    url = "https://registry.npmjs.org/@noahsaso/pi-remote/-/pi-remote-0.3.1.tgz";
-    hash = "sha256-d8tSk12rnZqHr2HDVnXclZBRPbqRPVft9CKYSdBJHr8=";
+    inherit (pins) url hash;
   };
 in
 pkgs.buildNpmPackage {
   pname = "pi-remote";
-  version = "0.3.1";
+  inherit (pins) version;
   inherit src;
 
-  npmDepsHash = "sha256-DucFlnKAAd8sFUptf5zapAXqYrf7OZn3/xNFHySAApc=";
+  inherit (pins) npmDepsHash;
 
   dontNpmBuild = true;
   makeCacheWritable = true;

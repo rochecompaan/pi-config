@@ -1,0 +1,142 @@
+name: Nightly dependency updates
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-dependency-updates
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  discovery:
+    runs-on: ${{ vars.DEPENDENCY_UPDATE_RUNNER || 'nix' }}
+    timeout-minutes: 90
+    env:
+      BASE_BRANCH: ${{ forgejo.event.repository.default_branch }}
+      EVENT_REF: ${{ forgejo.ref }}
+    outputs:
+      units: ${{ steps.inventory.outputs.units }}
+      base_sha: ${{ steps.inventory.outputs.base_sha }}
+      base_branch: ${{ steps.inventory.outputs.base_branch }}
+    steps:
+      - name: Require the default branch
+        run: |
+          if [[ -z "$BASE_BRANCH" || "$EVENT_REF" != "refs/heads/$BASE_BRANCH" ]]; then
+            printf '%s\n' 'Dispatch dependency updates on the default branch only' >&2
+            exit 1
+          fi
+      - name: Check out the default branch
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ forgejo.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Require sandboxed Nix
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          configuration = json.loads(subprocess.check_output(['nix', 'config', 'show', '--json']))
+          if configuration.get('sandbox', {}).get('value') is not True:
+              raise SystemExit('Dependency updates require an enabled Nix build sandbox')
+          PY
+      - name: Build pinned update tools
+        run: |
+          nix build .#packages.x86_64-linux.dependency-update-tools \
+            --option sandbox true --option sandbox-fallback false \
+            --out-link "$RUNNER_TEMP/dependency-update-tools"
+          printf '%s\n' "$RUNNER_TEMP/dependency-update-tools/bin" >> "$GITHUB_PATH"
+      - name: Verify tooling and discover units
+        id: inventory
+        run: |
+          python3 -m unittest discover -s maintenance/tests -p 'test_dependency_*.py' -v
+          python3 -m maintenance.dependency_updates audit
+          units="$(python3 -m maintenance.dependency_updates list)"
+          {
+            printf 'units=%s\n' "$units"
+            printf 'base_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'base_branch=%s\n' "$BASE_BRANCH"
+          } >> "$GITHUB_OUTPUT"
+
+  update:
+    needs: discovery
+    runs-on: ${{ vars.DEPENDENCY_UPDATE_RUNNER || 'nix' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        unit: ${{ fromJSON(needs.discovery.outputs.units) }}
+    concurrency:
+      group: dependency-update-${{ matrix.unit }}
+      cancel-in-progress: false
+    env:
+      UPDATE_UNIT: ${{ matrix.unit }}
+      BASE_SHA: ${{ needs.discovery.outputs.base_sha }}
+      BASE_BRANCH: ${{ needs.discovery.outputs.base_branch }}
+    steps:
+      - name: Check out the discovered commit
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.discovery.outputs.base_sha }}
+          persist-credentials: false
+      - name: Require sandboxed Nix
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          configuration = json.loads(subprocess.check_output(['nix', 'config', 'show', '--json']))
+          if configuration.get('sandbox', {}).get('value') is not True:
+              raise SystemExit('Dependency updates require an enabled Nix build sandbox')
+          PY
+      - name: Build pinned update tools before preparation
+        run: |
+          nix build .#packages.x86_64-linux.dependency-update-tools \
+            --option sandbox true --option sandbox-fallback false \
+            --out-link "$RUNNER_TEMP/dependency-update-tools"
+          printf '%s\n' "$RUNNER_TEMP/dependency-update-tools/bin" >> "$GITHUB_PATH"
+          printf 'UPDATE_REPORT=%s/dependency-%s.json\n' "$RUNNER_TEMP" "$UPDATE_UNIT" >> "$GITHUB_ENV"
+      - name: Prepare one update unit
+        id: prepare
+        run: |
+          python3 -m maintenance.dependency_updates prepare "$UPDATE_UNIT" \
+            --base "$BASE_BRANCH" --base-sha "$BASE_SHA" --report "$UPDATE_REPORT"
+      - name: Validate the exact candidate tree
+        if: success() && steps.prepare.outputs.changed == 'true'
+        run: python3 -m maintenance.dependency_updates validate --report "$UPDATE_REPORT"
+      - name: Publish validated update
+        if: success() && steps.prepare.outputs.changed == 'true'
+        env:
+          DEPENDENCY_UPDATE_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
+          FORGEJO_SERVER_URL: ${{ forgejo.server_url }}
+          FORGEJO_REPOSITORY: ${{ forgejo.repository }}
+        run: |
+          python3 -m maintenance.dependency_updates publish --report "$UPDATE_REPORT" \
+            --server "$FORGEJO_SERVER_URL" --repository "$FORGEJO_REPOSITORY"
+      - name: Show update diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          print('Unit:', os.environ['UPDATE_UNIT'])
+          report = os.environ.get('UPDATE_REPORT')
+          print('Report:', report or 'not created')
+          if report:
+              try:
+                  data = json.loads(Path(report).read_text())
+                  candidate = data.get('candidate') or {}
+                  error = data.get('error') or {}
+                  print('Changed:', candidate.get('changed', 'unknown'))
+                  print('Validated:', candidate.get('validated', False))
+                  print('Error stage:', error.get('stage', 'none'))
+                  print('Error:', error.get('message', 'none'))
+              except (OSError, ValueError):
+                  print('Report unavailable or invalid')
+          PY

@@ -1,3 +1,4 @@
 result
 .pi/
 .worktrees
+__pycache__/
