@@ -43,6 +43,7 @@ function createContext(mode: "tui" | "print" = "tui", accountEmail: string | nul
 		thinkingLevel: "high",
 		getContextUsage: () => ({ tokens: 132_000, contextWindow: 372_000, percent: 35.48 }),
 		sessionManager: {
+			getSessionName: (): string | undefined => undefined,
 			getBranch: () => [
 				{ type: "message", message: { role: "assistant", usage: { cost: { total: 1.2 } } } },
 				{ type: "message", message: { role: "assistant", usage: { cost: { total: 1.137 } } } },
@@ -104,7 +105,7 @@ test("installs a live wrapping footer and refreshes it from Codex rate-limit hea
 	);
 
 	assert.deepEqual(component.render(120).map(stripAnsi), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [$2.337] [● relay ○ voice] [AUTH work@example.com] [ main]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [● relay ○ voice] [AUTH work@example.com] [ main]",
 	]);
 
 	await harness.hooks.get("after_provider_response")?.({
@@ -116,8 +117,8 @@ test("installs a live wrapping footer and refreshes it from Codex rate-limit hea
 	}, ctx);
 	assert.equal(renders, 1);
 	assert.deepEqual(component.render(120).map(stripAnsi), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH work@example.com]",
-		"[ main]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice]",
+		"[AUTH work@example.com] [ main]",
 	]);
 
 	branchListener?.();
@@ -127,6 +128,41 @@ test("installs a live wrapping footer and refreshes it from Codex rate-limit hea
 
 	await harness.hooks.get("session_shutdown")?.({}, ctx);
 	assert.equal(footerCalls.at(-1), undefined);
+});
+
+test("renders branch cache totals and the current session name on every render", async () => {
+	const harness = createHarness();
+	const { ctx, footerCalls } = createContext();
+	let sessionName = "status bar";
+	let entries = [
+		{ type: "message", message: { role: "assistant", usage: { cacheRead: 100_000, cacheWrite: 3_400_000, cost: { total: 1.2 } } } },
+		{ type: "message", message: { role: "assistant", usage: { cacheRead: 23_000, cacheWrite: 34_000, cost: { total: 1.137 } } } },
+		{ type: "message", message: { role: "assistant", usage: { cacheRead: -5, cacheWrite: Infinity } } },
+		{ type: "message", message: { role: "user", usage: { cacheRead: 999_999, cacheWrite: 999_999 } } },
+	];
+	ctx.sessionManager.getBranch = () => entries as any;
+	Object.assign(ctx.sessionManager, { getSessionName: () => sessionName });
+	registerStatusFooter(harness.pi as any, { now: () => nowMs, visibleWidth: terminalWidth });
+	await harness.hooks.get("session_start")?.({}, ctx);
+	const factory = footerCalls[0] as (tui: any, theme: any, footerData: any) => any;
+	const component = factory(
+		{ requestRender() {} },
+		{},
+		{
+			getGitBranch: () => "main",
+			getExtensionStatuses: () => new Map(),
+			onBranchChange: () => () => {},
+		},
+	);
+	const [line] = component.render(240).map(stripAnsi);
+	assert.match(line, /\[cache r\/w · 123k\/3434k\] \[\$2\.337\]/);
+	assert.ok(line.endsWith("[ main] [status bar]"));
+
+	sessionName = "renamed session";
+	entries = [{ type: "message", message: { role: "assistant", usage: { cacheRead: 2000, cacheWrite: 1000, cost: { total: 0.5 } } } }];
+	const [updated] = component.render(240).map(stripAnsi);
+	assert.match(updated, /\[cache r\/w · 2k\/1k\] \[\$0\.500\]/);
+	assert.ok(updated.endsWith("[ main] [renamed session]"));
 });
 
 test("renders footer components with the approved Gruvbox colors", async () => {
@@ -169,7 +205,7 @@ test("renders footer components with the approved Gruvbox colors", async () => {
 	assert.ok(line.includes(rgb(214, 93, 14, " main")));
 	assert.ok(line.includes(rgb(251, 73, 52, "○ voice")));
 	assert.ok(line.includes(rgb(102, 92, 84, "[")));
-	assert.equal(stripAnsi(line), "[gpt-5.4 · high] [ctx 35% · 132k/372k] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH work@example.com] [ main]");
+	assert.equal(stripAnsi(line), "[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH work@example.com] [ main]");
 });
 
 test("renders the auth scope fallback with a dim separator and cream scope", async () => {

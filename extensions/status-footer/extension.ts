@@ -35,14 +35,19 @@ function styleGruvboxText(tone: FooterTone, text: string): string {
 	return `\u001b[38;2;${red};${green};${blue}m${text}\u001b[39m`;
 }
 
-function collectSessionCost(ctx: ExtensionContext): number {
-	let total = 0;
+function collectSessionUsage(ctx: ExtensionContext) {
+	const totals = { cost: 0, cacheRead: 0, cacheWrite: 0 };
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const cost = entry.message.usage?.cost?.total;
-		if (typeof cost === "number" && Number.isFinite(cost) && cost > 0) total += cost;
+		const usage = entry.message.usage;
+		const cost = usage?.cost?.total;
+		if (typeof cost === "number" && Number.isFinite(cost) && cost > 0) totals.cost += cost;
+		for (const key of ["cacheRead", "cacheWrite"] as const) {
+			const value = usage?.[key];
+			if (typeof value === "number" && Number.isFinite(value) && value > 0) totals[key] += value;
+		}
 	}
-	return total;
+	return totals;
 }
 
 export function registerStatusFooter(
@@ -91,7 +96,8 @@ export function registerStatusFooter(
 						thinkingLevel: ctx.thinkingLevel,
 						contextTokens: usage?.tokens ?? 0,
 						contextWindow: usage?.contextWindow ?? ctx.model?.contextWindow ?? 0,
-						cost: collectSessionCost(ctx),
+						...collectSessionUsage(ctx),
+						sessionName: ctx.sessionManager.getSessionName(),
 						weeklyLimit,
 						gitBranch: footerData.getGitBranch(),
 						extensionStatuses: footerData.getExtensionStatuses(),

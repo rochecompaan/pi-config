@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 export interface WeeklyLimit {
 	usedPercent: number;
 	resetAt: number;
@@ -30,6 +32,9 @@ export interface FooterInput {
 	thinkingLevel: string;
 	contextTokens: number;
 	contextWindow: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	sessionName?: string;
 	cost: number;
 	weeklyLimit: WeeklyLimit | null;
 	gitBranch: string | null;
@@ -42,8 +47,8 @@ const ANSI_ESCAPE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const SAFE_EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 const WEEK_MINUTES = 7 * 24 * 60;
 
-function finiteNonNegative(value: number): number {
-	return Number.isFinite(value) && value > 0 ? value : 0;
+function finiteNonNegative(value: number | undefined): number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function trimDecimal(value: number, digits = 1): string {
@@ -55,6 +60,11 @@ function compactNumber(value: number): string {
 	if (safe >= 1_000_000) return `${trimDecimal(safe / 1_000_000)}M`;
 	if (safe >= 1_000) return `${trimDecimal(safe / 1_000)}k`;
 	return String(Math.round(safe));
+}
+
+function compactCacheTokens(value: number | undefined): string {
+	const safe = finiteNonNegative(value);
+	return safe >= 1_000 ? `${trimDecimal(safe / 1_000)}k` : String(Math.round(safe));
 }
 
 function contextTone(percent: number): FooterTone {
@@ -220,6 +230,11 @@ export function buildFooterLines(
 				tone: contextTone(rawContextPercent),
 			},
 		]),
+		bracketed([
+			{ text: "cache r/w", tone: "context" },
+			{ text: " · ", tone: "dim" },
+			{ text: `${compactCacheTokens(input.cacheRead)}/${compactCacheTokens(input.cacheWrite)}`, tone: "context" },
+		]),
 		bracketed([{ text: `$${finiteNonNegative(input.cost).toFixed(3)}`, tone: "cost" }]),
 	];
 	if (input.weeklyLimit) {
@@ -241,6 +256,11 @@ export function buildFooterLines(
 		bracketed(authStatus(input)),
 		bracketed([{ text: ` ${input.gitBranch?.trim() || "—"}`, tone: "branch" }]),
 	);
+	const sessionName = stripVTControlCharacters(input.sessionName ?? "")
+		.replace(/\s+/g, " ")
+		.replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
+		.trim();
+	if (sessionName) components.push(bracketed([{ text: sessionName, tone: "account" }]));
 	return wrapFooterComponents(components, width, visibleWidth)
 		.map((line) => renderFooterLine(line, styleText));
 }

@@ -47,6 +47,7 @@
     }
   },
   "theme": "stylix",
+  "tuiMode": "regular",
   "outputPad": 0,
   "voice": {
     "version": 2,

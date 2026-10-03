@@ -44,8 +44,45 @@ function footerInput() {
 
 test("renders one bracketed line with dim middle dots and the git branch last", () => {
 	assert.deepEqual(buildFooterLines(footerInput(), 160, terminalWidth), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH · LOCAL] [ main]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH · LOCAL] [ main]",
 	]);
+});
+
+test("shows compact cache read and write counts between context and cost", () => {
+	const input = { ...footerInput(), cacheRead: 123_000, cacheWrite: 3_434_000 };
+	const [line] = buildFooterLines(input, 240, terminalWidth);
+	assert.match(line, /\[ctx 35% · 132k\/372k\] \[cache r\/w · 123k\/3434k\] \[\$2\.337\]/);
+});
+
+test("shows a named session after the branch and omits an empty name", () => {
+	for (const sessionName of ["status bar", "界 session", "\u001b[31mstatus\u001b[0m\nbar"]) {
+		const [line] = buildFooterLines({ ...footerInput(), sessionName }, 240, terminalWidth);
+		assert.ok(line.endsWith(`[ main] [${sessionName === "界 session" ? sessionName : "status bar"}]`));
+	}
+	for (const sessionName of [undefined, "", " \n "]) {
+		const [line] = buildFooterLines({ ...footerInput(), sessionName }, 240, terminalWidth);
+		assert.ok(line.endsWith("[ main]"));
+	}
+});
+
+test("removes terminal escapes and control characters from session names", () => {
+	for (const sessionName of [
+		"safe\u001b]2;PWNED\u0007name",
+		"safe\u001b]2;PWNED\u001b\\name",
+		"safe\u001b]8;;https://example.com\u001b\\name\u001b]8;;\u001b\\",
+		"safe\u0000\u0007\u0008\u007f\u0080name",
+	]) {
+		const [line] = buildFooterLines({ ...footerInput(), sessionName }, 240, terminalWidth);
+		assert.ok(line.endsWith("[ main] [safename]"));
+		assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+	}
+});
+
+test("uses zero for missing or invalid cache counts", () => {
+	for (const counters of [{}, { cacheRead: -1, cacheWrite: Number.NaN }, { cacheRead: Infinity, cacheWrite: -Infinity }]) {
+		const [line] = buildFooterLines({ ...footerInput(), ...counters }, 240, terminalWidth);
+		assert.match(line, /\[cache r\/w · 0\/0\]/);
+	}
 });
 
 test("uses the agreed context and weekly quota color thresholds", () => {
@@ -118,7 +155,8 @@ test("wraps complete ANSI-styled components at an exact-fit boundary", () => {
 	);
 	assert.deepEqual(lines.map((line) => line.replace(ANSI_ESCAPE, "")), [
 		"[gpt-5.4 · high] [ctx 35% · 132k/372k]",
-		"[$2.337] [Week 95% rem · 6d21h]",
+		"[cache r/w · 0/0] [$2.337]",
+		"[Week 95% rem · 6d21h]",
 		"[● relay ○ voice] [AUTH · LOCAL]",
 		"[ main]",
 	]);
