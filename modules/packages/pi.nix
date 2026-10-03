@@ -16,38 +16,23 @@
         inherit pkgs;
         piRemote = self'.packages.pi-remote;
       };
-      mkPiSkillsetWrapper = import ../../nix/packages/pi-skillset-wrapper.nix;
-
-      skillsets = {
-        superpowers = {
-          package = piDeps.superpowersSrc;
-          instructions = builtins.readFile ../../profiles/superpowers/APPEND_SYSTEM.md;
-        };
-        matt = {
-          package = piDeps.mattPocockSkills;
-          instructions = builtins.readFile ../../profiles/matt/APPEND_SYSTEM.md;
-        };
-      };
     in
     {
       packages = {
-        pi = mkPiSkillsetWrapper {
-          inherit pkgs skillsets;
-          inherit piPackage;
-        };
-        pi-matt = mkPiSkillsetWrapper {
-          inherit pkgs skillsets;
-          inherit piPackage;
-          programName = "pi-matt";
-          defaultSkillset = "matt";
-          allowSelection = false;
-        };
-        pi-superpowers = mkPiSkillsetWrapper {
-          inherit pkgs skillsets;
-          inherit piPackage;
-          allowSelection = false;
-        };
+        pi = piPackage;
         mattpocock-skills = piDeps.mattPocockSkills;
+        superpowers = piDeps.superpowers;
       };
+
+      checks.superpowers-loadout-bootstrap =
+        pkgs.runCommand "superpowers-loadout-bootstrap"
+          {
+            nativeBuildInputs = [ pkgs.nodejs_24 ];
+            SUPERPOWERS_PACKAGE = piDeps.superpowers;
+          }
+          ''
+            node --test ${../../nix/check-support/superpowers-loadout.test.mjs}
+            touch "$out"
+          '';
     };
 }

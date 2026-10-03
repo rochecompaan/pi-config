@@ -262,6 +262,12 @@ else
       sha256 = "sha256-BWPiXoXV+jePP+wn/Z+Af4iehIL7oei00plaWaTzq8s=";
     };
 
+    superpowers = pkgs.applyPatches {
+      name = "superpowers";
+      src = superpowersSrc;
+      patches = [ ../../patches/superpowers-loadout-bootstrap.patch ];
+    };
+
     mattPocockSkillsSrc = pkgs.fetchgit {
       url = "https://github.com/mattpocock/skills.git";
       rev = "84fdeffd12f2ee307994d1eb6feb48173b6e0502";
@@ -378,6 +384,7 @@ else
       piVim
       remotePiExtension
       simpleEnglishSrc
+      superpowers
       superpowersSrc
       ;
 
@@ -387,6 +394,8 @@ else
       "${piCodegraph}"
       "${piListen}"
       "${piLoadout}"
+      "${mattPocockSkills}"
+      "${superpowers}"
       "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${piVim}/lib/node_modules/pi-vim"

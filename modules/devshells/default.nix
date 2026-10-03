@@ -11,7 +11,6 @@
       devShells.default = pkgs.mkShell {
         packages = [
           self'.packages.pi
-          self'.packages.pi-matt
           self'.packages.codegraph
           self'.packages.codegraph-viz
           self'.packages.pi-local-auth

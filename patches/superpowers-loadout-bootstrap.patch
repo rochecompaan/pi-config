@@ -1,0 +1,49 @@
+--- a/.pi/extensions/superpowers.ts
++++ b/.pi/extensions/superpowers.ts
+@@ -15,6 +15,7 @@
+ 
+ export default function superpowersPiExtension(pi: ExtensionAPI) {
+ 	let injectBootstrap = true;
++	let bootstrapSkillWasEnabled = false;
+ 
+ 	pi.on("resources_discover", async () => ({
+ 		skillPaths: [skillsDir],
+@@ -32,7 +33,16 @@
+ 		injectBootstrap = false;
+ 	});
+ 
+-	pi.on("context", async (event) => {
++	pi.on("context", async (event, ctx) => {
++		// Loadout filters the effective prompt, not the installed skill resources.
++		const enabled = bootstrapSkillEnabled(ctx.getSystemPrompt(), ctx.cwd);
++		if (!enabled) {
++			bootstrapSkillWasEnabled = false;
++			return;
++		}
++		if (!bootstrapSkillWasEnabled) injectBootstrap = true;
++		bootstrapSkillWasEnabled = true;
++
+ 		if (!injectBootstrap) return;
+ 		if (event.messages.some(messageContainsBootstrap)) return;
+ 
+@@ -56,6 +66,20 @@
+ 	});
+ }
+ 
++function bootstrapSkillEnabled(systemPrompt: string, cwd: string): boolean {
++	// Find Pi's last exact cwd section, not a cwd tag quoted in instructions.
++	// Only its immediately preceding skills section advertises active skills.
++	const cwdSection = `\n\n<cwd>\n${cwd.replace(/\\/g, "/")}\n</cwd>`;
++	const cwdBoundary = systemPrompt.lastIndexOf(cwdSection);
++	if (cwdBoundary === -1) return false;
++	const beforeCwd = systemPrompt.slice(0, cwdBoundary);
++	const skillsStart = beforeCwd.lastIndexOf("\n\n<skills>\n");
++	if (skillsStart === -1 || !beforeCwd.endsWith("\n</skills>")) return false;
++	const skillsSection = beforeCwd.slice(skillsStart);
++	const skillsBlock = skillsSection.match(/<available_skills>[\s\S]*?<\/available_skills>/)?.[0];
++	return !!skillsBlock && /<name>\s*using-superpowers\s*<\/name>/.test(skillsBlock);
++}
++
+ function getBootstrapContent(): string | null {
+ 	if (cachedBootstrap !== undefined) return cachedBootstrap;
+ 

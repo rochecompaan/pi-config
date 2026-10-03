@@ -14,7 +14,7 @@
     {
       checks.context-mode-runtime = pkgs.runCommand "context-mode-runtime" { } ''
         export HOME="$TMPDIR/home"
-        export PATH="${pkgs.nodejs_20}/bin:${pkgs.coreutils}/bin"
+        export PATH="${pkgs.nodejs}/bin:${pkgs.coreutils}/bin"
         mkdir -p "$HOME/.pi"
 
         cat > "$TMPDIR/probe.mjs" <<'JS'
@@ -75,7 +75,7 @@
         }
         JS
 
-        ${pkgs.nodejs_20}/bin/node "$TMPDIR/probe.mjs"
+        ${pkgs.nodejs}/bin/node "$TMPDIR/probe.mjs"
         touch "$out"
       '';
     };

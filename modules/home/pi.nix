@@ -72,7 +72,6 @@ let
       config = mkIf cfg.enable {
         home.packages = [
           self.packages.${pkgs.system}.pi
-          self.packages.${pkgs.system}.pi-matt
         ]
         ++ optional cfg.installNotionCli self.packages.${pkgs.system}.notion-cli
         ++ optional cfg.installCodegraphCli self.packages.${pkgs.system}.codegraph
@@ -98,7 +97,8 @@ let
           # Manage the profile files, not the directory: pi-subagents creates
           # ~/.pi/agent/profiles/pi-subagents/ as a real directory at runtime,
           # and Home Manager cannot replace a real directory with a symlink.
-          ".pi/agent/profiles/pi-subagents/openai.json".source = "${piResources.subagentProfiles}/openai.json";
+          ".pi/agent/profiles/pi-subagents/openai.json".source =
+            "${piResources.subagentProfiles}/openai.json";
           ".pi/agent/profiles/pi-subagents/kimi.json".source = "${piResources.subagentProfiles}/kimi.json";
           ".pi/agent/skills".source = piResources.skills;
           ".pi/agent/themes".source = piResources.themes;

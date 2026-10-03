@@ -19,21 +19,15 @@ Initial platform support is `x86_64-linux` only.
 }
 ```
 
-### Per-launch workflow suite
+### Workflow skills
 
-Plain `pi` uses Superpowers. Select Matt Pocock's stable engineering and productivity skills for one process with the canonical selector:
+The standard `pi` package includes our Pi patches, without a workflow-suite wrapper. Both Superpowers and Matt Pocock's engineering and productivity skills are available through the managed configuration.
 
-```sh
-ROCHE_PI_SKILLSET=matt pi
-```
+Use `/loadout` to choose active skills and save profiles. The old `pi-matt`, `pi-superpowers`, and `ROCHE_PI_SKILLSET` selector are removed. Pi does not append suite instructions at launch. Shared `AGENTS.md` instructions contain conditional Pi workflow mappings.
 
-For a fixed convenience command, run:
+Enable `using-superpowers` to receive the Superpowers reminder at session start, after compaction, and after an inactive run. Other Superpowers skills can remain active without this reminder. Disabling `using-superpowers` prevents new reminders but does not erase instructions already read in the conversation.
 
-```sh
-pi-matt
-```
-
-`ROCHE_PI_SKILLSET` accepts `superpowers` and `matt`; an unset value defaults to `superpowers`. For normal agent launches, `pi-matt` always selects Matt, even when `ROCHE_PI_SKILLSET=superpowers`. Both commands change the workflow skills and routing instructions only. Authentication, sessions, common extensions, local skills, models, and trust state remain under the same `~/.pi/agent` directory.
+Authentication, sessions, extensions, models, and trust state stay in the same `~/.pi/agent` directory.
 
 ### Project credentials
 

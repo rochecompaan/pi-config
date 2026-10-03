@@ -69,10 +69,31 @@ If the extension-load check is unavailable, manually test a Home Manager-like st
 - Keep exactly one writing child active in a shared checkout; parallel research and review roles remain read-only.
 - Project role profiles intentionally set `inheritSkills: false`; ordinary children receive only the skills required by their concrete task.
 - Any explicitly injected skill is part of the child task contract. The child must read it before acting and follow it unless it conflicts with project instructions or approved scope.
-- The selected launch profile defines suite-specific skill names and workflow-to-subagent adaptations.
+- Apply suite-specific skill names and workflow mappings only when the current task follows a skill from that suite.
 - Use `worker` for judgment-bearing implementation and `mechanical-worker` for exact deterministic edits needing little judgment.
 - `scout` does not require a default skill.
 - `reviewer` runs with fresh context for adversarial review and receives task-specific review instructions instead of broad inherited skill discovery.
+
+## Pi workflow mappings
+
+These mappings adapt active workflow skills to Pi. They do not select a workflow or enable disabled skills.
+
+### Superpowers
+
+- When a skill requests `superpowers:code-reviewer` or `code-reviewer`, use the canonical Pi `reviewer`.
+- When delegating implementation planning to `planner`, inject `writing-plans`.
+- For delegated production changes or bug fixes, inject `test-driven-development` and `verification-before-completion` into the sole writer.
+- For Testing Value Gate exclusions, require direct verification instead of TDD. Inject `verification-before-completion` when the child owns completion evidence.
+- Give `scout` and `reviewer` only the skills required by their concrete tasks.
+
+### Matt Pocock
+
+- Map `research` to an asynchronous Pi `researcher` child. Continue other work while it gathers primary-source evidence.
+- Map `code-review` to two fresh-context `reviewer` children. One checks documented Standards and baseline smells. The other checks the originating Spec.
+- Give both reviewers the fixed diff command, commit list, standards files, smell baseline, and spec evidence required by the skill. Combine their findings.
+- Map `implement` to one sole-writer `worker`, then the `code-review` flow. Inject `tdd` only at an agreed seam that passes the Testing Value Gate.
+- Keep `to-spec` and `to-tickets` user-invoked unless the user delegates a concrete planning artifact.
+- If required project setup files are absent, ask the user to run `setup-matt-pocock-skills`. Do not invent tracker, label, or documentation settings.
 
 ## Rules for clear, readable writing
 
