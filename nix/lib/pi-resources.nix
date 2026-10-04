@@ -2,6 +2,7 @@
   pkgs,
   package,
   settings ? { },
+  loadout ? { },
   stylix ? {
     enable = false;
     colors = null;
@@ -9,6 +10,12 @@
 }:
 let
   themeLib = import ./theme.nix { };
+
+  loadoutFiles = import ./loadout-files.nix {
+    inherit pkgs;
+    catalog = "${package}/loadout-catalog.json";
+    overrides = loadout;
+  };
 
   settingsOverridesJson = builtins.toJSON settings;
 
@@ -81,6 +88,9 @@ let
     mkdir -p "$out" "$out/profiles"
     ln -s ${package}/AGENTS.md "$out/AGENTS.md"
     ln -s ${settingsJson} "$out/settings.json"
+    ln -s ${loadoutFiles}/loadout.json "$out/loadout.json"
+    ln -s ${loadoutFiles}/loadout-profiles.json "$out/loadout-profiles.json"
+    ln -s ${package}/loadout-catalog.json "$out/loadout-catalog.json"
     ln -s ${mcpJson} "$out/mcp.json"
     ln -s ${claudeBridgeJson} "$out/claude-bridge.json"
     ln -s ${extensions} "$out/extensions"
@@ -97,6 +107,7 @@ in
     claudeBridgeJson
     dashboardConfigJson
     extensions
+    loadoutFiles
     mcpJson
     multiModelPlanningTeams
     resourcesPackage

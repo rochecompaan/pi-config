@@ -93,7 +93,7 @@
         }
       '';
 
-      piConfig = pkgs.runCommand "pi-config" { } ''
+      basePiConfig = pkgs.runCommand "pi-config-base" { } ''
         mkdir -p "$out" "$out/node_modules"
 
         cp ${../../package.json} "$out/package.json"
@@ -123,6 +123,29 @@
         cp ${stylixJson} "$out/themes/stylix.json"
 
         ln -s ${piDeps.nodeModulePaths.diff} "$out/node_modules/diff"
+      '';
+
+      loadoutCatalog = import ../../nix/packages/pi-loadout-catalog.nix {
+        inherit pkgs;
+        pi = piPackage;
+        configPackage = basePiConfig;
+        suiteRoots = {
+          superpowers = piDeps.superpowers;
+          matt = piDeps.mattPocockSkills;
+        };
+      };
+
+      loadoutFiles = import ../../nix/lib/loadout-files.nix {
+        inherit pkgs;
+        catalog = loadoutCatalog;
+      };
+
+      piConfig = pkgs.runCommand "pi-config" { } ''
+        mkdir -p "$out"
+        cp -r ${basePiConfig}/. "$out"
+        ln -s ${loadoutCatalog} "$out/loadout-catalog.json"
+        ln -s ${loadoutFiles}/loadout.json "$out/loadout.json"
+        ln -s ${loadoutFiles}/loadout-profiles.json "$out/loadout-profiles.json"
       '';
     in
     {

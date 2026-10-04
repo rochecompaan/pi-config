@@ -20,10 +20,18 @@ export default function (pi: ExtensionAPI) {
     streamSimple: (_model, context) => {
       const output = process.env.PI_BOOTSTRAP_PROBE_OUTPUT;
       if (!output) throw new Error("PI_BOOTSTRAP_PROBE_OUTPUT is required");
+      const serialized = JSON.stringify(context);
       writeFileSync(output, JSON.stringify({
         bootstrap: JSON.stringify(context.messages).includes(
           "superpowers:using-superpowers bootstrap for pi",
         ),
+        skills: [...new Set(
+          [...serialized.matchAll(/<skill>[\s\S]*?<name>([^<]+)<\/name>/g)]
+            .map((match) => match[1]),
+        )].sort(),
+        all: pi.getAllTools().map((tool) => tool.name).sort(),
+        active: pi.getActiveTools().sort(),
+        modelTools: (context.tools ?? []).map((tool) => tool.name).sort(),
       }));
       throw new Error("PI_BOOTSTRAP_PROBE_STOP");
     },

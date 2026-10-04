@@ -18,6 +18,12 @@ export default function (pi: ExtensionAPI) {
         output,
         JSON.stringify({
           skills: (options.skills ?? []).map((skill) => skill.name).sort(),
+          manualSkills: (options.skills ?? [])
+            .filter((skill) => skill.disableModelInvocation)
+            .map((skill) => skill.name).sort(),
+          skillFiles: Object.fromEntries(
+            (options.skills ?? []).map((skill) => [skill.name, skill.filePath]),
+          ),
           appendSystemPrompt: options.appendSystemPrompt ?? "",
         }),
       );

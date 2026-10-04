@@ -26,6 +26,7 @@ let
         inherit pkgs;
         package = cfg.package;
         settings = cfg.settings;
+        loadout = cfg.loadout;
         stylix = {
           enable = cfg.stylix.enable;
           colors = config.lib.stylix.colors;
@@ -63,6 +64,12 @@ let
           default = { };
         };
 
+        loadout = mkOption {
+          type = types.attrsOf jsonFormat.type;
+          default = { };
+          description = "Overrides for the Nix-managed loadout presets and default selection.";
+        };
+
         stylix.enable = mkOption {
           type = types.bool;
           default = false;
@@ -90,6 +97,14 @@ let
           ".pi/agent/claude-bridge.json" = {
             force = true;
             source = piResources.claudeBridgeJson;
+          };
+          ".pi/agent/loadout.json" = {
+            force = true;
+            source = "${piResources.loadoutFiles}/loadout.json";
+          };
+          ".pi/agent/loadout-profiles.json" = {
+            force = true;
+            source = "${piResources.loadoutFiles}/loadout-profiles.json";
           };
           ".pi/agent/extensions".source = piResources.extensions;
           ".pi/agent/agents".source = piResources.agents;

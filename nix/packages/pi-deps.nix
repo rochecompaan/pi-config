@@ -36,9 +36,18 @@ else
         '';
 
     # dependency-source: pi-loadout
-    piLoadout = pkgs.fetchzip {
+    piLoadoutSrc = pkgs.fetchzip {
       name = "pi-loadout-${pins."pi-loadout".version}";
       inherit (pins."pi-loadout") url hash;
+    };
+
+    piLoadout = pkgs.applyPatches {
+      name = "pi-loadout-${pins."pi-loadout".version}";
+      src = piLoadoutSrc;
+      patches = [
+        ../../patches/pi-loadout-startup-selection.patch
+        ../../patches/pi-loadout-managed-files.patch
+      ];
     };
 
     piVimPackageLock = ./pi-vim-package-lock.json;

@@ -1,0 +1,171 @@
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -1,4 +1,4 @@
+-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
++import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+ import { homedir } from "node:os";
+ import { join } from "node:path";
+ import type { ExtensionAPI, ExtensionContext, Skill, ToolInfo } from "@earendil-works/pi-coding-agent";
+@@ -101,6 +101,23 @@
+   let toolRestorePending = false;
+   let pendingToolNames = new Set<string>();
+ 
++  function isNixManaged(path: string): boolean {
++    try {
++      return realpathSync(path).startsWith("/nix/store/");
++    } catch {
++      return false;
++    }
++  }
++
++  function canWriteLoadout(path: string, ctx: ExtensionContext): boolean {
++    if (!isNixManaged(path)) return true;
++    ctx.ui.notify(
++      "This loadout file is managed by Nix. Edit programs.roche-pi.loadout in your Nix configuration instead.",
++      "warning",
++    );
++    return false;
++  }
++
+   function allTools(): ToolInfo[] {
+     const byName = new Map<string, ToolInfo>();
+     for (const tool of pi.getAllTools()) byName.set(tool.name, tool);
+@@ -471,8 +488,9 @@
+   }
+ 
+   function saveGlobalLoadout(nextTools: Set<string>, nextSkills: Set<string>, ctx: ExtensionContext) {
+-    const targetTools = normalizeEnabledTools(nextTools);
+-    const targetSkills = normalizeEnabledSkills(nextSkills);
++    if (!canWriteLoadout(GLOBAL_LOADOUT_PATH, ctx)) return;
++    const targetTools = new Set(nextTools);
++    const targetSkills = new Set(nextSkills);
+     writeGlobalLoadout(toStoredState(targetTools, targetSkills, currentProfileName));
+     ctx.ui.notify(
+       `Saved default loadout: ${targetTools.size}/${allToolNames().length} tools, ${targetSkills.size}/${allSkillNames().length} skills enabled. Future sessions will use it.`,
+@@ -557,10 +575,11 @@
+       return false;
+     }
+ 
++    if (!canWriteLoadout(PROFILES_PATH, ctx)) return false;
+     const file = readProfilesFile();
+     file.profiles[name] = {
+-      enabledTools: sorted(normalizeEnabledTools(nextTools)),
+-      enabledSkills: sorted(normalizeEnabledSkills(nextSkills)),
++      enabledTools: sorted(nextTools),
++      enabledSkills: sorted(nextSkills),
+       updatedAt: new Date().toISOString(),
+     };
+     writeProfilesFile(file);
+@@ -577,6 +596,7 @@
+       return false;
+     }
+ 
++    if (!canWriteLoadout(PROFILES_PATH, ctx)) return false;
+     const file = readProfilesFile();
+     if (!file.profiles[name]) {
+       ctx.ui.notify(`Unknown loadout preset: ${name}`, "warning");
+@@ -761,13 +781,16 @@
+       "  /loadout full     Enable every available tool and skill",
+       "  /loadout minimal  Enable only built-in tools and skills",
+       "  /loadout default  Apply saved global default loadout",
+-      "  /loadout save <name>    Save current loadout as user preset",
++      ...(isNixManaged(PROFILES_PATH) ? [] : ["  /loadout save <name>    Save current loadout as user preset"]),
+       "  /loadout use <name>     Apply built-in, default, or user preset",
+       "  /loadout list           List built-in and user presets",
+-      "  /loadout delete <name>  Delete user preset",
++      ...(isNixManaged(PROFILES_PATH) ? [] : ["  /loadout delete <name>  Delete user preset"]),
+       "  /loadout status   Print current active tools and skills",
+       "  /loadout reset    Alias for /loadout full",
+       "  /loadout help     Show this help",
++      ...(isNixManaged(GLOBAL_LOADOUT_PATH) || isNixManaged(PROFILES_PATH)
++        ? ["Nix-managed files are read-only. Edit programs.roche-pi.loadout in your Nix configuration."]
++        : []),
+     ].join("\n");
+   }
+ 
+@@ -798,7 +821,9 @@
+         { value: `preset ${name}`, label: `preset ${name}`, description: "Apply user preset" },
+         { value: `delete ${name}`, label: `delete ${name}`, description: "Delete user preset" },
+       ]);
+-      return [...LOADOUT_SUBCOMMANDS, ...profileItems].filter((item) => item.value.toLowerCase().startsWith(prefix));
++      return [...LOADOUT_SUBCOMMANDS, ...profileItems]
++        .filter((item) => !isNixManaged(PROFILES_PATH) || !["save", "delete", "rm"].includes(item.value.split(" ")[0]))
++        .filter((item) => item.value.toLowerCase().startsWith(prefix));
+     },
+     handler: async (args, ctx) => {
+       const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
+@@ -840,7 +865,9 @@
+           ctx.ui.notify("Usage: /loadout save <name>", "warning");
+           return;
+         }
+-        saveUserProfile(name, normalizeEnabledTools(activeToolNames()), normalizeEnabledSkills(activeSkillNames()), ctx);
++        const toolSelection = toolRestorePending ? new Set(enabledTools) : new Set([...activeToolNames(), ...pendingToolNames]);
++        const skillSelection = new Set(skillLoadoutExplicit ? enabledSkills : allSkillNames());
++        saveUserProfile(name, toolSelection, skillSelection, ctx);
+         return;
+       }
+ 
+@@ -1039,7 +1066,7 @@
+             label: preset.name,
+             description:
+               preset.source === "user"
+-                ? `${toolsCount}/${allToolNames().length} tools · ${skillsCount}/${allSkillNames().length} skills · updated ${formatRelativeTime(preset.profile?.updatedAt ?? "")} · Space/Enter applies · Ctrl+D deletes`
++                ? `${toolsCount}/${allToolNames().length} tools · ${skillsCount}/${allSkillNames().length} skills · updated ${formatRelativeTime(preset.profile?.updatedAt ?? "")} · Space/Enter applies · ${isNixManaged(PROFILES_PATH) ? "Nix-managed" : "Ctrl+D deletes"}`
+                 : preset.source === "default"
+                   ? preset.profile
+                     ? `${toolsCount}/${allToolNames().length} tools · ${skillsCount}/${allSkillNames().length} skills · saved global default · Space/Enter applies`
+@@ -1081,13 +1108,19 @@
+           const skillsLabel = pane === "skills" ? theme.fg("accent", theme.bold("[Skills]")) : theme.fg("dim", "Skills");
+           const presetsLabel = pane === "presets" ? theme.fg("accent", theme.bold("[Presets]")) : theme.fg("dim", "Presets");
+           headerText.setText(`${toolsLabel}  ${skillsLabel}  ${presetsLabel}`);
+-          searchLabel.setText(theme.fg("dim", pane === "presets" ? "Filter presets, or type a name then Ctrl+P to save:" : "Search (filter by tool, skill, or extension name):"));
++          searchLabel.setText(theme.fg("dim", pane === "presets"
++            ? (isNixManaged(PROFILES_PATH) ? "Filter presets (managed by Nix):" : "Filter presets, or type a name then Ctrl+P to save:")
++            : "Search (filter by tool, skill, or extension name):"));
+           hintText.setText(
+             theme.fg(
+               "dim",
+               pane === "presets"
+-                ? "Type to filter or name • Tab switch pane • Space/Enter apply • Ctrl+P save • Ctrl+D delete • ? shortcuts • Esc clear/close"
+-                : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close",
++                ? (isNixManaged(PROFILES_PATH)
++                  ? "Type to filter • Tab switch pane • Space/Enter apply • Nix-managed presets • ? shortcuts • Esc clear/close"
++                  : "Type to filter or name • Tab switch pane • Space/Enter apply • Ctrl+P save • Ctrl+D delete • ? shortcuts • Esc clear/close")
++                : (isNixManaged(GLOBAL_LOADOUT_PATH)
++                  ? "Type to search • Tab switch pane • Space toggle • Enter collapse • Nix-managed default • ? shortcuts • Esc clear/close"
++                  : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close"),
+             ),
+           );
+           cacheNoteText.setText(
+@@ -1305,8 +1338,8 @@
+             theme.fg("borderAccent", "Global"),
+             `  ${theme.bold("Tab")}      Switch Tools / Skills / Presets`,
+             `  ${theme.bold("↑ ↓")}      Navigate`,
+-            `  ${theme.bold("Type")}     Search / filter (Presets: also the new preset name)`,
+-            `  ${theme.bold("Ctrl+S")}   Save current selection as global default`,
++            `  ${theme.bold("Type")}     Search / filter${isNixManaged(PROFILES_PATH) ? "" : " (Presets: also the new preset name)"}`,
++            ...(isNixManaged(GLOBAL_LOADOUT_PATH) ? [] : [`  ${theme.bold("Ctrl+S")}   Save current selection as global default`]),
+             `  ${theme.bold("Esc")}      Clear search, or close picker`,
+             "",
+             theme.fg("borderAccent", "Tools / Skills"),
+@@ -1316,8 +1349,10 @@
+             theme.fg("borderAccent", "Presets"),
+             `  ${theme.bold("Space")}    Apply selected preset`,
+             `  ${theme.bold("Enter")}    Apply selected preset`,
+-            `  ${theme.bold("Ctrl+P")}   Save current selection as the typed preset name`,
+-            `  ${theme.bold("Ctrl+D")}   Delete selected user preset`,
++            ...(isNixManaged(PROFILES_PATH) ? [] : [
++              `  ${theme.bold("Ctrl+P")}   Save current selection as the typed preset name`,
++              `  ${theme.bold("Ctrl+D")}   Delete selected user preset`,
++            ]),
+           ].join("\n"),
+           1,
+           0,
+@@ -1348,6 +1383,7 @@
+             }
+ 
+             if (matchesKey(data, Key.ctrl("p"))) {
++              if (!canWriteLoadout(PROFILES_PATH, ctx)) return;
+               const name = searchInput.getValue().trim() || (isUserProfileName(currentProfileName) ? currentProfileName : "");
+               if (!name) {
+                 ctx.ui.notify("Type a preset name in the search field, then press Ctrl+P to save.", "warning");
