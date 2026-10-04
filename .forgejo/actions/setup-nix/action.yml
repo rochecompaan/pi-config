@@ -1,0 +1,72 @@
+name: Set up non-sandboxed Nix
+description: Install or reuse single-user Nix in the persistent runner store.
+
+runs:
+  using: composite
+  steps:
+    - name: Detect persistent Nix installation
+      id: persistent_nix
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        mkdir -p /nix
+        profile=/nix/var/nix/profiles/per-user/root/profile
+        store_entry=""
+        if [[ -d /nix/store ]]; then
+          store_entry="$(find /nix/store -mindepth 1 -maxdepth 1 -print -quit)"
+        fi
+
+        if [[ -x "${profile}/bin/nix" && -f /nix/var/nix/db/db.sqlite ]]; then
+          state=warm
+          ln -sfn "$profile" "$HOME/.nix-profile"
+          echo "${profile}/bin" >> "$GITHUB_PATH"
+          echo "NIX_PROFILES=/nix/var/nix/profiles/default ${HOME}/.nix-profile" >> "$GITHUB_ENV"
+          if [[ -f /etc/ssl/certs/ca-certificates.crt ]]; then
+            echo "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
+          fi
+        elif [[ -e "$profile" || -L "$profile" || -e /nix/var/nix/db/db.sqlite || -n "$store_entry" ]]; then
+          echo "::error::Persistent /nix contains an incomplete Nix installation; replace the cache PVC through GitOps"
+          exit 1
+        else
+          state=cold
+        fi
+
+        echo "state=${state}" >> "$GITHUB_OUTPUT"
+        echo "NIX_STORE_STATE=${state}" >> "$GITHUB_ENV"
+        echo "NIX_STORE_STATE=${state}"
+        df -h /nix
+
+    - name: Install Nix
+      # cachix/install-nix-action v31
+      uses: https://github.com/cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24
+      if: ${{ steps.persistent_nix.outputs.state == 'cold' }}
+      with:
+        install_url: https://releases.nixos.org/nix/nix-2.35.1/install
+        install_options: --no-daemon --no-channel-add --no-modify-profile
+        extra_nix_config: |
+          build-users-group =
+          experimental-features = nix-command flakes
+          sandbox = false
+          max-jobs = auto
+          show-trace = true
+          always-allow-substitutes = true
+          min-free = 10737418240
+          max-free = 21474836480
+
+    - name: Configure persistent Nix
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p /etc/nix
+        cat > /etc/nix/nix.conf <<'EOF'
+        build-users-group =
+        experimental-features = nix-command flakes
+        sandbox = false
+        max-jobs = auto
+        show-trace = true
+        always-allow-substitutes = true
+        min-free = 10737418240
+        max-free = 21474836480
+        EOF
+        nix --version

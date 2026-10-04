@@ -17,7 +17,7 @@ Git leases provide the final guard against competing branch updates.
 
 Each changed candidate must pass its package builds, the runtime extension-load check, and the full flake check.
 The flake-input unit builds every package output, including packages outside the flake checks.
-Validation requires a fresh sandbox isolation probe and strict sandbox flags without fallback.
+Validation runs with Nix sandboxing disabled to match the container runner setup.
 Publication uses the validated Git tree without new staging.
 
 ## Deployment requirements
@@ -27,23 +27,25 @@ The live deployment check remains separate from local verification.
 
 ### Runner
 
-Use a dedicated **x86_64-linux** Forgejo runner with these resources:
+Use an **x86_64-linux** Forgejo runner with these resources:
 
-- The label `nix`, or the label from repository variable `DEPENDENCY_UPDATE_RUNNER`.
-- Nix with flakes enabled and `sandbox = true`, not `relaxed`.
-- A Nix daemon that supports strict sandbox builds without fallback.
+- The label `ubuntu-latest`, or the label from repository variable `DEPENDENCY_UPDATE_RUNNER`.
+- A job environment with writable `/nix` and `/etc/nix` directories for the single-user Nix installation.
 - Bash, Git, Python 3, and a JavaScript runtime compatible with the pinned checkout action.
 - Network access to Forgejo, GitHub, the npm registry, and the configured Nix caches.
 - Enough disk space and time for native npm packages and full flake checks.
 
+Both jobs use `.forgejo/actions/setup-nix` to install Nix 2.35.1 with the pinned Cachix install action from v31.
+The action reuses a complete persistent Nix installation and refuses an incomplete installation.
+It enables flakes and sets `sandbox = false` on both new and existing installations.
 The workflow builds `packages.x86_64-linux.dependency-update-tools` before it changes any pins.
 That immutable package supplies Python, Node/npm, Git, Nix, prefetch tools, and workflow lint tools.
 The build result and candidate reports stay in the runner temporary directory, outside the checkout.
 Each job has a 90-minute timeout.
 
 Prefer disposable job environments and a runner without unrelated credentials.
-Nix sandboxing does not replace runner isolation.
-The sandbox protects package builds, not every process on the runner.
+Package builds can access the job environment because Nix sandboxing is disabled.
+The runner environment provides isolation, not Nix.
 
 ### Bot account and secret
 
@@ -182,7 +184,7 @@ Failed jobs retain their failure status.
 | `lockfile` | Lock generation, metadata validation, or patch application failed | Review the upstream dependencies and local patch |
 | `npm-hash` | Npm cache prefetch failed or returned an invalid hash | Review the dependency downloads |
 | `preparation` | Checkout or ownership guard failed | Start from a clean base and prepare again |
-| `validation` | Sandbox, package, extension-load, or flake check failed | Read the build logs and repair the cause |
+| `validation` | Package, extension-load, or flake check failed | Read the build logs and repair the cause |
 | `publication` | Missing token, stale base, lease conflict, ownership conflict, or API error | Review the remote state and prepare again |
 
 A failed preparation or validation leaves an existing PR unchanged.
@@ -206,7 +208,7 @@ After integration and runner/secret configuration, obtain operator approval befo
 
 1. Manually dispatch the workflow on the default branch.
 2. Verify the pinned checkout action and default-branch event metadata.
-3. Verify the runner sandbox and immutable tool build.
+3. Verify the Nix installation, disabled sandbox, and immutable tool build.
 4. Verify independent matrix jobs and the two-job limit.
 5. Verify that a failed unit does not cancel other units.
 6. Verify no-change behavior and validated bot PR publication.

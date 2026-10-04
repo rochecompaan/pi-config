@@ -152,13 +152,23 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(raised.exception.stage, "validation")
         self.assertFalse(candidate.validated)
 
-    def test_disabled_sandbox_stops_before_build(self):
+    def test_non_sandboxed_runner_can_validate_all_required_gates(self):
         candidate = self.make_candidate()
         self.commands.clear()
         self.sandbox = False
-        with self.assertRaises(UpdateError):
-            validate(self.root, self.units["one"], candidate, self.runner)
-        self.assertFalse(any(command[:2] == ["nix", "build"] for command in self.commands))
+
+        def without_sandbox(command, **kwargs):
+            result = self.runner(command, **kwargs)
+            if "sandbox" in command and command[command.index("sandbox") + 1] != "false":
+                return subprocess.CompletedProcess(command, 1, "", "Sandbox unavailable on this runner")
+            return result
+
+        result = validate(self.root, self.units["one"], candidate, without_sandbox)
+        self.assertTrue(result.validated)
+        self.assertFalse(candidate.validated)
+        self.assertTrue(any(".#packages.x86_64-linux.pkg" in command for command in self.commands))
+        self.assertTrue(any(".#checks.x86_64-linux.pi-config-extension-load" in command for command in self.commands))
+        self.assertTrue(any(command[:3] == ["nix", "flake", "check"] for command in self.commands))
 
     def test_build_mutation_cannot_be_validated(self):
         candidate = self.make_candidate()

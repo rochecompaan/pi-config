@@ -127,7 +127,7 @@ def publish(root: Path, candidate: Candidate, client: ForgejoClient, run=subproc
     title = f"chore(deps): update {candidate.unit_id}"
     body = (f"Nightly dependency update: `{candidate.unit_id}`\n\n{candidate.summary}\n\n"
             f"Base: `{candidate.base_sha}`\nValidated tree: `{candidate.tree_sha}`\n\n"
-            "Package builds, extension loading, and full flake checks passed in a verified Nix sandbox.\n"
+            "Package builds, extension loading, and full flake checks passed with Nix sandboxing disabled.\n"
             "Merge manually after review; this workflow never merges pull requests.")
     with _authentication(client, actor["login"]) as environment:
         previous = _remote_heads(root, remote, candidate, branch, run, environment)

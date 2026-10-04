@@ -4,7 +4,6 @@ import dataclasses
 import json
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -163,40 +162,12 @@ def prepare(root: Path, unit: Unit, base_branch: str, base_sha: str, run=subproc
         raise UpdateError("preparation", "Candidate preparation failed") from error
 
 
-def _sandbox(root: Path, run) -> None:
-    try:
-        config = json.loads(_run(["nix", "config", "show", "--json"], root, run, "validation"))
-        value = config["sandbox"]["value"]
-        if value is not True and value != "true":
-            raise ValueError()
-    except (KeyError, TypeError, ValueError) as error:
-        raise UpdateError("validation", "Nix sandbox must be enabled, not relaxed") from error
-    # A fresh canary prevents daemon settings or cached successes from hiding an
-    # ineffective sandbox. The expression imports no candidate/upstream Nix code.
-    tool = shutil.which("nix-prefetch-git")
-    if tool is None:
-        raise UpdateError("validation", "Pinned prefetch tools are unavailable")
-    shebang = Path(tool).read_text().splitlines()[0]
-    match = re.fullmatch(r"#!\s*(/nix/store/[a-z0-9]{32}-[^ /]+/bin/bash)(?: -e)?", shebang)
-    if match is None:
-        raise UpdateError("validation", "Cannot locate the trusted sandbox probe shell")
-    shell = Path(match[1])
-    with tempfile.NamedTemporaryFile(prefix="dependency-sandbox-") as sentinel:
-        script = f'if test -e {json.dumps(sentinel.name)}; then exit 1; fi; printf sandboxed > "$out"'
-        expression = ('builtins.derivation { name = "dependency-update-sandbox-probe"; system = "x86_64-linux"; '
-                      + 'builder = (builtins.storePath ' + json.dumps(str(shell.parent.parent)) + ') + "/bin/bash"; '
-                      + 'args = [ "-c" ' + json.dumps(script) + ' ]; }')
-        _run(["nix", "build", "--no-link", "--impure", "--option", "sandbox", "true", "--option", "sandbox-fallback", "false",
-              "--expr", expression], root, run, "validation")
-
-
 def validate(root: Path, unit: Unit, candidate: Candidate, run=subprocess.run) -> Candidate:
     if candidate.unit_id != unit.id or set(candidate.paths) - set(unit.paths):
         raise UpdateError("validation", "Candidate does not belong to this unit")
     assert_tree(root, candidate)
     if not candidate.changed:
         return candidate
-    _sandbox(root, run)
     builds = unit.builds
     if unit.id == "flake-inputs":
         try:
@@ -206,7 +177,7 @@ def validate(root: Path, unit: Unit, candidate: Candidate, run=subprocess.run) -
             builds = tuple(valid_id(name) for name in names)
         except (TypeError, ValueError) as error:
             raise UpdateError("validation", "Cannot discover flake package build targets") from error
-    flags = ["--option", "sandbox", "true", "--option", "sandbox-fallback", "false", "--no-update-lock-file"]
+    flags = ["--option", "sandbox", "false", "--no-update-lock-file"]
     commands = [["nix", "build", f".#packages.x86_64-linux.{name}", "--no-link", *flags] for name in builds]
     commands += [["nix", "build", ".#checks.x86_64-linux.pi-config-extension-load", "--no-link", *flags],
                  ["nix", "flake", "check", "--accept-flake-config", "--print-build-logs", *flags]]
