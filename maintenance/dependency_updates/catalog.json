@@ -30,16 +30,6 @@
       "hash_field": "sha256",
       "package": "diff"
     },
-    "matrix-sdk-crypto-nodejs": {
-      "asset": "matrix-sdk-crypto.linux-x64-gnu.node",
-      "channel": "companion",
-      "dependency": "@matrix-org/matrix-sdk-crypto-nodejs",
-      "fetcher": "fetchurl",
-      "hash_field": "hash",
-      "primary": "pi-messenger-bridge",
-      "repo": "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs.git",
-      "rule": "lock-version"
-    },
     "mattpocock-skills": {
       "channel": "git-default-head",
       "fetcher": "fetchgit",
@@ -87,16 +77,6 @@
       "fetcher": "fetchzip",
       "hash_field": "hash",
       "package": "pi-loadout"
-    },
-    "pi-messenger-bridge": {
-      "channel": "npm-latest",
-      "fetcher": "fetchzip",
-      "hash_field": "hash",
-      "lock": {
-        "kind": "maintained",
-        "path": "nix/packages/pi-messenger-bridge-package-lock.json"
-      },
-      "package": "pi-messenger-bridge"
     },
     "pi-remote": {
       "channel": "npm-latest",
@@ -271,19 +251,6 @@
       ],
       "sources": [
         "pi-loadout"
-      ]
-    },
-    "pi-messenger-bridge": {
-      "builds": [
-        "pi-messenger-bridge"
-      ],
-      "paths": [
-        "nix/dependency-pins.json",
-        "nix/packages/pi-messenger-bridge-package-lock.json"
-      ],
-      "sources": [
-        "pi-messenger-bridge",
-        "matrix-sdk-crypto-nodejs"
       ]
     },
     "pi-remote": {

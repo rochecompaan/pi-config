@@ -20,7 +20,6 @@
         "simple-english-source" = piDeps.simpleEnglishSrc;
         "pi-listen" = piDeps.piListen;
         "pi-loadout" = piDeps.piLoadout;
-        "pi-messenger-bridge" = piDeps.piMessengerBridge;
         "pi-subagents" = piDeps.piSubagents;
         "pi-vim" = piDeps.piVim;
       };

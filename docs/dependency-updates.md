@@ -72,7 +72,7 @@ The Git origin must match the configured Forgejo repository.
 
 ## Update units
 
-The inventory defines **16 units** that cover **20 fixed source pins**, plus all flake inputs.
+The inventory defines **15 units** that cover **18 fixed source pins**, plus all flake inputs.
 Coupled sources share a PR.
 The catalog is `maintenance/dependency_updates/catalog.json`.
 The pins are `nix/dependency-pins.json`.
@@ -88,7 +88,6 @@ The pins are `nix/dependency-pins.json`.
 | `pi-intervals` | Intervals extension |
 | `pi-listen` | Listen extension, Sherpa package, Sherpa Linux binary |
 | `pi-loadout` | Loadout extension |
-| `pi-messenger-bridge` | Messenger bridge, Matrix crypto native package |
 | `pi-remote` | Pi remote package |
 | `pi-subagents` | Subagents extension |
 | `pi-vim` | Vim extension |

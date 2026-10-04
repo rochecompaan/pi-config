@@ -20,11 +20,6 @@
     "url": "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz",
     "version": "9.0.0"
   },
-  "matrix-sdk-crypto-nodejs": {
-    "hash": "sha256-cHjU3ZhxKPea/RksT2IfZK3s435D8qh1bx0KnwNN5xg=",
-    "url": "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node",
-    "version": "0.4.0"
-  },
   "mattpocock-skills": {
     "rev": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
     "sha256": "sha256-pseSJJb5nBBGPzpxA1GzjGLB9OrT+u0At1saJ4NqZ1E=",
@@ -56,12 +51,6 @@
     "hash": "sha256-nTa3E3KzIky1fYVC3xCI364iCnkVM7GTi/IXo9K3P2Q=",
     "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.35.tgz",
     "version": "0.0.35"
-  },
-  "pi-messenger-bridge": {
-    "hash": "sha256-sbI1Diu0Ii/zU9p5Ar0RnwQJ5hbr3BM1ShNNc85PFqs=",
-    "npmDepsHash": "sha256-NoSzGuRXBu0ph2MpqC9bVx+/1FvG3Po/VsCQCyBPhT8=",
-    "url": "https://registry.npmjs.org/pi-messenger-bridge/-/pi-messenger-bridge-0.4.0.tgz",
-    "version": "0.4.0"
   },
   "pi-remote": {
     "hash": "sha256-d8tSk12rnZqHr2HDVnXclZBRPbqRPVft9CKYSdBJHr8=",

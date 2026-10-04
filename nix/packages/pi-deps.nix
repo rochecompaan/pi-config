@@ -140,40 +140,6 @@ else
       '';
     };
 
-    matrixSdkCryptoNodeFile = "matrix-sdk-crypto.linux-x64-gnu.node";
-
-    # dependency-source: matrix-sdk-crypto-nodejs
-    matrixSdkCryptoNode = pkgs.fetchurl {
-      inherit (pins."matrix-sdk-crypto-nodejs") url hash;
-    };
-
-    piMessengerBridgePackageLock = ./pi-messenger-bridge-package-lock.json;
-
-    # dependency-source: pi-messenger-bridge
-    piMessengerBridgeSrc = pkgs.fetchzip {
-      inherit (pins."pi-messenger-bridge") url hash;
-    };
-
-    piMessengerBridge = pkgs.buildNpmPackage {
-      pname = "pi-messenger-bridge";
-      inherit (pins."pi-messenger-bridge") version;
-      src = piMessengerBridgeSrc;
-
-      inherit (pins."pi-messenger-bridge") npmDepsHash;
-
-      dontNpmBuild = true;
-      makeCacheWritable = true;
-
-      postPatch = ''
-        cp ${piMessengerBridgePackageLock} package-lock.json
-      '';
-
-      postInstall = ''
-        install -Dm444 ${matrixSdkCryptoNode} \
-          $out/lib/node_modules/pi-messenger-bridge/node_modules/@matrix-org/matrix-sdk-crypto-nodejs/${matrixSdkCryptoNodeFile}
-      '';
-    };
-
     # dependency-source: pi-subagents
     piSubagentsSrc = pkgs.fetchgit {
       url = "https://github.com/nicobailon/pi-subagents.git";
@@ -380,7 +346,6 @@ else
       piClaudeBridge
       piListen
       piLoadout
-      piMessengerBridge
       piRemote
       piSubagents
       piVim
