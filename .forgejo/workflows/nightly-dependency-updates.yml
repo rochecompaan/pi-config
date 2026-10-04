@@ -99,6 +99,7 @@ jobs:
         if: success() && steps.prepare.outputs.changed == 'true'
         env:
           DEPENDENCY_UPDATE_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
+          DEPENDENCY_UPDATE_BOT_USERNAME: ${{ vars.DEPENDENCY_UPDATE_BOT_USERNAME }}
           FORGEJO_SERVER_URL: ${{ forgejo.server_url }}
           FORGEJO_REPOSITORY: ${{ forgejo.repository }}
         run: |

@@ -79,7 +79,10 @@ def main() -> int:
             token = os.environ.get("DEPENDENCY_UPDATE_TOKEN")
             if not token:
                 raise UpdateError("publication", "DEPENDENCY_UPDATE_TOKEN is required")
-            client = ForgejoClient(args.server, args.repository, token)
+            username = os.environ.get("DEPENDENCY_UPDATE_BOT_USERNAME")
+            if not username:
+                raise UpdateError("publication", "DEPENDENCY_UPDATE_BOT_USERNAME is required")
+            client = ForgejoClient(args.server, args.repository, token, bot_username=username)
             print(publish(root, candidate, client, subprocess.run))
         return 0
     except UpdateError as error:

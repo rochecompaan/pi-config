@@ -47,14 +47,24 @@ Prefer disposable job environments and a runner without unrelated credentials.
 Package builds can access the job environment because Nix sandboxing is disabled.
 The runner environment provides isolation, not Nix.
 
-### Bot account and secret
+### Publication account, token, and username
 
-1. Create a bot account for dependency updates.
-2. Give the bot write access to this repository only.
-3. Create a selected-repository token with repository write access.
-4. Store that token as the repository secret `DEPENDENCY_UPDATE_TOKEN`.
-5. Protect the default branch against direct bot pushes.
-6. Require maintainer review and successful checks before a merge.
+1. Choose the account that will publish updates. You can use your account or a separate bot account.
+2. Give the publication account write access to this repository.
+3. For a bot account, limit its write access to this repository only.
+4. Create a token with **Specific repositories**. Select only this repository.
+5. Grant **Repository: Read and Write** (`write:repository`). Leave other scopes disabled.
+6. Store the token as the repository secret `DEPENDENCY_UPDATE_TOKEN`.
+7. Set the repository Actions variable `DEPENDENCY_UPDATE_BOT_USERNAME` to the username of the account that created the token.
+8. Protect the default branch against direct updater pushes.
+9. Require maintainer review and successful checks before a merge.
+
+The username variable identifies the token owner, not a separate account.
+For example, a token created by `roche` requires `DEPENDENCY_UPDATE_BOT_USERNAME=roche`.
+The updater uses the repository permissions API to resolve that account and verify write access before publication.
+Selected-repository tokens permit this lookup only for their owner.
+The updater does not call `/user` or require `read:user`.
+Existing branch and PR ownership checks use the account ID and canonical username from Forgejo.
 
 Forgejo repository-write access can also permit merges.
 The updater never calls a merge endpoint, regardless of those rights.

@@ -1,15 +1,19 @@
+import contextlib
 import dataclasses
 import io
 import json
+import os
 import subprocess
+import sys
 import unittest
 import urllib.error
 import urllib.parse
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from maintenance.tests import test_dependency_candidate as candidate_fixtures
-from maintenance.dependency_updates.candidate import validate
+from maintenance.dependency_updates.__main__ import main
+from maintenance.dependency_updates.candidate import validate, write_report
 from maintenance.dependency_updates.model import Candidate, UpdateError
 from maintenance.dependency_updates.forgejo_api import ForgejoClient
 from maintenance.dependency_updates.publish import bot_branch, publish
@@ -32,6 +36,8 @@ class HTTPBoundary:
         self.requests = []
         self.fail_create = False
         self.redirect = False
+        self.permission_response = {"permission": "write", "role_name": "write",
+            "user": {"id": 7, "login": "dependency-bot"}}
 
     def __call__(self, request, timeout):
         self.requests.append(request)
@@ -40,8 +46,14 @@ class HTTPBoundary:
         if self.redirect:
             return Response({}, 302, {"Location": "https://secret@evil.example"})
         if path.endswith("/user"):
-            return Response({"id": 7, "login": "dependency-bot"})
+            raise urllib.error.HTTPError(request.full_url, 403, "User scope is not allowed", {}, None)
+        if path.startswith(f"/api/v1/repos/{REPOSITORY}/collaborators/") and path.endswith("/permission"):
+            if method != "GET" or path.split("/")[-2].casefold() != "dependency-bot":
+                raise urllib.error.HTTPError(request.full_url, 403, "Only the token owner can query permissions", {}, None)
+            return Response(self.permission_response)
         if method == "GET":
+            if path != f"/api/v1/repos/{REPOSITORY}/pulls":
+                raise urllib.error.HTTPError(request.full_url, 404, "Not found", {}, None)
             page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)["page"][0])
             return Response(self.pulls[(page-1)*50:page*50])
         if method == "POST":
@@ -100,7 +112,7 @@ class PublicationTests(unittest.TestCase):
         self.fixture.git("remote", "add", "origin", self.url)
         self.fixture.git("config", f"url.{self.remote}.insteadOf", self.url)
         self.boundary = HTTPBoundary()
-        self.client = ForgejoClient(SERVER, REPOSITORY, TOKEN, self.boundary)
+        self.client = ForgejoClient(SERVER, REPOSITORY, TOKEN, self.boundary, bot_username="dependency-bot")
         prepared = self.fixture.make_candidate()
         self.candidate = validate(self.root, self.fixture.units["one"], prepared, self.fixture.runner)
         self.helpers = []
@@ -120,6 +132,58 @@ class PublicationTests(unittest.TestCase):
 
     def branch_sha(self):
         return self.bare("rev-parse", "refs/heads/" + bot_branch("one"))
+
+    def cli(self, username="dependency-bot"):
+        report = self.fixture.workspace / "candidate.json"
+        write_report(report, self.candidate)
+        output, errors = io.StringIO(), io.StringIO()
+        argv = ["dependency-updates", "--root", str(self.root), "publish",
+            "--report", str(report), "--server", SERVER, "--repository", REPOSITORY]
+        environment = {"DEPENDENCY_UPDATE_TOKEN": TOKEN}
+        if username is not None:
+            environment["DEPENDENCY_UPDATE_BOT_USERNAME"] = username
+        with patch.object(sys, "argv", argv), patch.dict(os.environ, environment), \
+                patch("urllib.request.build_opener") as opener, \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            if username is None:
+                os.environ.pop("DEPENDENCY_UPDATE_BOT_USERNAME", None)
+            opener.return_value.open = self.boundary
+            result = main()
+        return result, output.getvalue().strip(), errors.getvalue()
+
+    def test_cli_publishes_with_repository_scoped_token(self):
+        self.boundary.permission_response.update(permission="owner", role_name="owner")
+        result, output, errors = self.cli()
+        self.assertEqual(result, 0, errors)
+        self.assertEqual(output, SERVER + "/owner/repo/pulls/1")
+        self.assertEqual(self.bare("show", "-s", "--format=%T", self.branch_sha()), self.candidate.tree_sha)
+        self.assertEqual(self.bare("show", "-s", "--format=%an%n%cn", self.branch_sha()),
+            "dependency-bot\ndependency-bot")
+        self.assertEqual(len(self.boundary.pulls), 1)
+
+    def test_cli_missing_username_stops_before_http_or_push(self):
+        result, output, errors = self.cli(username=None)
+        self.assertEqual(result, 1)
+        self.assertEqual(self.boundary.requests, [])
+        self.assertEqual(self.bare("for-each-ref", "--format=%(refname)", "refs/heads"), "refs/heads/main")
+        self.assertEqual(output, "")
+        self.assertIn("DEPENDENCY_UPDATE_BOT_USERNAME", errors)
+
+    def test_read_only_account_stops_before_push_or_pull_edits(self):
+        self.boundary.permission_response["permission"] = "read"
+        result, output, errors = self.cli()
+        self.assertEqual(result, 1)
+        self.assertEqual(self.boundary.pulls, [])
+        self.assertEqual(self.bare("for-each-ref", "--format=%(refname)", "refs/heads"), "refs/heads/main")
+        self.assertFalse(any(r.get_method() != "GET" for r in self.boundary.requests))
+
+    def test_mismatched_repository_user_stops_before_push_or_pull_edits(self):
+        self.boundary.permission_response["user"] = {"id": 8, "login": "another-user"}
+        result, output, errors = self.cli()
+        self.assertEqual(result, 1)
+        self.assertEqual(self.boundary.pulls, [])
+        self.assertEqual(self.bare("for-each-ref", "--format=%(refname)", "refs/heads"), "refs/heads/main")
+        self.assertFalse(any(r.get_method() != "GET" for r in self.boundary.requests))
 
     def test_first_publication_pushes_exact_tree_and_creates_one_pull(self):
         url = publish(self.root, self.candidate, self.client, self.runner)
@@ -257,14 +321,15 @@ class APITests(unittest.TestCase):
     def test_redirect_does_not_forward_token(self):
         boundary = HTTPBoundary()
         boundary.redirect = True
-        client = ForgejoClient(SERVER, REPOSITORY, TOKEN, boundary)
+        client = ForgejoClient(SERVER, REPOSITORY, TOKEN, boundary, bot_username="dependency-bot")
         with self.assertRaises(UpdateError) as raised:
             client.current_user()
         self.assertEqual(len(boundary.requests), 1)
         self.assertNotIn(TOKEN, str(raised.exception))
 
     def test_malformed_user_response_is_rejected(self):
-        client = ForgejoClient(SERVER, REPOSITORY, TOKEN, lambda request, timeout: Response([]))
+        client = ForgejoClient(SERVER, REPOSITORY, TOKEN,
+            lambda request, timeout: Response([]), bot_username="dependency-bot")
         with self.assertRaises(UpdateError):
             client.current_user()
 

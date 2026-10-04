@@ -15,7 +15,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class ForgejoClient:
-    def __init__(self, server_url: str, repository: str, token: str, request=None):
+    def __init__(self, server_url: str, repository: str, token: str, request=None, *, bot_username: str | None = None):
         try:
             parsed = urllib.parse.urlsplit(server_url)
             if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -31,6 +31,9 @@ class ForgejoClient:
             raise UpdateError("publication", "Invalid HTTPS server, repository, or token configuration") from error
         self.server_url, self.repository, self.token = server_url.rstrip("/"), repository, token
         self.git_url = self.server_url + "/" + repository + ".git"
+        if not isinstance(bot_username, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", bot_username) or bot_username in {".", ".."}:
+            raise UpdateError("publication", "DEPENDENCY_UPDATE_BOT_USERNAME must be a valid Forgejo username")
+        self.bot_username = bot_username
         self._request = request or urllib.request.build_opener(NoRedirect()).open
 
     def check_url(self, url: str) -> str:
@@ -71,9 +74,21 @@ class ForgejoClient:
             raise UpdateError("publication", "Forgejo API transport or JSON response failed") from None
 
     def current_user(self) -> dict:
-        data = self._api("GET", "/user")
-        if not isinstance(data, dict) or type(data.get("id")) is not int or data["id"] <= 0 or not isinstance(data.get("login"), str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", data["login"]):
-            raise UpdateError("publication", "Forgejo user response is invalid")
+        # Selected-repository tokens cannot call /user. This endpoint permits
+        # those tokens to query only their owner's repository permissions.
+        response = self._api("GET", f"/repos/{self.repository}/collaborators/{self.bot_username}/permission")
+        data = response.get("user") if isinstance(response, dict) else None
+        if (
+            not isinstance(data, dict)
+            or type(data.get("id")) is not int
+            or data["id"] <= 0
+            or not isinstance(data.get("login"), str)
+            or not re.fullmatch(r"[A-Za-z0-9_.-]+", data["login"])
+            or data["login"].casefold() != self.bot_username.casefold()
+        ):
+            raise UpdateError("publication", "Forgejo repository user response is invalid")
+        if response.get("permission") not in ("write", "admin", "owner"):
+            raise UpdateError("publication", "Publication account requires repository write access")
         return data
 
     def open_pulls(self) -> list[dict]:
