@@ -43,22 +43,26 @@ It also removes the `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` line
 
 ## Context paging
 
-The packaged configuration enables context paging with a default rolling budget of 128,000 estimated tokens:
+Context paging comes from the published [`@rochecompaan/pi-context-paging`](https://github.com/rochecompaan/pi-context-paging) package. `nix/dependency-pins.json` pins its npm release, and the dependency updates keep it current like the other packages.
+
+The packaged settings turn paging off:
 
 ```json
 {
   "contextPaging": {
-    "enabled": true,
+    "enabled": false,
     "tokenBudget": 128000
   }
 }
 ```
 
-`tokenBudget` is optional. It must be a positive safe integer. A trusted project's `.pi/settings.json` can override the global value. An untrusted project is ignored, and an invalid value falls through to the next valid source or the 128,000-token default.
+To turn it on with Home Manager:
 
-When the active model declares a smaller context window, the extension uses that smaller value. Paging notices show the effective rolling budget. The setting does not change output-page sizes or history recovery limits.
+```nix
+programs.roche-pi.settings.contextPaging.enabled = true;
+```
 
-After a successful provider response, paging uses its measured context total as an anchor for the exact context it sent. It estimates only later additions, removals, resident-input changes, and generated notices. Outgoing-only extension instructions remain in the measured request, but their later removal does not invalidate a matching persistent session. Until a tracked response provides that anchor, it uses Pi's normal message estimate. The budget stays unchanged at 128,000 tokens (or the smaller model window). A changed request is still an estimate before its next provider response reports usage.
+A trusted project's `.pi/settings.json` can also set `contextPaging`. While paging is off, the recovery tools stay registered but refuse to run. The package README describes `tokenBudget`, `trimToTokens`, and how paging works.
 
 ## Per-project usage
 

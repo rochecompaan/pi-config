@@ -279,6 +279,12 @@ else
       inherit (pins."pi-codegraph") url hash;
     };
 
+    # dependency-source: pi-context-paging
+    piContextPaging = pkgs.fetchzip {
+      name = "pi-context-paging-${pins."pi-context-paging".version}";
+      inherit (pins."pi-context-paging") url hash;
+    };
+
     # dependency-source: codegraph
     codegraphShimSrc = pkgs.fetchzip {
       name = "codegraph-shim-${pins.codegraph.version}";
@@ -353,6 +359,7 @@ else
       mattPocockSkillsSrc
       piCodegraph
       piClaudeBridge
+      piContextPaging
       piListen
       piLoadout
       piRemote
@@ -364,7 +371,10 @@ else
       superpowersSrc
       ;
 
+    # Packages load in this order, after auto-discovered extensions. Keep
+    # context paging first so its context handler runs before other packages'.
     packagePaths = [
+      "${piContextPaging}"
       "${contextMode}/lib/node_modules/context-mode"
       "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"

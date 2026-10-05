@@ -15,6 +15,7 @@
         "diff-package" = piDeps.diffPackage;
         "pi-codegraph" = piDeps.piCodegraph;
         "pi-claude-bridge" = piDeps.piClaudeBridge;
+        "pi-context-paging" = piDeps.piContextPaging;
         "remote-pi-extension" = piDeps.remotePiExtension;
         "superpowers-source" = piDeps.superpowersSrc;
         "simple-english-source" = piDeps.simpleEnglishSrc;

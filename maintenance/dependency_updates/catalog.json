@@ -55,6 +55,12 @@
       "hash_field": "hash",
       "package": "@vndv/pi-codegraph"
     },
+    "pi-context-paging": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "@rochecompaan/pi-context-paging"
+    },
     "pi-intervals": {
       "channel": "git-default-head",
       "fetcher": "github-archive",
@@ -216,6 +222,17 @@
       ],
       "sources": [
         "pi-claude-bridge"
+      ]
+    },
+    "pi-context-paging": {
+      "builds": [
+        "pi-context-paging"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-context-paging"
       ]
     },
     "pi-intervals": {
