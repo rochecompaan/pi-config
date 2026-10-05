@@ -16,14 +16,14 @@ defaults:
 # The runner's server_url can point at an internal HTTP service.
 # Checkout and publication must use the same trusted HTTPS origin.
 env:
-  FORGEJO_SERVER_URL: ${{ vars.DEPENDENCY_UPDATE_SERVER_URL || 'https://git.compaan.cloud' }}
+  DEPENDENCY_UPDATE_SERVER_URL: ${{ vars.DEPENDENCY_UPDATE_SERVER_URL || 'https://git.compaan.cloud' }}
 
 jobs:
   discovery:
     runs-on: ${{ vars.DEPENDENCY_UPDATE_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 90
     env:
-      BASE_BRANCH: ${{ forgejo.event.repository.default_branch }}
+      BASE_BRANCH: ${{ forgejo.event.repository.default_branch || 'main' }}
       EVENT_REF: ${{ forgejo.ref }}
     outputs:
       units: ${{ steps.inventory.outputs.units }}
@@ -39,8 +39,8 @@ jobs:
       - name: Check out the default branch
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ forgejo.event.repository.default_branch }}
-          github-server-url: ${{ env.FORGEJO_SERVER_URL }}
+          ref: ${{ env.BASE_BRANCH }}
+          github-server-url: ${{ env.DEPENDENCY_UPDATE_SERVER_URL }}
           persist-credentials: false
       - name: Set up non-sandboxed Nix
         uses: ./.forgejo/actions/setup-nix
@@ -83,7 +83,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ needs.discovery.outputs.base_sha }}
-          github-server-url: ${{ env.FORGEJO_SERVER_URL }}
+          github-server-url: ${{ env.DEPENDENCY_UPDATE_SERVER_URL }}
           persist-credentials: false
       - name: Set up non-sandboxed Nix
         uses: ./.forgejo/actions/setup-nix
@@ -110,7 +110,7 @@ jobs:
           FORGEJO_REPOSITORY: ${{ forgejo.repository }}
         run: |
           python3 -m maintenance.dependency_updates publish --report "$UPDATE_REPORT" \
-            --server "$FORGEJO_SERVER_URL" --repository "$FORGEJO_REPOSITORY"
+            --server "$DEPENDENCY_UPDATE_SERVER_URL" --repository "$FORGEJO_REPOSITORY"
       - name: Show update diagnostics
         if: always()
         run: |

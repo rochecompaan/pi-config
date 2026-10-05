@@ -11,6 +11,9 @@
       checks."codegraph-viz-tests" =
         pkgs.runCommand "codegraph-viz-tests" { nativeBuildInputs = [ pkgs.nodejs_24 ]; }
           ''
+            # npm writes logs under HOME even when every test passes.
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
             cp -r ${../../packages/codegraph-viz} src
             chmod -R u+w src
             cd src
