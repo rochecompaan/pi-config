@@ -12,37 +12,38 @@
   },
   "subagents": {
     "agentOverrides": {
-      "scout": {
-        "model": "openai-codex/gpt-5.6-luna",
-        "thinking": "low"
+      "context-builder": {
+        "model": "openai-codex/gpt-5.6-terra",
+        "thinking": "medium"
       },
       "delegate": {
         "model": "openai-codex/gpt-5.6-luna",
         "thinking": "low"
       },
+      "oracle": {
+        "model": "openai-codex/gpt-6.1-sol",
+        "thinking": "xhigh"
+      },
+      "planner": {
+        "model": "openai-codex/gpt-6.1-sol",
+        "thinking": "xhigh"
+      },
       "researcher": {
         "model": "openai-codex/gpt-5.6-terra",
         "thinking": "medium"
       },
-      "context-builder": {
-        "model": "openai-codex/gpt-5.6-terra",
-        "thinking": "medium"
+      "reviewer": {
+        "model": "openai-codex/gpt-6.1-sol",
+        "thinking": "high"
       },
-      "planner": {
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "xhigh"
+      "scout": {
+        "model": "openai-codex/gpt-5.6-luna",
+        "thinking": "low"
       },
       "worker": {
-        "model": "openai-codex/gpt-5.6-terra",
-        "thinking": "high"
-      },
-      "reviewer": {
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "xhigh"
-      },
-      "oracle": {
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "high"
+        "model": "openai-codex/gpt-6.1-sol",
+        "thinking": "high",
+        "defaultContext": "fresh"
       }
     }
   },
