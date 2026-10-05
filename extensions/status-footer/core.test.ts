@@ -44,8 +44,28 @@ function footerInput() {
 
 test("renders one bracketed line with dim middle dots and the git branch last", () => {
 	assert.deepEqual(buildFooterLines(footerInput(), 160, terminalWidth), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH · LOCAL] [ main]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice ○ paging] [AUTH · LOCAL] [ main]",
 	]);
+});
+
+test("shows whether context paging is on beside relay and voice", () => {
+	const cases = [
+		{ status: "paging on", part: "<connected>● paging</connected>" },
+		{ status: "\u001b[32mpaging on\u001b[0m", part: "<connected>● paging</connected>" },
+		{ status: "paging off", part: "<error>○ paging</error>" },
+		{ status: undefined, part: "<error>○ paging</error>" },
+	];
+	for (const { status, part } of cases) {
+		const input = footerInput();
+		if (status !== undefined) input.extensionStatuses.set("context-paging", status);
+		const [line] = buildFooterLines(
+			input,
+			240,
+			terminalWidth,
+			(tone, text) => `<${tone}>${text}</${tone}>`,
+		);
+		assert.ok(line.includes(`<error>○ voice</error><dim> </dim>${part}<dim>]</dim>`), line);
+	}
 });
 
 test("shows compact cache read and write counts between context and cost", () => {
@@ -157,8 +177,8 @@ test("wraps complete ANSI-styled components at an exact-fit boundary", () => {
 		"[gpt-5.4 · high] [ctx 35% · 132k/372k]",
 		"[cache r/w · 0/0] [$2.337]",
 		"[Week 95% rem · 6d21h]",
-		"[● relay ○ voice] [AUTH · LOCAL]",
-		"[ main]",
+		"[● relay ○ voice ○ paging]",
+		"[AUTH · LOCAL] [ main]",
 	]);
 	assert.equal(terminalWidth(lines[0]), 38);
 });

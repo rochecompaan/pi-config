@@ -105,7 +105,8 @@ test("installs a live wrapping footer and refreshes it from Codex rate-limit hea
 	);
 
 	assert.deepEqual(component.render(120).map(stripAnsi), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [● relay ○ voice] [AUTH work@example.com] [ main]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [● relay ○ voice ○ paging] [AUTH work@example.com]",
+		"[ main]",
 	]);
 
 	await harness.hooks.get("after_provider_response")?.({
@@ -117,7 +118,7 @@ test("installs a live wrapping footer and refreshes it from Codex rate-limit hea
 	}, ctx);
 	assert.equal(renders, 1);
 	assert.deepEqual(component.render(120).map(stripAnsi), [
-		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice]",
+		"[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice ○ paging]",
 		"[AUTH work@example.com] [ main]",
 	]);
 
@@ -188,6 +189,7 @@ test("renders footer components with the approved Gruvbox colors", async () => {
 				["remote-pi:relay", "🟢 relay"],
 				["voice", "MIC LOCAL"],
 				["auth-scope", "auth: LOCAL"],
+				["context-paging", "paging on"],
 			]),
 			onBranchChange: () => () => {},
 		},
@@ -204,8 +206,9 @@ test("renders footer components with the approved Gruvbox colors", async () => {
 	assert.ok(line.includes(rgb(235, 219, 178, " work@example.com")));
 	assert.ok(line.includes(rgb(214, 93, 14, " main")));
 	assert.ok(line.includes(rgb(251, 73, 52, "○ voice")));
+	assert.ok(line.includes(rgb(184, 187, 38, "● paging")));
 	assert.ok(line.includes(rgb(102, 92, 84, "[")));
-	assert.equal(stripAnsi(line), "[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice] [AUTH work@example.com] [ main]");
+	assert.equal(stripAnsi(line), "[gpt-5.4 · high] [ctx 35% · 132k/372k] [cache r/w · 0/0] [$2.337] [Week 95% rem · 6d21h] [● relay ○ voice ● paging] [AUTH work@example.com] [ main]");
 });
 
 test("renders the auth scope fallback with a dim separator and cream scope", async () => {

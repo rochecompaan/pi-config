@@ -64,6 +64,10 @@ programs.roche-pi.settings.contextPaging.enabled = true;
 
 A trusted project's `.pi/settings.json` can also set `contextPaging`. While paging is off, the recovery tools stay registered but refuse to run. The package README describes `tokenBudget`, `trimToTokens`, and how paging works.
 
+To change paging for the current session only, run `/context-paging on` or `/context-paging off`. `/context-paging` shows the current state. The command does not change saved settings. A new session, a resume, a fork, or a reload restores them.
+
+The status footer shows the current state next to relay and voice. A green `● paging` means paging is on. A red `○ paging` means it is off.
+
 ## Per-project usage
 
 A project can provide Pi without installing the Home Manager module. For a devenv project, add the flake input to `devenv.yaml`:

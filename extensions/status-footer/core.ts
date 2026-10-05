@@ -156,6 +156,12 @@ function voiceStatus(statuses: ReadonlyMap<string, string>): FooterPart {
 	return { text: "○ voice", tone: "error" };
 }
 
+function pagingStatus(statuses: ReadonlyMap<string, string>): FooterPart {
+	const status = stripAnsi(statuses.get("context-paging"));
+	if (/^paging on$/i.test(status)) return { text: "● paging", tone: "connected" };
+	return { text: "○ paging", tone: "error" };
+}
+
 function authStatus(input: FooterInput): FooterPart[] {
 	const status = stripAnsi(input.extensionStatuses.get("auth-scope"));
 	const scope = status.match(/\bauth:\s*(GLOBAL|LOCAL)\b/i)?.[1]?.toUpperCase();
@@ -252,6 +258,8 @@ export function buildFooterLines(
 			relayStatus(input.extensionStatuses),
 			{ text: " ", tone: "dim" },
 			voiceStatus(input.extensionStatuses),
+			{ text: " ", tone: "dim" },
+			pagingStatus(input.extensionStatuses),
 		]),
 		bracketed(authStatus(input)),
 		bracketed([{ text: ` ${input.gitBranch?.trim() || "—"}`, tone: "branch" }]),
