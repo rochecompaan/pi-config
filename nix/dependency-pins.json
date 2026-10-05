@@ -27,7 +27,7 @@
   },
   "pi-claude-bridge": {
     "hash": "sha256-tJFAMykelEeQC0Pq1UxN6ZcB36jO6VsM3A0ThUKaVJ4=",
-    "npmDepsHash": "sha256-o/gjQyT/Y9hnBzp8YJeG7lm4RS4tVc0bzUg8V5Fxwnk=",
+    "npmDepsHash": "sha256-8AEYdVqK+no03Uc7muBpMpjL+sMl9SxTF+WnjwnqCdQ=",
     "rev": "227f5eb4450a070dfbc083a7fe75b8b35366b941",
     "version": "0.8.0-unstable-2026-09-23"
   },

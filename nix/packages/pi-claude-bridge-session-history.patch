@@ -1,0 +1,296 @@
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,12 +8,14 @@
+ import { appendFileSync, mkdirSync, realpathSync, statSync } from "fs";
+ import { dirname, join } from "path";
+ import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.js";
++import { planAskClaudeSession, planHistoryReconstruction, prependHistoryTranscript, renderHistoryTranscript } from "./history-reconstruction.js";
++import { historyStartsWith, sessionHistoryKeys } from "./history-identity.js";
+ import { DEBUG_LOG_PATH, DIAG_LOG_PATH } from "./log-paths.js";
+ import { applyLongContext, buildModels, claudeCodeModelId, type LongContextSettings, resolveModel as _resolveModel } from "./models.js";
+ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, renderSkillsBlock } from "./skills.js";
+ import { verifyWrittenSession as _verifyWrittenSession } from "./session-verify.js";
+ import { extractAllToolResults as _extractAllToolResults, type McpResult } from "./extract-tool-results.js";
+-import { QueryContext, ctx } from "./query-state.js";
++import { QueryContext, ctx, rotateCtx } from "./query-state.js";
+ import { makePromptStream, userMessage, type PromptStream } from "./prompt-stream.js";
+ import { claudeCodeSettings, loadConfig, markStartupNoticeShown, type Config } from "./config.js";
+ import {
+@@ -212,6 +214,8 @@
+ 	// with no query in flight does NOT set this — there's no concurrent CC writer
+ 	// then, so in-place rebuild (preserve UUID, deleteSession + createSession) is safe.
+ 	forceRotate?: boolean;
++	// A matching cursor alone cannot detect a transformed or paged history.
++	historyKeys: string[];
+ }
+ 
+ /**
+@@ -671,6 +675,8 @@
+ interface SyncResult {
+ 	sessionId: string | null;
+ 	preserveSharedSession?: boolean;
++	historyTranscript?: string;
++	historyKeys: string[];
+ }
+ 
+ /**
+@@ -766,6 +772,17 @@
+ 	const sharedSession = sessionStateFor(piSessionId);
+ 	const history = nonSystemMessages(messages);
+ 	const priorMessages = history.slice(0, turnStart(history)); // everything before the current user turn
++	const historyKeys = sessionHistoryKeys(history, priorMessages.length);
++	// Without a Pi id, an overlapping child cannot own the anonymous mirror.
++	// Give it selected-history context without touching the parent's session.
++	if (piSessionId == null && ctx().activeQuery !== null) {
++		return {
++			sessionId: null,
++			preserveSharedSession: true,
++			historyTranscript: priorMessages.length ? renderHistoryTranscript(priorMessages) : undefined,
++			historyKeys,
++		};
++	}
+ 
+ 	// REUSE path
+ 	//
+@@ -774,7 +791,8 @@
+ 	// pi-side history rewrites such as /compact and session_tree: without it,
+ 	// missed = [].slice(cursor) can falsely hit REUSE and resume an unrelated
+ 	// longer CC session. See issue #25.
+-	if (sharedSession && !sharedSession.needsRebuild && priorMessages.length >= sharedSession.cursor) {
++	const historyContinues = sharedSession?.historyKeys !== undefined && historyStartsWith(history, sharedSession.historyKeys);
++	if (sharedSession && !sharedSession.needsRebuild && historyContinues && priorMessages.length >= sharedSession.cursor) {
+ 		const missed = priorMessages.slice(sharedSession.cursor);
+ 		const trailingAssistantOnly =
+ 			missed.length === 1 && (missed[0] as { role?: string }).role === "assistant";
+@@ -786,8 +804,13 @@
+ 			debug(`Case 3: resuming session ${sharedSession.sessionId.slice(0, 8)}, cursor=${sharedSession.cursor}`);
+ 		}
+ 		debug(`syncResult: path=reuse sessionId=${sharedSession.sessionId} cursor=${sharedSession?.cursor}`);
+-		return { sessionId: sharedSession.sessionId };
++		return { sessionId: sharedSession.sessionId, historyKeys };
+ 		}
++	}
++	const reconstruction = planHistoryReconstruction(priorMessages, PROVIDER_ID);
++	if (reconstruction.kind === "transcript") {
++		setSessionStateFor(piSessionId, null);
++		return { sessionId: null, historyTranscript: reconstruction.transcript, historyKeys };
+ 	}
+ 	// This is what keeps a caller with a pruned or short context from resuming
+ 	// — then overwriting — the bucket's session: shorter-than-cursor means the
+@@ -805,17 +828,18 @@
+ 	// Only reachable when needsRebuild is false — user-facing history rewrites
+ 	// (/compact, session_tree, /new, fork) always set needsRebuild or clear
+ 	// sharedSession before the next syncSharedSession call.
+-	if (sharedSession && !sharedSession.needsRebuild && priorMessages.length < sharedSession.cursor) {
++	if (sharedSession && !sharedSession.needsRebuild && historyContinues && priorMessages.length < sharedSession.cursor) {
+ 		debug(`Case 1 synthetic: clean start for shorter context, preserving shared session ${sharedSession.sessionId.slice(0, 8)}, cursor=${sharedSession.cursor}`);
+ 		debug(`syncResult: path=clean-start preserve-shared sessionId=${sharedSession.sessionId} cursor=${sharedSession.cursor}`);
+-		return { sessionId: null, preserveSharedSession: true };
++		return { sessionId: null, preserveSharedSession: true, historyKeys };
+ 	}
+ 
+ 	// REBUILD path
+ 	if (priorMessages.length === 0) {
+ 		debug(`Case 1: clean start, ${history.length} total messages`);
+ 		debug(`syncResult: path=clean-start`);
+-		return { sessionId: null };
++		setSessionStateFor(piSessionId, null);
++		return { sessionId: null, historyKeys };
+ 	}
+ 	const previousSessionId = sharedSession?.sessionId;
+ 	const previousCursor = sharedSession?.cursor ?? 0;
+@@ -841,7 +865,7 @@
+ 	// records, not messages: `messages` filters out the attachment records that
+ 	// carrying an `@file` expansion across a rebuild writes into the same file.
+ 	verifyWrittenSession(session.jsonlPath, session.sessionId, session.records.length, cwd);
+-	setSessionStateFor(piSessionId, { sessionId: session.sessionId, cursor: priorMessages.length, cwd, piSessionId: piSessionId ?? undefined });
++	setSessionStateFor(piSessionId, { sessionId: session.sessionId, cursor: priorMessages.length, cwd, piSessionId: piSessionId ?? undefined, historyKeys });
+ 	if (previousSessionId === undefined) {
+ 		debug(`Case 2: first turn with ${priorMessages.length} prior messages → session ${session.sessionId.slice(0, 8)}, ${session.records.length} records`);
+ 	} else if (preserveId) {
+@@ -852,7 +876,7 @@
+ 	}
+ 	debugSessionPaths(`${session.sessionId.slice(0, 8)}`, cwd, session.jsonlPath);
+ 	debug(`syncResult: path=rebuild sessionId=${session.sessionId} priors=${priorMessages.length} ${previousSessionId === undefined ? "first" : preserveId ? "preserved" : "rotated-post-abort"}`);
+-	return { sessionId: session.sessionId };
++	return { sessionId: session.sessionId, historyKeys };
+ }
+ 
+ // The SDK's query(), or a test double (see setQuery). The compact/summary
+@@ -1685,19 +1709,21 @@
+ 	// contextForToolResults only matches ids against contexts still in it.
+ 	activeQueryContexts.delete(c);
+ 	c.turnToolCallIds = [];
+-	c.promptStream?.fail(new Error("conversation rewritten"));
++	c.promptStream?.fail(new Error("Context rewritten"));
+ 	c.promptStream = null;
+ 	// Settle the parked handlers before killing the CLI, for drainForAbort's
+ 	// reason: one left awaiting a dead subprocess never settles.
+-	c.releasePendingToolCalls("Context was compacted; this query was discarded.");
++	c.releasePendingToolCalls("Context rewritten");
+ 	void discarded?.interrupt?.().catch(() => {});
+ 	try { discarded?.close?.(); } catch {}
+ 	// The CLI we just killed may still flush a record into the session JSONL, and
+ 	// the rebuild is the next thing that happens — so rotate rather than race it,
+ 	// exactly as after an abort. Only this session's mirror: the discarding query
+ 	// proves its own conversation is the one being rebuilt around.
+-	const state = sessionStateFor(c.piSessionId);
+-	if (state) setSessionStateFor(c.piSessionId, { ...state, needsRebuild: true, forceRotate: true });
++	// A fresh transcript query must not resume a file the discarded CLI can write.
++	// Anonymous reentrant children do not own the parent's anonymous mirror.
++	if (c.piSessionId !== null || c === ctx()) setSessionStateFor(c.piSessionId, null);
++	rotateCtx(c);
+ 	if (c.piSessionId) historyRewrittenBySession.delete(c.piSessionId);
+ 	debug("provider: history rewritten under a parked query — discarded it, rebuilding from current history");
+ }
+@@ -1738,7 +1764,11 @@
+ 	// The staleness mark is per pi session: a subagent's compaction (its own
+ 	// AgentSession, sharing this process) must not discard the parent's parked
+ 	// query, and vice versa.
+-	const rewrittenUnderQuery = Boolean(resultCtx?.historyStale);
++	const rewrittenUnderQuery = Boolean(resultCtx && (
++		resultCtx.historyStale
++		|| resultCtx.historyKeys === null
++		|| !historyStartsWith(context.messages, resultCtx.historyKeys)
++	));
+ 	if (resultCtx && rewrittenUnderQuery) {
+ 		discardRewrittenQuery(resultCtx);
+ 		resultCtx = undefined;
+@@ -1756,6 +1786,7 @@
+ 	// (everything after the last assistant message) and match against waiting MCP
+ 	// handlers. Results that arrive before their handler get queued in pendingResults.
+ 	if (resultCtx) {
++		resultCtx.historyKeys = sessionHistoryKeys(context.messages, context.messages.length - 1);
+ 		claimCurrentPiStream(stream, "tool-result", resultCtx);
+ 		resultCtx.resetTurnState(model);
+ 		// A rewrite that armed the mark after this query parked gets copied here,
+@@ -1868,6 +1899,7 @@
+ 	queryCtx.turnToolCallIds = [];
+ 	queryCtx.resetTurnState(model);
+ 	queryCtx.latestCursor = 0;
++	queryCtx.historyKeys = sessionHistoryKeys(context.messages, context.messages.length - 1);
+ 	// The served pi session, for rewrite attribution on delivery (issue #101
+ 	// follow-up) and on SessionState. A fresh instance of this module inside a
+ 	// worktree-spawned subagent has its own contexts; each records its own.
+@@ -1885,13 +1917,28 @@
+ 	// Which pi session this query serves — the attribution key for history
+ 	// rewrites (session_compact / session_tree) and for SessionState above.
+ 	const piSessionId = options?.sessionId ?? null;
+-	const syncResult = syncSharedSession(context.messages, cwd, customToolNameToSdk, cliModel, piSessionId);
++	const syncResult: SyncResult = rewrittenUnderQuery
++		? {
++			sessionId: null,
++			preserveSharedSession: piSessionId === null && isReentrant,
++			historyTranscript: renderHistoryTranscript(context.messages),
++			historyKeys: queryCtx.historyKeys,
++		}
++		: syncSharedSession(context.messages, cwd, customToolNameToSdk, cliModel, piSessionId);
+ 	// This query starts from the history pi has now: consume this session's
+ 	// armed rewrite — a sibling pi session's stays armed for its own queries.
+ 	if (piSessionId) historyRewrittenBySession.delete(piSessionId);
+-	const { sessionId: resumeSessionId } = syncResult;
+-	const promptBlocks = extractUserPromptBlocks(context.messages);
+-	let promptText = extractUserPrompt(context.messages) ?? "";
++	const { sessionId: resumeSessionId, historyTranscript } = syncResult;
++	const continuationPrompt = "[Continue the current task using the completed tool results and latest user instructions in the transcript. Do not repeat completed tool calls.]";
++	let promptText = rewrittenUnderQuery ? continuationPrompt : extractUserPrompt(context.messages) ?? "";
++	let promptBlocks = rewrittenUnderQuery ? null : extractUserPromptBlocks(context.messages);
++	if (rewrittenUnderQuery) {
++		const images = context.messages
++			.filter((message) => message.role === "user")
++			.flatMap((message) => extractUserPromptBlocks([message]) ?? [])
++			.filter((block) => block.type === "image");
++		if (images.length) promptBlocks = [{ type: "text", text: continuationPrompt }, ...images];
++	}
+ 
+ 	// A turn continuing past a discarded query ends at its tool result, not at a
+ 	// prompt, so say what happened rather than falling into the empty-prompt
+@@ -1917,6 +1964,12 @@
+ 		});
+ 		// Recover: use a continuation prompt so the SDK doesn't send an empty text block
+ 		promptText = "[continue]";
++	}
++
++	if (historyTranscript) {
++		const prepared = prependHistoryTranscript(historyTranscript, promptText, promptBlocks as Array<Record<string, unknown>> | null);
++		promptText = prepared.promptText;
++		promptBlocks = prepared.promptBlocks as typeof promptBlocks;
+ 	}
+ 
+ 	// Always stream the prompt rather than passing a string: a parked input
+@@ -2034,7 +2087,7 @@
+ 	}
+ 
+ 	// Background consumer — runs until query ends
+-	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted, queryCtx)
++	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted || abandonedQueries.has(sdkQuery), queryCtx)
+ 		.then(async ({ capturedSessionId }) => {
+ 			debug(`provider: consumeQuery completed, stopReason=${queryCtx.turnOutput?.stopReason}, error=${queryCtx.turnOutput?.errorMessage}, aborted=${wasAborted}`);
+ 
+@@ -2083,7 +2136,7 @@
+ 					debug(`provider: query done, session=${sessionId.slice(0, 8)}, cursor=${cursor}`);
+ 					// A missed steer may precede the first mirror or arrive while this
+ 					// query is still able to complete. Preserve both rebuild signals.
+-					setSessionStateFor(queryCtx.piSessionId, { ...state, sessionId, cursor, cwd, piSessionId: queryCtx.piSessionId ?? undefined, needsRebuild: queryCtx.missedSteer || state?.needsRebuild });
++					setSessionStateFor(queryCtx.piSessionId, { ...state, sessionId, cursor, cwd, piSessionId: queryCtx.piSessionId ?? undefined, needsRebuild: queryCtx.missedSteer || state?.needsRebuild, historyKeys: queryCtx.historyKeys ?? syncResult.historyKeys });
+ 				}
+ 			}
+ 
+@@ -2185,18 +2238,14 @@
+ 	// carries it — passed here as piSessionId and used for every map access.
+ 	const askClaudeSessionId = options?.piSessionId ?? null;
+ 	let resumeSessionId: string | null = null;
++	let persistSession = !options?.isolated;
+ 	if (!options?.isolated && options?.context?.length) {
+-		const askClaudeState = sessionStateFor(askClaudeSessionId);
+-		if (askClaudeState) {
+-			// Provider already has a session — just resume from it
+-			// Any missed messages from other providers were already handled by the provider's Case 4
+-			resumeSessionId = askClaudeState.sessionId;
+-		} else {
+-			// No provider session yet — create one from pi's context
+-			const contextWithPrompt = [...options.context, { role: "user" as const, content: prompt, timestamp: Date.now() }];
+-			const sync = syncSharedSession(contextWithPrompt as Context["messages"], cwd, undefined, cliModel, askClaudeSessionId);
+-			resumeSessionId = sync.sessionId;
+-		}
++		const contextWithPrompt = [...options.context, { role: "user" as const, content: prompt, timestamp: Date.now() }];
++		const sync = syncSharedSession(contextWithPrompt as Context["messages"], cwd, undefined, cliModel, askClaudeSessionId);
++		const sessionPlan = planAskClaudeSession(sync.sessionId);
++		resumeSessionId = sessionPlan.resumeSessionId;
++		persistSession = sessionPlan.persistSession;
++		if (sync.historyTranscript) prompt = prependHistoryTranscript(sync.historyTranscript, prompt).promptText;
+ 	}
+ 
+ 	// Mode → disallowed tools
+@@ -2256,7 +2305,7 @@
+ 			settingSources: ["user", "project"] as SettingSource[],
+ 			extraArgs,
+ 			...(resumeSessionId ? { resume: resumeSessionId } : {}),
+-			...(options?.isolated ? { persistSession: false } : {}),
++			...(persistSession ? {} : { persistSession: false }),
+ 			...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
+ 			...makeCliDebugOptions("askclaude"),
+ 		},
+--- a/src/query-state.ts
++++ b/src/query-state.ts
+@@ -18,6 +18,7 @@
+ export class QueryContext {
+ 	// Query-scoped (fully isolated per query)
+ 	activeQuery: unknown | null = null;
++	historyKeys: string[] | null = null;
+ 	currentPiStream: AssistantMessageEventStream | null = null;
+ 	latestCursor = 0;
+ 	pendingToolCalls = new Map<string, PendingToolCall>();
+@@ -105,6 +106,12 @@
+ 
+ export function ctx(): QueryContext { return _ctx; }
+ 
++export function rotateCtx(previous: QueryContext): QueryContext {
++	const replacement = new QueryContext();
++	if (_ctx === previous) _ctx = replacement;
++	return replacement;
++}
++
+ // Test-only: replace the module-level context so test files start clean.
+ // Not called from production.
+ export function resetCtx(): void {

@@ -93,6 +93,33 @@ class CandidateTests(unittest.TestCase):
         self.assertTrue(candidate.changed)
         self.assertFalse(candidate.validated)
 
+    def test_repaired_upstream_lock_is_staged_with_its_source_update(self):
+        lock_path = "pkg-package-lock.json"
+        self.catalog["sources"]["a"].update(package="pkg",
+            lock={"kind": "repaired-upstream", "path": lock_path})
+        self.catalog["units"]["one"]["paths"].append(lock_path)
+        self.pins["a"].update(version="1.0.0", npmDepsHash=OLD_HASH)
+        (self.root / "nix/dependency-pins.json").write_text(json.dumps(self.pins))
+        (self.root / lock_path).write_text('{"old":true}')
+        self.save_catalog()
+        self.commit()
+        manifest = {"name": "pkg", "version": "2.0.0"}
+        lock = {"lockfileVersion": 3, "packages": {"": manifest}}
+        (self.fetched / "package.json").write_text(json.dumps(manifest))
+        (self.fetched / "package-lock.json").write_text(json.dumps(lock))
+
+        def runner(command, **kwargs):
+            if command[0] == "prefetch-npm-deps":
+                return subprocess.CompletedProcess(command, 0, NEW_HASH + "\n", "")
+            return self.runner(command, **kwargs)
+
+        candidate = prepare(self.root, self.units["one"], "main", self.base, runner,
+            lambda url: {}, lambda url: f"{SHA}\trefs/tags/v2.0.0")
+        self.assertEqual(candidate.paths, ("nix/dependency-pins.json", lock_path))
+        self.assertEqual(json.loads((self.root / lock_path).read_text()), lock)
+        self.assertEqual(self.git("show", ":" + lock_path), json.dumps(lock))
+        self.assertEqual(json.loads((self.root / "nix/dependency-pins.json").read_text())["a"]["npmDepsHash"], NEW_HASH)
+
     def test_same_source_does_not_regenerate_npm_lock(self):
         self.catalog["sources"]["a"].update(package="pkg", lock={"kind": "upstream"})
         self.pins["a"].update(version="1.0.0", npmDepsHash=OLD_HASH)

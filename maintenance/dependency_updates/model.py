@@ -113,7 +113,7 @@ def _check_policy(source_id: str, policy: dict, pins: dict) -> None:
         raise UpdateError("inventory", f"Unsupported companion rule: {source_id}")
     lock = policy.get("lock")
     if lock is not None:
-        if not isinstance(lock, dict) or lock.get("kind") not in {"maintained", "upstream", "patched-upstream"}:
+        if not isinstance(lock, dict) or lock.get("kind") not in {"maintained", "upstream", "patched-upstream", "repaired-upstream"}:
             raise UpdateError("inventory", f"Unsupported lock policy: {source_id}")
         for key in ("path", "patch"):
             if key in lock:
@@ -158,8 +158,8 @@ def load_catalog(root: Path) -> tuple[dict[str, Unit], dict[str, dict]]:
             if policy["channel"] == "companion" and policy.get("primary") not in earlier:
                 raise UpdateError("inventory", "Companion must follow its primary in the same unit")
             lock = policy.get("lock", {})
-            if lock.get("kind") == "maintained" and lock.get("path") not in paths:
-                raise UpdateError("inventory", "Maintained lock is not owned by its unit")
+            if lock.get("kind") in {"maintained", "repaired-upstream"} and lock.get("path") not in paths:
+                raise UpdateError("inventory", "Generated lock is not owned by its unit")
             earlier.add(source_id)
             owned.add(source_id)
         units[unit_id] = Unit(unit_id, sources, builds, paths)

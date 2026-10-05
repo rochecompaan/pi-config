@@ -13,6 +13,11 @@ defaults:
   run:
     shell: bash
 
+# The runner's server_url can point at an internal HTTP service.
+# Checkout and publication must use the same trusted HTTPS origin.
+env:
+  FORGEJO_SERVER_URL: ${{ vars.DEPENDENCY_UPDATE_SERVER_URL || 'https://git.compaan.cloud' }}
+
 jobs:
   discovery:
     runs-on: ${{ vars.DEPENDENCY_UPDATE_RUNNER || 'ubuntu-latest' }}
@@ -35,6 +40,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ forgejo.event.repository.default_branch }}
+          github-server-url: ${{ env.FORGEJO_SERVER_URL }}
           persist-credentials: false
       - name: Set up non-sandboxed Nix
         uses: ./.forgejo/actions/setup-nix
@@ -77,6 +83,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ needs.discovery.outputs.base_sha }}
+          github-server-url: ${{ env.FORGEJO_SERVER_URL }}
           persist-credentials: false
       - name: Set up non-sandboxed Nix
         uses: ./.forgejo/actions/setup-nix
@@ -100,7 +107,6 @@ jobs:
         env:
           DEPENDENCY_UPDATE_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
           DEPENDENCY_UPDATE_BOT_USERNAME: ${{ vars.DEPENDENCY_UPDATE_BOT_USERNAME }}
-          FORGEJO_SERVER_URL: ${{ forgejo.server_url }}
           FORGEJO_REPOSITORY: ${{ forgejo.repository }}
         run: |
           python3 -m maintenance.dependency_updates publish --report "$UPDATE_REPORT" \

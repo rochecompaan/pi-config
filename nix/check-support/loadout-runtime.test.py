@@ -81,6 +81,15 @@ class LoadoutRuntimeTest(unittest.TestCase):
         result = self.probe(before_reconnect=["/loadout use matt"])
         self.assert_profile(result, "matt")
 
+    def test_saved_skills_filter_an_earlier_forced_system_prompt(self):
+        # Other packages override the prompt before loadout filters its skills.
+        (self.agent / "loadout.json").write_text(json.dumps({
+            "enabledTools": ["read"], "enabledSkills": ["tdd"],
+        }))
+        result = self.probe()
+        self.assertEqual(result["skills"], ["tdd"])
+        self.assertFalse(result["bootstrap"])
+
     def test_restricted_saved_tools_are_not_reenabled_by_later_startup_steps(self):
         selection = json.loads((self.agent / "loadout.json").read_text())
         selection["enabledTools"] = ["read"]

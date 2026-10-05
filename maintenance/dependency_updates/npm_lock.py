@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 
 from .model import UpdateError, check_hash, valid_path
+from .npm_integrity import repair_lock_integrity
+from .sources import read_upstream_json
 
 MAX_JSON = 20 * 1024 * 1024
 DEPENDENCY_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "peerDependenciesMeta")
@@ -95,7 +97,8 @@ def _execute(command: list[str], work: Path, run, stage: str) -> str:
     return result.stdout
 
 
-def refresh_npm_lock(root: Path, source_id: str, fetched: Path, policy: dict, run=subprocess.run) -> tuple[bytes, str]:
+def refresh_npm_lock(root: Path, source_id: str, fetched: Path, policy: dict, run=subprocess.run,
+                     read_json=read_upstream_json) -> tuple[bytes, str]:
     manifest = effective_manifest(source_id, source_manifest(fetched, policy["fetcher"]))
     rule = policy["lock"]
     with tempfile.TemporaryDirectory(prefix="dependency-lock-") as directory:
@@ -113,8 +116,12 @@ def refresh_npm_lock(root: Path, source_id: str, fetched: Path, policy: dict, ru
                 raise UpdateError("lockfile", "Maintained seed lock is missing") from error
             _execute(["npm", "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund",
                       "--registry=https://registry.npmjs.org"], work, run, "lockfile")
-        elif rule["kind"] in {"upstream", "patched-upstream"}:
-            lock_path.write_bytes(_source_bytes(fetched, policy["fetcher"], "package-lock.json"))
+        elif rule["kind"] in {"upstream", "patched-upstream", "repaired-upstream"}:
+            content = _source_bytes(fetched, policy["fetcher"], "package-lock.json")
+            if rule["kind"] == "repaired-upstream":
+                _validate_lock(content, manifest)
+                content = repair_lock_integrity(content, read_json)
+            lock_path.write_bytes(content)
             if rule["kind"] == "patched-upstream":
                 patch = root / valid_path(rule["patch"])
                 _execute(["patch", "--batch", "--forward", "--fuzz=0", "-p1", "--input", str(patch)], work, run, "lockfile")

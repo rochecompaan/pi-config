@@ -1,3 +1,4 @@
+import base64
 import copy
 import io
 import json
@@ -126,6 +127,31 @@ class LockRefreshTests(unittest.TestCase):
         self.assertEqual(content, original)
         self.assertEqual((self.source / "package-lock.json").read_bytes(), original)
         self.assertEqual(digest, HASH)
+
+    def test_repaired_upstream_uses_current_lock_versions_without_npm_install(self):
+        self.policy["lock"] = {"kind": "repaired-upstream", "path": "pkg-package-lock.json"}
+        lock = lock_for(self.manifest)
+        url = "https://registry.npmjs.org/lib/-/lib-1.8.0.tgz"
+        lock["packages"]["node_modules/lib"] = {"version": "1.8.0", "resolved": url}
+        original = json.dumps(lock).encode()
+        (self.source / "package-lock.json").write_bytes(original)
+        integrity = "sha512-" + base64.b64encode(bytes(range(64))).decode()
+
+        def read_json(request):
+            self.assertEqual(request, "https://registry.npmjs.org/lib")
+            return {"versions": {"1.8.0": {"name": "lib", "version": "1.8.0",
+                "dist": {"tarball": url, "integrity": integrity}}}}
+
+        def prefetch_only(command, **kwargs):
+            self.assertEqual(command[0], "prefetch-npm-deps")
+            return self.fake_run(command, **kwargs)
+
+        content, digest = refresh_npm_lock(self.root, "pkg", self.source, self.policy, prefetch_only, read_json)
+        result = json.loads(content)
+        self.assertEqual(result["packages"]["node_modules/lib"],
+            {"version": "1.8.0", "resolved": url, "integrity": integrity})
+        self.assertEqual(digest, HASH)
+        self.assertEqual((self.source / "package-lock.json").read_bytes(), original)
 
     def test_inconsistent_root_declarations_are_rejected(self):
         self.policy["lock"] = {"kind": "upstream"}

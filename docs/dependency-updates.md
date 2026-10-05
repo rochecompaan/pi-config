@@ -79,6 +79,11 @@ It does not store the token in a URL, command argument, or Git configuration.
 
 The Forgejo API requires HTTPS and refuses redirects.
 The Git origin must match the configured Forgejo repository.
+Checkout and publication use `https://git.compaan.cloud`, not the runner's internal service URL.
+For another deployment, set `DEPENDENCY_UPDATE_SERVER_URL` to its trusted public HTTPS origin.
+The workflow passes this origin to the checkout action's `github-server-url` input.
+Both checkout steps and publication use the same origin.
+The runner must reach that origin and trust its TLS certificate.
 
 ## Update units
 
@@ -112,7 +117,10 @@ Commit-based sources follow the upstream default branch and retain an exact comm
 Source hashes retain each Nix fetcher's unpacking and submodule policy.
 Affected npm locks and cache hashes change with their consuming source.
 Unchanged sources do not regenerate npm locks.
-Local compatibility patches remain intact.
+Local compatibility behavior remains intact.
+The bridge uses the upstream lock's exact versions and restores missing integrity from matching npm registry metadata.
+The repaired lock stays in the unit's owned files and supplies the Nix package build.
+The repair never runs npm lifecycle scripts.
 
 The bot branch for each unit is `automation/dependencies/UNIT`.
 Publication creates one open PR or reuses the existing bot PR.

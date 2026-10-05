@@ -1,10 +1,10 @@
 --- a/dist/modes/interactive/components/tool-execution.js
 +++ b/dist/modes/interactive/components/tool-execution.js
-@@ -1,9 +1,11 @@
+@@ -1,2 +1,2 @@
 -import { Box, Container, getCapabilities, Image, MouseRegion, Spacer, Text, } from "@earendil-works/pi-tui";
 +import { Box, Container, getCapabilities, Image, MouseRegion, Spacer, Text, truncateToWidth, } from "@earendil-works/pi-tui";
  import { formatToolCallWithArgs, getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
- import { convertToPng } from "../../../utils/image-convert.js";
+@@ -4,6 +4,8 @@
  import { theme } from "../theme/theme.js";
  import { keyHint } from "./keybinding-hints.js";
  const FALLBACK_PREVIEW_LINES = 10;

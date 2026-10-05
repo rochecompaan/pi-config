@@ -181,7 +181,7 @@ export async function loadProvider(modulePath) {
     load(url, context, nextLoad) {
       if (!url.startsWith('file:') || !url.endsWith('.ts')) return nextLoad(url, context);
       let source = readFileSync(fileURLToPath(url), 'utf8');
-      if (url === providerUrl) source += '\nexport const __providerHarness = { request: streamClaudeAgentRequest, activeQueryContexts, root: ctx };\n';
+      if (url === providerUrl) source += '\nexport const __providerHarness = { request: typeof streamClaudeAgentRequest === "function" ? streamClaudeAgentRequest : streamClaudeAgentSdk, activeQueryContexts, root: ctx, ask: promptAndWait };\n';
       return { format: 'module', source: stripTypeScriptTypes(source, { mode: 'transform' }), shortCircuit: true };
     },
   });
@@ -203,12 +203,18 @@ export async function loadProvider(modulePath) {
     queries.splice(0);
     __test.resetSharedSession();
   };
+  const hasSessionIds = __test.setSharedSession.length === 2;
   return {
-    model, PROVIDER_ID, queries,
-    request: (messages, signal) => __providerHarness.request(model, { messages, tools }, { signal }),
+    model, PROVIDER_ID, queries, hasSessionIds,
+    request: (messages, signal, sessionId) => __providerHarness.request(model, { messages, tools }, { signal, sessionId }),
+    sessionState: (sessionId) => __test.getSharedSession(sessionId),
+    ask: (prompt, options) => __providerHarness.ask(prompt, 'read', new Map(), undefined, options),
     root: __providerHarness.root,
     activeQueryContexts: __providerHarness.activeQueryContexts,
-    test: __test,
+    test: hasSessionIds ? {
+      ...__test,
+      setSharedSession: (state) => __test.setSharedSession(null, state),
+    } : __test,
     reset,
     async dispose() {
       await reset();

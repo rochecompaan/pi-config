@@ -1,8 +1,6 @@
-diff --git a/extensions/index.ts b/extensions/index.ts
-index 16a054b..cd37a0b 100644
 --- a/extensions/index.ts
 +++ b/extensions/index.ts
-@@ -98,6 +98,8 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -98,6 +98,8 @@
    let enabledSkills = new Set<string>();
    let skillLoadoutExplicit = false;
    let currentProfileName: string | undefined;
@@ -11,7 +9,7 @@ index 16a054b..cd37a0b 100644
  
    function allTools(): ToolInfo[] {
      const byName = new Map<string, ToolInfo>();
-@@ -431,8 +433,10 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -431,8 +433,10 @@
    }
  
    function applyEnabledInMemory(nextTools: Set<string>, nextSkills: Set<string>) {
@@ -24,7 +22,7 @@ index 16a054b..cd37a0b 100644
      skillLoadoutExplicit = true;
      pi.setActiveTools([...enabledTools]);
    }
-@@ -450,8 +454,8 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -450,8 +454,8 @@
      commandSource: string,
      nextProfileName?: string | null,
    ): LoadoutDiff {
@@ -35,7 +33,7 @@ index 16a054b..cd37a0b 100644
      const diff = computeDiff(previousTools, targetTools, previousSkills, targetSkills);
  
      applyEnabledInMemory(targetTools, targetSkills);
-@@ -512,8 +516,8 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -512,8 +516,8 @@
  
      const previousTools = normalizeEnabledTools(activeToolNames());
      const previousSkills = normalizeEnabledSkills(activeSkillNames());
@@ -46,7 +44,7 @@ index 16a054b..cd37a0b 100644
      const diff = commitLoadout(previousTools, previousSkills, targetTools, targetSkills, ctx, commandSource, state.profileName ?? null);
      const suffix = hasDiff(diff) ? " Next response may miss prompt cache." : " Nothing changed.";
      ctx.ui.notify(
-@@ -535,8 +539,8 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -535,8 +539,8 @@
  
      const previousTools = normalizeEnabledTools(activeToolNames());
      const previousSkills = normalizeEnabledSkills(activeSkillNames());
@@ -57,7 +55,7 @@ index 16a054b..cd37a0b 100644
      const diff = commitLoadout(previousTools, previousSkills, targetTools, targetSkills, ctx, commandSource, name);
      const suffix = hasDiff(diff) ? " Next response may miss prompt cache." : " Nothing changed.";
      ctx.ui.notify(
-@@ -612,6 +616,8 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -612,6 +616,8 @@
  
    function restoreFromBranch(ctx: ExtensionContext) {
      const state = readBranchLoadout(ctx) ?? readGlobalLoadout();
@@ -66,7 +64,7 @@ index 16a054b..cd37a0b 100644
      // Built-in presets are dynamic: re-expand them against the currently available
      // tools/skills instead of replaying a frozen list, so they self-heal when the
      // installed tool/skill set changes between sessions.
-@@ -623,9 +629,11 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -623,9 +629,11 @@
        pi.setActiveTools([...enabledTools]);
        return;
      }
@@ -80,7 +78,7 @@ index 16a054b..cd37a0b 100644
      currentProfileName = state?.profileName;
      if (!currentProfileName) {
        const file = readProfilesFile();
-@@ -675,7 +683,29 @@ export default function loadoutExtension(pi: ExtensionAPI) {
+@@ -675,11 +683,40 @@
      };
    });
  
@@ -111,3 +109,14 @@ index 16a054b..cd37a0b 100644
      const skills = event.systemPromptOptions.skills ?? [];
      if (skills.length === 0) return;
  
+     if (!skillLoadoutExplicit) return;
++
++    // A forced prompt is opaque: changing its structured skills has no effect.
++    // Keep filtering the rendered prompt when another extension overrides it.
++    if (event.systemPromptOptions.forceSystemPrompt !== undefined) {
++      const selectedSkills = skills.filter((skill) => enabledSkills.has(skill.name));
++      return { systemPrompt: replaceSkillsBlock(event.systemPrompt, selectedSkills) };
++    }
+
+     const availableNames = new Set(skills.map((skill) => skill.name));
+     const normalized = new Set([...enabledSkills].filter((name) => availableNames.has(name)));

@@ -42,8 +42,8 @@
       "fetcher": "github-archive",
       "hash_field": "hash",
       "lock": {
-        "kind": "patched-upstream",
-        "patch": "nix/packages/pi-claude-bridge-lock-integrity.patch"
+        "kind": "repaired-upstream",
+        "path": "nix/packages/pi-claude-bridge-package-lock.json"
       },
       "package": "pi-claude-bridge",
       "repo": "https://github.com/elidickinson/pi-claude-bridge.git",
@@ -218,7 +218,8 @@
         "pi-claude-bridge"
       ],
       "paths": [
-        "nix/dependency-pins.json"
+        "nix/dependency-pins.json",
+        "nix/packages/pi-claude-bridge-package-lock.json"
       ],
       "sources": [
         "pi-claude-bridge"

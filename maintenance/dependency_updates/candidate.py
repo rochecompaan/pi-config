@@ -100,10 +100,10 @@ def _collect(root: Path, unit: Unit, policies: dict, pins: dict, run, read_json,
         updates = {key: value for key, value in fields.items() if key in old}
         source_changed = any(old[key] != value for key, value in updates.items())
         if "lock" in policy and source_changed:
-            content, digest = refresh_npm_lock(root, source_id, fetched, policy, run)
+            content, digest = refresh_npm_lock(root, source_id, fetched, policy, run, read_json)
             updates["npmDepsHash"] = digest
             locks[source_id] = json.loads(content)
-            if policy["lock"]["kind"] == "maintained":
+            if policy["lock"]["kind"] in {"maintained", "repaired-upstream"}:
                 files[policy["lock"]["path"]] = content
         replacements[source_id] = updates
     return replacements, files
