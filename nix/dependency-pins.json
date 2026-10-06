@@ -21,8 +21,8 @@
     "version": "9.0.0"
   },
   "mattpocock-skills": {
-    "rev": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
-    "sha256": "sha256-pseSJJb5nBBGPzpxA1GzjGLB9OrT+u0At1saJ4NqZ1E=",
+    "rev": "4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d",
+    "sha256": "sha256-oN3OQPouK6wrrGzmgNdvdOVLsOJVGaK7cy3BZoE10AA=",
     "url": "https://github.com/mattpocock/skills.git"
   },
   "pi-claude-bridge": {
