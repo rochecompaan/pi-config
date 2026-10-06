@@ -24,13 +24,11 @@
         inherit pkgs piRemote;
       };
 
-      settingsLib = import ../../nix/lib/settings.nix {
+      piSettings = import ../../nix/lib/pi-settings.nix {
         inherit (pkgs) lib;
       };
 
       themeLib = import ../../nix/lib/theme.nix { };
-
-      baseSettings = builtins.fromJSON (builtins.readFile ../../settings.json);
 
       fallbackPalette = {
         base00 = "282828";
@@ -51,13 +49,9 @@
         base0F = "d65d0e";
       };
 
-      settings = settingsLib.mkSettings {
-        inherit baseSettings;
+      settings = piSettings {
+        piVersion = piPackage.version;
         inherit (piDeps) packagePaths;
-        theme = "stylix";
-        settingsOverrides = {
-          lastChangelogVersion = piPackage.version;
-        };
       };
 
       stylixTheme = themeLib.mkStylixTheme fallbackPalette;

@@ -18,26 +18,36 @@ class LoadoutRuntimeTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="pi-loadout-runtime-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.agent = self.root / "home" / ".pi" / "agent"
-        self.agent.mkdir(parents=True)
-        for resource in CONFIG.iterdir():
-            if resource.name == "loadout.json":
-                (self.agent / resource.name).write_text(resource.read_text())
-            else:
-                (self.agent / resource.name).symlink_to(resource)
+        self.agent = self.populate(self.root / "home" / ".pi" / "agent")
         self.catalog = json.loads((CONFIG / "loadout-catalog.json").read_text())
         self.profiles = json.loads((CONFIG / "loadout-profiles.json").read_text())["profiles"]
 
-    def select_default(self, profile):
-        selection = {**self.profiles[profile], "profileName": profile}
-        (self.agent / "loadout.json").write_text(json.dumps(selection))
+    def populate(self, agent):
+        agent.mkdir(parents=True)
+        for resource in CONFIG.iterdir():
+            if resource.name == "loadout.json":
+                (agent / resource.name).write_text(resource.read_text())
+            else:
+                (agent / resource.name).symlink_to(resource)
+        return agent
 
-    def probe(self, commands=(), flags=(), before_reconnect=()):
+    def select_default(self, profile, agent=None):
+        selection = {**self.profiles[profile], "profileName": profile}
+        ((agent or self.agent) / "loadout.json").write_text(json.dumps(selection))
+
+    def make_writable(self, path):
+        content = path.read_bytes()
+        path.unlink()
+        path.write_bytes(content)
+        return content
+
+    def probe(self, commands=(), flags=(), before_reconnect=(), env=None):
         output = self.root / "probe.json"
         env = {
             **os.environ,
             "HOME": str(self.root / "home"),
             "PI_BOOTSTRAP_PROBE_OUTPUT": str(output),
+            **(env or {}),
         }
         result = subprocess.run(
             [PI, "--no-session", "--extension", PROBE,
@@ -120,11 +130,27 @@ class LoadoutRuntimeTest(unittest.TestCase):
         self.assert_profile(self.probe(commands=["/loadout delete matt"]), "superpowers")
         self.assertEqual(path.read_bytes(), original)
 
+    def test_agent_dir_override_supplies_the_default_loadout(self):
+        custom = self.populate(self.root / "custom-agent")
+        self.select_default("matt", custom)
+        result = self.probe(env={"PI_CODING_AGENT_DIR": str(custom)})
+        self.assert_profile(result, "matt")
+
+    def test_agent_dir_override_receives_saved_presets(self):
+        custom = self.populate(self.root / "custom-agent")
+        self.make_writable(custom / "loadout-profiles.json")
+        home_profiles = self.make_writable(self.agent / "loadout-profiles.json")
+        self.probe(
+            commands=["/loadout save local"],
+            env={"PI_CODING_AGENT_DIR": str(custom)},
+        )
+        saved = json.loads((custom / "loadout-profiles.json").read_text())
+        self.assertIn("local", saved["profiles"])
+        self.assertEqual((self.agent / "loadout-profiles.json").read_bytes(), home_profiles)
+
     def test_writable_profiles_save_selected_names_before_registration_finishes(self):
         path = self.agent / "loadout-profiles.json"
-        original = path.read_bytes()
-        path.unlink()
-        path.write_bytes(original)
+        self.make_writable(path)
         self.probe(commands=["/loadout save local"])
         saved = json.loads(path.read_text())["profiles"]["local"]
         self.assertEqual(sorted(saved["enabledTools"]), self.profiles["superpowers"]["enabledTools"])

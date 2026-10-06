@@ -13,6 +13,8 @@
 
     llm-agents.url = "github:numtide/llm-agents.nix";
 
+    den.url = "github:rochecompaan/den";
+
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);

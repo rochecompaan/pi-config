@@ -1,0 +1,16 @@
+--- a/build/adapters/pi/extension.js
++++ b/build/adapters/pi/extension.js
+@@ -378,6 +378,13 @@
+ // ── Extension entry point ────────────────────────────────
+ /** Pi extension default export. Called once by Pi runtime with the extension API. */
+ export default function piExtension(pi) {
++    // Keep context-mode data with the rest of Pi's state when a launcher,
++    // such as a sandbox, selects another agent directory. The MCP servers that
++    // Pi starts inherit the setting. An explicit CONTEXT_MODE_DATA_DIR wins.
++    const agentDir = process.env.PI_CODING_AGENT_DIR?.trim();
++    if (agentDir && !process.env.CONTEXT_MODE_DATA_DIR?.trim()) {
++        process.env.CONTEXT_MODE_DATA_DIR = agentDir;
++    }
+     const buildDir = dirname(fileURLToPath(import.meta.url));
+     const pluginRoot = resolve(buildDir, "..", "..", "..");
+     const serverBundle = resolve(pluginRoot, "server.bundle.mjs");

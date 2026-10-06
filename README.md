@@ -41,6 +41,41 @@ export PI_CODING_AGENT_AUTH_FILE="$PWD/.pi/local-agent/auth.json"
 
 It also removes the `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` lines that earlier versions added. Keep `.pi/local-agent/` out of version control. `pi-local-auth` refuses a symlinked `auth.json`, because Pi reads and writes through it; to share credentials between projects, set `PI_CODING_AGENT_AUTH_FILE` to the same file in each `.envrc`. The status line shows `auth: LOCAL` when Pi uses a credentials file other than `~/.pi/agent/auth.json`.
 
+## Den sandbox usage
+
+`pi-den` runs this configuration inside a [Den](https://github.com/rochecompaan/den) sandbox. It uses Den's packaged Pi and adds the CodeGraph, CodeGraph Viz and Notion command-line tools:
+
+```bash
+nix run github:rochecompaan/pi-config#pi-den
+```
+
+Den requires `REPOWOLF_ENDPOINT`, `REPOWOLF_TOKEN` and `REPOWOLF_CA_FILE` at launch; see Den's README. Set them in your environment. They are secrets, so never write them into Nix files. The sandbox can read the whole Nix store, so keep all secrets out of it.
+
+`pi-den` keeps Pi's state in Den's agent directory: `~/.local/state/den/pi/agent` by default, or the directory in `PI_CODING_AGENT_DIR`. It does not read `~/.pi/agent` unless you select that directory. Before every launch, Den restores these packaged paths as links into the Nix store:
+
+- `settings.json`, `AGENTS.md`, `mcp.json` and `claude-bridge.json`
+- `loadout.json` and `loadout-profiles.json`
+- `agents`
+- `profiles/pi-subagents/openai.json` and `profiles/pi-subagents/kimi.json`
+
+Changes to these paths last only until the next launch. Den leaves everything else as you left it: `auth.json`, sessions, caches, trust decisions, Context Mode data, extra subagent profiles and any other file. Each agent directory has its own `auth.json`; `pi-den` does not support `PI_CODING_AGENT_AUTH_FILE`.
+
+Pi cannot write to `HOME` inside Den, so extensions such as Context Mode and remote-pi also keep their data in the agent directory. As a result, Pi in Den has its own private remote-pi mesh. It cannot see or message agents that run on the host.
+
+To reuse the resources in your own Den configuration, add the bundle to either agent:
+
+```nix
+programs.den.pi.bundles = [
+  inputs.roche-pi.packages.${pkgs.system}.den-bundle
+];
+
+programs.den.claude.bundles = [
+  inputs.roche-pi.packages.${pkgs.system}.den-bundle
+];
+```
+
+For Pi, the bundle adds this configuration's Pi packages. For Claude Code, it adds the Context Mode MCP server and the skills that work without Pi tools or extra credentials. The bundle does not manage Pi's settings files or add command-line tools. Choose those with Den's `stateFiles` and `extraPkgs` options.
+
 ## Context paging
 
 Context paging comes from the published [`@rochecompaan/pi-context-paging`](https://github.com/rochecompaan/pi-context-paging) package. `nix/dependency-pins.json` pins its npm release, and the dependency updates keep it current like the other packages.
@@ -101,6 +136,8 @@ in
       AGENTS.md \
       settings.json \
       mcp.json \
+      loadout.json \
+      loadout-profiles.json \
       agents \
       extensions \
       multi-model-planning-teams \

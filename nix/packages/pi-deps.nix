@@ -47,6 +47,7 @@ else
       patches = [
         ../../patches/pi-loadout-startup-selection.patch
         ../../patches/pi-loadout-managed-files.patch
+        ../../patches/pi-loadout-agent-dir.patch
       ];
     };
 
@@ -197,7 +198,12 @@ else
       src = remotePiExtensionSrc;
 
       # Keep its shared CLI entry usable without Pi's extension-only modules.
-      patches = [ ../../patches/remote-pi-host-imports.patch ];
+      # Let a sandbox launcher keep the mesh in Pi's agent directory when Pi
+      # cannot write to HOME.
+      patches = [
+        ../../patches/remote-pi-host-imports.patch
+        ../../patches/remote-pi-agent-dir.patch
+      ];
 
       inherit (pins."remote-pi-extension") npmDepsHash;
 
@@ -353,6 +359,8 @@ else
       dontNpmBuild = true;
       makeCacheWritable = true;
       npmInstallFlags = [ "--omit=dev" ];
+
+      patches = [ ../../patches/context-mode-pi-agent-dir.patch ];
 
       postPatch = ''
         cp ${../../context-mode-package-lock.json} package-lock.json
