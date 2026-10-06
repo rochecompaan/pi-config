@@ -1,13 +1,13 @@
 {
   "codegraph": {
-    "hash": "sha256-ZHTn1NdPp+gaTYKChscEMYr+maUwdAqzyKguUfwBXG4=",
-    "url": "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.5.0.tgz",
-    "version": "1.5.0"
+    "hash": "sha256-O16z3guMKVgT5gte3z8XQ/tW4l+GHOhgArg0+fZ0h2U=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.6.2.tgz",
+    "version": "1.6.2"
   },
   "codegraph-linux-x64": {
-    "hash": "sha256-jueJv5/6tw8MeL4fKwEz6hTjLJ9IrxzrZmoPELA5v0Y=",
-    "url": "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.5.0.tgz",
-    "version": "1.5.0"
+    "hash": "sha256-a032dRSZ93aZH3F1iQutcKp822nEdJIrw9dnfzC7FyQ=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.6.2.tgz",
+    "version": "1.6.2"
   },
   "context-mode": {
     "hash": "sha256-CcQeTPd7IVZsdrjqL9vX89gjBV/uLwLCFm/Vu1ddryw=",
@@ -32,9 +32,9 @@
     "version": "0.9.1-unstable-2026-10-02"
   },
   "pi-codegraph": {
-    "hash": "sha256-QV7TBdbzuZwdNNAffOqeoXRVKjeJumpNF4S57KzAGmU=",
-    "url": "https://registry.npmjs.org/@vndv/pi-codegraph/-/pi-codegraph-0.1.10.tgz",
-    "version": "0.1.10"
+    "hash": "sha256-N0u1qLNG9101uDwJY7yIjcSH0XKGBSKwv89RvXULdLA=",
+    "url": "https://registry.npmjs.org/@vndv/pi-codegraph/-/pi-codegraph-0.1.11.tgz",
+    "version": "0.1.11"
   },
   "pi-context-paging": {
     "hash": "sha256-2a4+bzB2MgCNKpgmtAMe0xRiz7NtnttuaKggWhipZQ0=",
