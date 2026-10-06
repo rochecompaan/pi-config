@@ -98,11 +98,11 @@
         "repowolf": "repowolf"
       },
       "locked": {
-        "lastModified": 1791185573,
-        "narHash": "sha256-seqptOiB0N67sWZ6lHRs5QtrN63bnzJGQVKDAnC4TsU=",
+        "lastModified": 1791315145,
+        "narHash": "sha256-dfOIMhh4lt5qlId+RBzsc5Mu193ZAscf04rS4Hgu+iQ=",
         "owner": "rochecompaan",
         "repo": "den",
-        "rev": "3303c94e435f0e406b5c4ea177b4d0e790ed1ad4",
+        "rev": "39dc61c4e5a0651678a8093e76af859936891f33",
         "type": "github"
       },
       "original": {
