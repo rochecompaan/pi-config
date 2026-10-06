@@ -56,7 +56,7 @@
     "language": "en",
     "scope": "global",
     "backend": "local",
-    "localModel": "parakeet-v3",
+    "localModel": "whisper-turbo",
     "toggleShortcut": "ctrl+alt+p",
     "ttsEnabled": false,
     "ttsBackend": "local",
