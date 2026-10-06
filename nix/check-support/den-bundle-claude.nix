@@ -1,13 +1,30 @@
-{ pkgs, claude, bundle }:
+{ pkgs, claude, bundle, piConfig, piDeps }:
 
 assert bundle.denResources.pi ? packages;
 assert bundle.denResources.claude ? skills;
 assert bundle.denResources.claude.mcpServers ? context-mode;
+let
+  # The design names these skills one by one. Every skill in the Superpowers
+  # and Context Mode skill directories is also included.
+  namedSkills =
+    pkgs.lib.genAttrs
+      [ "commit" "frontend-design" "github" "module-size" "nix-config" "simple-english" ]
+      (name: "${piConfig}/skills/${name}")
+    // pkgs.lib.genAttrs
+      [ "codebase-design" "domain-modeling" ]
+      (name: "${piDeps.mattPocockSkills}/skills/engineering/${name}");
+  skillDirectories = [
+    "${piDeps.superpowersSrc}/skills"
+    "${piDeps.contextMode}/lib/node_modules/context-mode/skills"
+  ];
+in
 pkgs.runCommand "den-bundle-claude"
   {
     nativeBuildInputs = [ pkgs.coreutils pkgs.gnugrep pkgs.jq pkgs.python3 ];
     claudeManifest = claude.denManifest;
     contextModeCommand = bundle.denResources.claude.mcpServers.context-mode.command;
+    namedSkills = builtins.toJSON namedSkills;
+    skillDirectories = builtins.toJSON skillDirectories;
   }
   ''
     set -euo pipefail
@@ -46,21 +63,14 @@ pkgs.runCommand "den-bundle-claude"
         raise SystemExit(f"expected one den-skills plugin, found {skill_plugins}")
 
     skills = skill_plugins[0] / "skills"
-    expected_skills = {
-        "commit",
-        "frontend-design",
-        "github",
-        "module-size",
-        "nix-config",
-        "codebase-design",
-        "domain-modeling",
-        "simple-english",
-        "using-superpowers",
-        "test-driven-development",
-        "writing-plans",
-        "ctx-search",
-        "context-mode",
-    }
+    expected_skills = json.loads(os.environ["namedSkills"])
+    for directory in json.loads(os.environ["skillDirectories"]):
+        for entry in Path(directory).iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name in expected_skills:
+                raise SystemExit(f"two sources provide skill {entry.name}")
+            expected_skills[entry.name] = str(entry)
     forbidden_skills = {
         "gitea",
         "linear",
@@ -71,13 +81,19 @@ pkgs.runCommand "den-bundle-claude"
         "agent-network",
         "pi-subagents",
     }
-    actual_skills = {entry.name for entry in skills.iterdir() if entry.is_dir()}
-    missing_skills = expected_skills - actual_skills
-    unexpected_forbidden_skills = forbidden_skills & actual_skills
+    actual_skills = {entry.name: entry for entry in skills.iterdir()}
+    missing_skills = expected_skills.keys() - actual_skills.keys()
+    extra_skills = actual_skills.keys() - expected_skills.keys()
+    unexpected_forbidden_skills = forbidden_skills & actual_skills.keys()
     if missing_skills:
         raise SystemExit(f"missing skills: {sorted(missing_skills)}")
+    if extra_skills:
+        raise SystemExit(f"unexpected skills: {sorted(extra_skills)}")
     if unexpected_forbidden_skills:
         raise SystemExit(f"forbidden skills: {sorted(unexpected_forbidden_skills)}")
+    for name, entry in actual_skills.items():
+        if entry.resolve() != Path(expected_skills[name]).resolve():
+            raise SystemExit(f"skill {name} comes from {entry.resolve()}, not {expected_skills[name]}")
 
     mcp_configs = [Path(value) for flag, value in pairs if flag == "--mcp-config"]
     if len(mcp_configs) != 1:

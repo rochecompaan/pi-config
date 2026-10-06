@@ -2,7 +2,6 @@
   pkgs,
   piDen,
   piConfig,
-  bundle,
   probeExtension,
   bootstrapProbe,
 }:
@@ -14,7 +13,6 @@ pkgs.runCommand "pi-den-runtime"
     denPi = piDen.denPackage;
     denSettings = piDen.denSettings;
     piDenEnvironment = builtins.toJSON piDen.environment;
-    bundlePackages = builtins.toJSON (map toString bundle.denResources.pi.packages);
     inherit piDen piConfig probeExtension bootstrapProbe;
   }
   ''
@@ -34,16 +32,31 @@ pkgs.runCommand "pi-den-runtime"
 
     manifest = json.load(open(os.environ["manifest"]))
     settings = json.load(open(os.environ["denSettings"]))
+    pi_config = os.environ["piConfig"]
+    host_settings = json.load(open(f"{pi_config}/settings.json"))
 
     # A Den Pi update must fail here until pi-den moves to the same version.
     policy = manifest["agent"]["argumentPolicy"]
     assert policy == "pi-" + settings["lastChangelogVersion"], (policy, settings["lastChangelogVersion"])
-    assert "packages" not in settings, sorted(settings)
 
-    bindings = {binding["name"]: binding for binding in manifest["stateBindings"]}
-    destinations = sorted(f["destination"] for f in bindings["agent"]["managedFiles"])
-    assert destinations == sorted([
-        "settings.json",
+    # Den Pi gets the host settings without packages, which Den passes as
+    # immutable arguments instead.
+    def unversioned(values):
+        return {
+            key: value for key, value in values.items() if key not in ("packages", "lastChangelogVersion")
+        }
+
+    assert "packages" not in settings, sorted(settings)
+    assert unversioned(settings) == unversioned(host_settings), (settings, host_settings)
+
+    # Den Pi loads pi-config as a package, then the host packages in the host
+    # order. Nothing else is loaded, and nothing is loaded twice.
+    args = manifest["agent"]["resourceArgs"]
+    assert args[0::2] == ["--extension"] * (len(args) // 2), args
+    assert args[1::2] == [pi_config] + host_settings["packages"], args
+
+    expected = {"settings.json": os.environ["denSettings"]}
+    for destination in [
         "AGENTS.md",
         "mcp.json",
         "claude-bridge.json",
@@ -52,13 +65,18 @@ pkgs.runCommand "pi-den-runtime"
         "agents",
         "profiles/pi-subagents/openai.json",
         "profiles/pi-subagents/kimi.json",
-    ]), destinations
+    ]:
+        expected[destination] = f"{pi_config}/{destination}"
+    bindings = {binding["name"]: binding for binding in manifest["stateBindings"]}
+    managed = bindings["agent"]["managedFiles"]
+    actual = {entry["destination"]: entry["source"] for entry in managed}
+    assert len(actual) == len(managed), managed
+    assert actual == expected, actual
     assert bindings["session"]["managedFiles"] == [], bindings["session"]
 
-    args = manifest["agent"]["resourceArgs"]
-    extensions = [args[i + 1] for i in range(len(args) - 1) if args[i] == "--extension"]
-    packages = json.loads(os.environ["bundlePackages"])
-    assert [entry for entry in extensions if entry in packages] == packages, extensions
+    with open(os.path.join(os.environ["TMPDIR"], "managed-files"), "w") as managed_files:
+        for destination, source in sorted(expected.items()):
+            print(destination, source, file=managed_files)
     PY
 
     mkdir -p "$TMPDIR/home" "$TMPDIR/workspace"
@@ -91,8 +109,6 @@ pkgs.runCommand "pi-den-runtime"
     }
 
     require_managed_links() {
-      jq -r '.stateBindings[] | select(.name == "agent") | .managedFiles[] | "\(.destination) \(.source)"' \
-        "$manifest" > "$TMPDIR/managed-files"
       while read -r destination source; do
         if [ "$(readlink "$PI_CODING_AGENT_DIR/$destination")" != "$source" ]; then
           echo "managed link is not restored: $destination" >&2
