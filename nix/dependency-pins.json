@@ -42,10 +42,10 @@
     "version": "0.3.3"
   },
   "pi-intervals": {
-    "hash": "sha256-uP9/4z08IMadNETWb3UnEsWP0Mzk71lPgKcvt0+JqQk=",
+    "hash": "sha256-w9hGXShosGPeco1UB2AvzPL85e0HmVN75NbUdPC6IXE=",
     "npmDepsHash": "sha256-DJWK6Vw7H8GJJQSkoFNAbI5Mkecq5S3LpQtOdqZVSO0=",
-    "rev": "17b7a283f970beb8d493bf7f613e7b4d043c9213",
-    "version": "0.1.0-17b7a28"
+    "rev": "634170fc83c7400683eb509f6b56d1d9af8d37f7",
+    "version": "0.1.0-634170f"
   },
   "pi-listen": {
     "hash": "sha256-MbYQiwQMvXkN0dRYdMTTX+4whLjey/yGcke5zq6BRO0=",
