@@ -5,7 +5,8 @@
   "defaultThinkingLevel": "xhigh",
   "contextPaging": {
     "enabled": true,
-    "tokenBudget": 128000
+    "tokenBudget": 128000,
+    "trimToTokens": 80000
   },
   "handoff": {
     "autoThresholdTokens": 150000
