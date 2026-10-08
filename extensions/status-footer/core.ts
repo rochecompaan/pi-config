@@ -46,6 +46,7 @@ export interface FooterInput {
 const ANSI_ESCAPE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const SAFE_EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 const WEEK_MINUTES = 7 * 24 * 60;
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 function finiteNonNegative(value: number | undefined): number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
@@ -180,6 +181,37 @@ function bracketed(parts: FooterPart[]): FooterPart[] {
 	return [{ text: "[", tone: "dim" }, ...parts, { text: "]", tone: "dim" }];
 }
 
+function splitFooterComponent(
+	component: FooterPart[],
+	width: number,
+	visibleWidth: VisibleWidth,
+): FooterPart[][] {
+	const lines: FooterPart[][] = [];
+	let line: FooterPart[] = [];
+	let lineWidth = 0;
+
+	for (const part of component) {
+		let text = "";
+		for (const { segment } of GRAPHEMES.segment(part.text)) {
+			const segmentWidth = visibleWidth(segment);
+			// A grapheme cannot be split across terminal lines.
+			if (segmentWidth > width) continue;
+			if (lineWidth + segmentWidth > width) {
+				if (text) line.push({ ...part, text });
+				lines.push(line);
+				line = [];
+				lineWidth = 0;
+				text = "";
+			}
+			text += segment;
+			lineWidth += segmentWidth;
+		}
+		if (text) line.push({ ...part, text });
+	}
+	if (line.length > 0) lines.push(line);
+	return lines;
+}
+
 function wrapFooterComponents(
 	components: FooterPart[][],
 	width: number,
@@ -197,6 +229,10 @@ function wrapFooterComponents(
 			lines.push(line);
 			line = [];
 			lineWidth = 0;
+		}
+		if (componentWidth > width) {
+			lines.push(...splitFooterComponent(component, width, visibleWidth).map((fragment) => [fragment]));
+			continue;
 		}
 		line.push(component);
 		lineWidth += (line.length > 1 ? separatorWidth : 0) + componentWidth;
@@ -217,6 +253,9 @@ export function buildFooterLines(
 	visibleWidth: VisibleWidth,
 	styleText: StyleFooterText = (_tone, text) => text,
 ): string[] {
+	width = Math.floor(width);
+	if (!Number.isFinite(width) || width < 2) return [];
+
 	const rawContextPercent = input.contextWindow > 0
 		? (finiteNonNegative(input.contextTokens) / input.contextWindow) * 100
 		: 0;

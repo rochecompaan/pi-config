@@ -183,11 +183,65 @@ test("wraps complete ANSI-styled components at an exact-fit boundary", () => {
 	assert.equal(terminalWidth(lines[0]), 38);
 });
 
-test("keeps a component wider than the terminal intact on its own line", () => {
+test("wraps oversized Unicode components without losing their text", () => {
 	const input = footerInput();
 	input.gitBranch = "界".repeat(20);
 	const lines = buildFooterLines(input, 24, terminalWidth);
-	assert.equal(lines.at(-1), `[ ${"界".repeat(20)}]`);
-	assert.ok(terminalWidth(lines.at(-1) ?? "") > 24);
-	assert.doesNotMatch(lines.join("\n"), /…/);
+	assert.ok(lines.every((line) => terminalWidth(line) <= 24));
+	assert.deepEqual(lines.slice(-2), [
+		`[ ${"界".repeat(10)}`,
+		`${"界".repeat(10)}]`,
+	]);
+});
+
+test("fits every footer block within the 25-column startup width", () => {
+	const input = {
+		...footerInput(),
+		modelId: "gpt-5.6-sol",
+		thinkingLevel: "xhigh",
+		cacheRead: 2_575_700,
+		accountLabel: "person@upfrontsoftware.co.za",
+		gitBranch: "fix/a-long-branch-name-that-needs-wrapping",
+		sessionName: "a long session name that also needs wrapping",
+	};
+	input.extensionStatuses.set("context-paging", "paging on");
+	const lines = buildFooterLines(input, 25, terminalWidth);
+	assert.ok(lines.every((line) => terminalWidth(line) <= 25), lines.join("\n"));
+	const joined = lines.join("");
+	for (const block of [
+		"[● relay ○ voice ● paging]",
+		"[AUTH person@upfrontsoftware.co.za]",
+		"[ fix/a-long-branch-name-that-needs-wrapping]",
+		"[a long session name that also needs wrapping]",
+	]) assert.ok(joined.includes(block), block);
+});
+
+test("reapplies a component's color on its continuation lines", () => {
+	const input = { ...footerInput(), gitBranch: "界".repeat(20) };
+	const lines = buildFooterLines(input, 24, terminalWidth,
+		(_tone, text) => `\u001b[31m${text}\u001b[39m`);
+	assert.ok(lines.every((line) => terminalWidth(line) <= 24));
+	assert.ok(lines.at(-1)?.startsWith(`\u001b[31m${"界".repeat(10)}\u001b[39m`));
+	assert.equal(lines.slice(-2).join("").replace(ANSI_ESCAPE, ""), `[ ${"界".repeat(20)}]`);
+});
+
+test("keeps combining marks and emoji sequences on the same continuation line", () => {
+	const name = "界e\u0301👩‍💻".repeat(8);
+	const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+	const knownWidths = new Map([["界", 2], ["e\u0301", 1], ["👩‍💻", 2]]);
+	const measure = (text: string) => [...graphemes.segment(text.replace(ANSI_ESCAPE, ""))]
+		.reduce((total, { segment }) => total + (knownWidths.get(segment) ?? 1), 0);
+	const lines = buildFooterLines({ ...footerInput(), sessionName: name }, 10, measure);
+	assert.ok(lines.every((line) => measure(line) <= 10));
+	assert.ok(lines.join("").endsWith(`[${name}]`));
+	for (const line of lines) {
+		assert.doesNotMatch(line, /^[\u0301\u200d]/u);
+		assert.ok(!line.endsWith("👩") && !line.endsWith("\u200d"));
+	}
+});
+
+test("renders nothing when there is no usable terminal width", () => {
+	for (const width of [0, 1, -1]) {
+		assert.deepEqual(buildFooterLines(footerInput(), width, terminalWidth), []);
+	}
 });
