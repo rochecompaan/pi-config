@@ -26,10 +26,10 @@
     "url": "https://github.com/mattpocock/skills.git"
   },
   "pi-claude-bridge": {
-    "hash": "sha256-m388ZAcNiF0nZi9FMq2PMAXK2jMeYIJMK85EdHg58F0=",
-    "npmDepsHash": "sha256-F2CKz2wrS85NTn8EMd53YafjcKF0Cz6/N7TQfQ1MvtA=",
-    "rev": "5fb69c49e1548add3686dfeecd1a040001622e6d",
-    "version": "0.9.1-unstable-2026-10-02"
+    "hash": "sha256-ri1KD0H5Nbt8lAMHbMLVf7dwaoHNbTJfhEuF4Y8lFF8=",
+    "npmDepsHash": "sha256-Rt/HSfhzC3Av1JRkRDar+QmaspswdUdRMDRvCSvbmls=",
+    "rev": "b2e7255ece0b8bfd3a6429fd5c147fd59984c785",
+    "version": "0.9.2-unstable-2026-10-07"
   },
   "pi-codegraph": {
     "hash": "sha256-N0u1qLNG9101uDwJY7yIjcSH0XKGBSKwv89RvXULdLA=",
