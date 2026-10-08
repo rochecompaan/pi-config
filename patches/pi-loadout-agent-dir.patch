@@ -1,17 +1,22 @@
 --- a/extensions/index.ts
 +++ b/extensions/index.ts
-@@ -1,8 +1,7 @@
+@@ -1,5 +1,4 @@
  import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 -import { homedir } from "node:os";
  import { join } from "node:path";
- import type { ExtensionAPI, ExtensionContext, Skill, ToolInfo } from "@earendil-works/pi-coding-agent";
+ import type {
+   ExtensionAPI,
+@@ -12,7 +11,7 @@
+   ToolLoadoutChanges,
+ } from "@earendil-works/pi-coding-agent";
+ import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 -import { DynamicBorder, formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 +import { DynamicBorder, formatSkillsForPrompt, getAgentDir } from "@earendil-works/pi-coding-agent";
+ import { Type } from "typebox";
  import {
    Container,
-   fuzzyMatch,
-@@ -17,8 +16,9 @@
- 
+@@ -32,8 +31,9 @@
+ const DESCRIPTION_LINES = 3;
  const STATE_CUSTOM_TYPE = "pi-loadout:selection";
  const LOG_CUSTOM_TYPE = "pi-loadout:loadout changed";
 -const GLOBAL_LOADOUT_PATH = join(homedir(), ".pi", "agent", "loadout.json");
@@ -20,9 +25,9 @@
 +const GLOBAL_LOADOUT_PATH = join(getAgentDir(), "loadout.json");
 +const PROFILES_PATH = join(getAgentDir(), "loadout-profiles.json");
  const PROFILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
- 
- type StoredState = {
-@@ -330,7 +330,7 @@
+ const CODEMODE_TOOL = "codemode";
+ /**
+@@ -637,7 +637,7 @@
    }
  
    function writeProfilesFile(file: ProfilesFile) {
@@ -31,7 +36,7 @@
      const ordered: ProfilesFile = { profiles: {} };
      if (file.defaultProfile) ordered.defaultProfile = file.defaultProfile;
      for (const name of Object.keys(file.profiles).sort()) ordered.profiles[name] = file.profiles[name];
-@@ -387,7 +387,7 @@
+@@ -701,7 +701,7 @@
    }
  
    function writeGlobalLoadout(state: StoredState) {

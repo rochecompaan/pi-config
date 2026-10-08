@@ -116,7 +116,7 @@ class LoadoutPresetsTest(unittest.TestCase):
             },
         })
         tools = self.write_json("tools.json", {
-            "all": ["omega", "alpha", "omega"], "active": ["alpha"],
+            "all": ["omega", "alpha", "omega", "pi_loadout_codemode_only"], "active": ["alpha"],
         })
         suites = self.write_json("suites.json", {
             "matt": "/packages/matt", "superpowers": "/packages/superpowers",

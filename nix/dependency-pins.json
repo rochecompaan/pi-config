@@ -53,9 +53,9 @@
     "version": "7.2.2"
   },
   "pi-loadout": {
-    "hash": "sha256-HoEJKbN6/NjIFqH3Fagkw05WzDagG9JPifPoedNO+V8=",
-    "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.36.tgz",
-    "version": "0.0.36"
+    "hash": "sha256-PSSDRpDpzdhO5s7a7m0mSQ83dy817bvsZdUnuNt/JGQ=",
+    "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.37.tgz",
+    "version": "0.0.37"
   },
   "pi-remote": {
     "hash": "sha256-d8tSk12rnZqHr2HDVnXclZBRPbqRPVft9CKYSdBJHr8=",

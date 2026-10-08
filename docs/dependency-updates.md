@@ -30,7 +30,7 @@ The live deployment check remains separate from local verification.
 Use an **x86_64-linux** Forgejo runner with these resources:
 
 - The label `ubuntu-latest`, or the label from repository variable `DEPENDENCY_UPDATE_RUNNER`.
-- A job environment with writable `/nix` and `/etc/nix` directories for the single-user Nix installation.
+- A root job environment with writable `/nix` and `/etc/nix` directories, plus `groupadd` and `useradd`.
 - Bash, Git, Python 3, and a JavaScript runtime compatible with the pinned checkout action.
 - Network access to Forgejo, GitHub, the npm registry, and the configured Nix caches.
 - Enough disk space and time for native npm packages and full flake checks.
@@ -38,6 +38,8 @@ Use an **x86_64-linux** Forgejo runner with these resources:
 Both jobs use `.forgejo/actions/setup-nix` to install Nix 2.35.1 with the pinned Cachix install action from v31.
 The action reuses a complete persistent Nix installation and refuses an incomplete installation.
 It enables flakes and sets `sandbox = false` on both new and existing installations.
+It creates 16 unprivileged build users and sets `build-users-group = nixbld`.
+The Nix client runs as root, but builders must not: Go telemetry can otherwise create `/homeless-shelter`, which makes later non-sandboxed builds fail.
 The workflow builds `packages.x86_64-linux.dependency-update-tools` before it changes any pins.
 That immutable package supplies Python, Node/npm, Git, Nix, prefetch tools, and workflow lint tools.
 The build result and candidate reports stay in the runner temporary directory, outside the checkout.

@@ -82,6 +82,24 @@ def _validate_lock(content: bytes, manifest: dict) -> dict:
     return lock
 
 
+def _repair_root_version(content: bytes, manifest: dict) -> bytes:
+    lock = _json_object(content)
+    root = lock.get("packages", {}).get("") if isinstance(lock.get("packages"), dict) else None
+    version = root.get("version") if isinstance(root, dict) else None
+    if not isinstance(version, str) or not version:
+        raise UpdateError("lockfile", "Lock root requires a version")
+    # Release commits sometimes bump package.json without npm updating the
+    # lock's labels. Check every dependency declaration before fixing labels;
+    # never re-resolve the upstream graph or hide a different package name.
+    _validate_lock(content, {**manifest, "version": version})
+    if root["version"] == manifest["version"] and lock.get("version", manifest["version"]) == manifest["version"]:
+        return content
+    root["version"] = manifest["version"]
+    if "version" in lock:
+        lock["version"] = manifest["version"]
+    return (json.dumps(lock, indent=2) + "\n").encode()
+
+
 def _execute(command: list[str], work: Path, run, stage: str) -> str:
     environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "NPM_CONFIG_IGNORE_SCRIPTS": "true",
                    "NPM_CONFIG_USERCONFIG": str(work / "empty-npmrc"),
@@ -119,7 +137,7 @@ def refresh_npm_lock(root: Path, source_id: str, fetched: Path, policy: dict, ru
         elif rule["kind"] in {"upstream", "patched-upstream", "repaired-upstream"}:
             content = _source_bytes(fetched, policy["fetcher"], "package-lock.json")
             if rule["kind"] == "repaired-upstream":
-                _validate_lock(content, manifest)
+                content = _repair_root_version(content, manifest)
                 content = repair_lock_integrity(content, read_json)
             lock_path.write_bytes(content)
             if rule["kind"] == "patched-upstream":

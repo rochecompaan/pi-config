@@ -30,6 +30,7 @@ export default function (pi: ExtensionAPI) {
             .map((match) => match[1]),
         )].sort(),
         all: pi.getAllTools().map((tool) => tool.name).sort(),
+        exposures: Object.fromEntries(pi.getAllTools().map((tool) => [tool.name, tool.exposure ?? "direct"])),
         active: pi.getActiveTools().sort(),
         modelTools: (context.tools ?? []).map((tool) => tool.name).sort(),
       }));

@@ -153,6 +153,42 @@ class LockRefreshTests(unittest.TestCase):
         self.assertEqual(digest, HASH)
         self.assertEqual((self.source / "package-lock.json").read_bytes(), original)
 
+    def test_repaired_upstream_corrects_stale_versions_without_changing_resolutions(self):
+        self.policy["lock"] = {"kind": "repaired-upstream", "path": "pkg-package-lock.json"}
+        lock = lock_for({"name": "pkg", "version": "1.0.0", "dependencies": {"lib": "^1.0.0"}})
+        library = {"version": "1.2.3", "resolved": "https://registry.npmjs.org/lib/-/lib-1.2.3.tgz",
+                   "integrity": "sha512-" + base64.b64encode(bytes(range(64))).decode()}
+        lock["packages"]["node_modules/lib"] = library
+        original = json.dumps(lock).encode()
+        (self.source / "package-lock.json").write_bytes(original)
+
+        def prefetch_only(command, **kwargs):
+            self.assertEqual(command[0], "prefetch-npm-deps")
+            return self.fake_run(command, **kwargs)
+
+        content, _ = refresh_npm_lock(self.root, "pkg", self.source, self.policy, prefetch_only)
+        result = json.loads(content)
+        self.assertEqual(result["version"], "1.1.0")
+        self.assertEqual(result["packages"][""]["version"], "1.1.0")
+        self.assertEqual(result["packages"]["node_modules/lib"], library)
+        self.assertEqual((self.source / "package-lock.json").read_bytes(), original)
+
+    def test_repaired_upstream_still_rejects_changed_dependency_declarations(self):
+        self.policy["lock"] = {"kind": "repaired-upstream", "path": "pkg-package-lock.json"}
+        lock = lock_for({"name": "pkg", "version": "1.0.0", "dependencies": {"lib": "^2.0.0"}})
+        (self.source / "package-lock.json").write_text(json.dumps(lock))
+        with self.assertRaises(UpdateError) as raised:
+            refresh_npm_lock(self.root, "pkg", self.source, self.policy, self.fake_run)
+        self.assertEqual(raised.exception.stage, "lockfile")
+
+    def test_repaired_upstream_still_rejects_a_different_package_name(self):
+        self.policy["lock"] = {"kind": "repaired-upstream", "path": "pkg-package-lock.json"}
+        lock = lock_for({"name": "other", "version": "1.0.0", "dependencies": {"lib": "^1.0.0"}})
+        (self.source / "package-lock.json").write_text(json.dumps(lock))
+        with self.assertRaises(UpdateError) as raised:
+            refresh_npm_lock(self.root, "pkg", self.source, self.policy, self.fake_run)
+        self.assertEqual(raised.exception.stage, "lockfile")
+
     def test_inconsistent_root_declarations_are_rejected(self):
         self.policy["lock"] = {"kind": "upstream"}
         (self.source / "package-lock.json").write_text(json.dumps(self.seed))

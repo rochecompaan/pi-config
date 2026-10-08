@@ -5,10 +5,10 @@
 +import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
  import { homedir } from "node:os";
  import { join } from "node:path";
- import type { ExtensionAPI, ExtensionContext, Skill, ToolInfo } from "@earendil-works/pi-coding-agent";
-@@ -101,6 +101,23 @@
-   let toolRestorePending = false;
-   let pendingToolNames = new Set<string>();
+ import type {
+@@ -148,6 +148,23 @@
+   let pendingDirectTools = new Set<string>();
+   let pendingCodemodeTools = new Set<string>();
  
 +  function isNixManaged(path: string): boolean {
 +    try {
@@ -29,34 +29,24 @@
 +
    function allTools(): ToolInfo[] {
      const byName = new Map<string, ToolInfo>();
-     for (const tool of pi.getAllTools()) byName.set(tool.name, tool);
-@@ -471,8 +488,9 @@
+     for (const tool of pi.getAllTools()) {
+@@ -806,6 +823,7 @@
    }
  
-   function saveGlobalLoadout(nextTools: Set<string>, nextSkills: Set<string>, ctx: ExtensionContext) {
--    const targetTools = normalizeEnabledTools(nextTools);
--    const targetSkills = normalizeEnabledSkills(nextSkills);
+   function saveGlobalLoadout(selection: Selection, ctx: ExtensionContext) {
 +    if (!canWriteLoadout(GLOBAL_LOADOUT_PATH, ctx)) return;
-+    const targetTools = new Set(nextTools);
-+    const targetSkills = new Set(nextSkills);
-     writeGlobalLoadout(toStoredState(targetTools, targetSkills, currentProfileName));
+     const target = normalizeSelection(selection);
+     writeGlobalLoadout(toStoredState(target.tools, target.skills, currentProfileName, target.codemode));
      ctx.ui.notify(
-       `Saved default loadout: ${targetTools.size}/${allToolNames().length} tools, ${targetSkills.size}/${allSkillNames().length} skills enabled. Future sessions will use it.`,
-@@ -557,10 +575,11 @@
+@@ -897,6 +915,7 @@
        return false;
      }
  
 +    if (!canWriteLoadout(PROFILES_PATH, ctx)) return false;
+     const target = normalizeSelection(selection);
+     const state = toStoredState(target.tools, target.skills, undefined, target.codemode);
      const file = readProfilesFile();
-     file.profiles[name] = {
--      enabledTools: sorted(normalizeEnabledTools(nextTools)),
--      enabledSkills: sorted(normalizeEnabledSkills(nextSkills)),
-+      enabledTools: sorted(nextTools),
-+      enabledSkills: sorted(nextSkills),
-       updatedAt: new Date().toISOString(),
-     };
-     writeProfilesFile(file);
-@@ -577,6 +596,7 @@
+@@ -920,6 +939,7 @@
        return false;
      }
  
@@ -64,8 +54,8 @@
      const file = readProfilesFile();
      if (!file.profiles[name]) {
        ctx.ui.notify(`Unknown loadout preset: ${name}`, "warning");
-@@ -761,13 +781,16 @@
-       "  /loadout full     Enable every available tool and skill",
+@@ -1132,16 +1152,19 @@
+       "  /loadout full     Enable every tool (codemode/MCP tools stay codemode-only) and skill",
        "  /loadout minimal  Enable only built-in tools and skills",
        "  /loadout default  Apply saved global default loadout",
 -      "  /loadout save <name>    Save current loadout as user preset",
@@ -74,6 +64,9 @@
        "  /loadout list           List built-in and user presets",
 -      "  /loadout delete <name>  Delete user preset",
 +      ...(isNixManaged(PROFILES_PATH) ? [] : ["  /loadout delete <name>  Delete user preset"]),
+       "  /loadout mode <direct|codemode|off> <tool...>",
+       "                    Set how tools are reached: declared directly, only via codemode, or off",
+       "                    (tool names accept * wildcards, e.g. mcp__linear__*)",
        "  /loadout status   Print current active tools and skills",
        "  /loadout reset    Alias for /loadout full",
        "  /loadout help     Show this help",
@@ -83,10 +76,10 @@
      ].join("\n");
    }
  
-@@ -798,7 +821,9 @@
-         { value: `preset ${name}`, label: `preset ${name}`, description: "Apply user preset" },
-         { value: `delete ${name}`, label: `delete ${name}`, description: "Delete user preset" },
-       ]);
+@@ -1233,7 +1256,9 @@
+             description: `${toolModeOf(tool, currentDirectTools(), codemodeTools)} · ${toolExposure(tool)} exposure`,
+           }));
+       }
 -      return [...LOADOUT_SUBCOMMANDS, ...profileItems].filter((item) => item.value.toLowerCase().startsWith(prefix));
 +      return [...LOADOUT_SUBCOMMANDS, ...profileItems]
 +        .filter((item) => !isNixManaged(PROFILES_PATH) || !["save", "delete", "rm"].includes(item.value.split(" ")[0]))
@@ -94,18 +87,7 @@
      },
      handler: async (args, ctx) => {
        const words = (args ?? "").trim().split(/\s+/).filter(Boolean);
-@@ -840,7 +865,9 @@
-           ctx.ui.notify("Usage: /loadout save <name>", "warning");
-           return;
-         }
--        saveUserProfile(name, normalizeEnabledTools(activeToolNames()), normalizeEnabledSkills(activeSkillNames()), ctx);
-+        const toolSelection = toolRestorePending ? new Set(enabledTools) : new Set([...activeToolNames(), ...pendingToolNames]);
-+        const skillSelection = new Set(skillLoadoutExplicit ? enabledSkills : allSkillNames());
-+        saveUserProfile(name, toolSelection, skillSelection, ctx);
-         return;
-       }
- 
-@@ -1039,7 +1066,7 @@
+@@ -1512,7 +1537,7 @@
              label: preset.name,
              description:
                preset.source === "user"
@@ -114,7 +96,7 @@
                  : preset.source === "default"
                    ? preset.profile
                      ? `${toolsCount}/${allToolNames().length} tools · ${skillsCount}/${allSkillNames().length} skills · saved global default · Space/Enter applies`
-@@ -1081,13 +1108,19 @@
+@@ -1553,15 +1578,21 @@
            const skillsLabel = pane === "skills" ? theme.fg("accent", theme.bold("[Skills]")) : theme.fg("dim", "Skills");
            const presetsLabel = pane === "presets" ? theme.fg("accent", theme.bold("[Presets]")) : theme.fg("dim", "Presets");
            headerText.setText(`${toolsLabel}  ${skillsLabel}  ${presetsLabel}`);
@@ -127,17 +109,21 @@
                "dim",
                pane === "presets"
 -                ? "Type to filter or name • Tab switch pane • Space/Enter apply • Ctrl+P save • Ctrl+D delete • ? shortcuts • Esc clear/close"
--                : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close",
+-                : pane === "tools" && hasCodemode
+-                  ? "Type to search • Tab switch pane • Space cycle direct/codemode/off • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close"
+-                  : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close",
 +                ? (isNixManaged(PROFILES_PATH)
 +                  ? "Type to filter • Tab switch pane • Space/Enter apply • Nix-managed presets • ? shortcuts • Esc clear/close"
 +                  : "Type to filter or name • Tab switch pane • Space/Enter apply • Ctrl+P save • Ctrl+D delete • ? shortcuts • Esc clear/close")
-+                : (isNixManaged(GLOBAL_LOADOUT_PATH)
-+                  ? "Type to search • Tab switch pane • Space toggle • Enter collapse • Nix-managed default • ? shortcuts • Esc clear/close"
-+                  : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close"),
++                : isNixManaged(GLOBAL_LOADOUT_PATH)
++                  ? "Type to search • Tab switch pane • Space cycle modes • Enter collapse • Nix-managed default • ? shortcuts • Esc clear/close"
++                  : pane === "tools" && hasCodemode
++                    ? "Type to search • Tab switch pane • Space cycle direct/codemode/off • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close"
++                    : "Type to search • Tab switch pane • Space toggle • Enter collapse • Ctrl+S save default • ? shortcuts • Esc clear/close",
              ),
            );
            cacheNoteText.setText(
-@@ -1305,8 +1338,8 @@
+@@ -1833,8 +1864,8 @@
              theme.fg("borderAccent", "Global"),
              `  ${theme.bold("Tab")}      Switch Tools / Skills / Presets`,
              `  ${theme.bold("↑ ↓")}      Navigate`,
@@ -148,7 +134,7 @@
              `  ${theme.bold("Esc")}      Clear search, or close picker`,
              "",
              theme.fg("borderAccent", "Tools / Skills"),
-@@ -1316,8 +1349,10 @@
+@@ -1844,8 +1875,10 @@
              theme.fg("borderAccent", "Presets"),
              `  ${theme.bold("Space")}    Apply selected preset`,
              `  ${theme.bold("Enter")}    Apply selected preset`,
@@ -161,7 +147,7 @@
            ].join("\n"),
            1,
            0,
-@@ -1348,6 +1383,7 @@
+@@ -1876,6 +1909,7 @@
              }
  
              if (matchesKey(data, Key.ctrl("p"))) {

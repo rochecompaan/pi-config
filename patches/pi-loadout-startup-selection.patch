@@ -1,112 +1,104 @@
 --- a/extensions/index.ts
 +++ b/extensions/index.ts
-@@ -98,6 +98,8 @@
+@@ -142,6 +142,7 @@
    let enabledSkills = new Set<string>();
    let skillLoadoutExplicit = false;
    let currentProfileName: string | undefined;
-+  let toolRestorePending = false;
-+  let pendingToolNames = new Set<string>();
- 
-   function allTools(): ToolInfo[] {
-     const byName = new Map<string, ToolInfo>();
-@@ -431,8 +433,10 @@
++  let startupSelection: Selection | undefined;
+   // Tool names from a restored/applied loadout that are not registered yet (for example MCP tools
+   // whose server is still connecting). They are applied once the tools show up.
+   let pendingDirectTools = new Set<string>();
+@@ -248,11 +249,11 @@
    }
  
-   function applyEnabledInMemory(nextTools: Set<string>, nextSkills: Set<string>) {
--    enabledTools = normalizeEnabledTools(nextTools);
--    enabledSkills = normalizeEnabledSkills(nextSkills);
-+    toolRestorePending = true;
-+    pendingToolNames.clear();
-+    enabledTools = new Set(nextTools);
-+    enabledSkills = new Set(nextSkills);
+   function currentSelection(): Selection {
+-    const tools = currentDirectTools();
++    const tools = startupSelection?.tools ?? currentDirectTools();
+     return {
+       tools,
+-      codemode: normalizeCodemodeTools(codemodeTools, tools),
+-      skills: normalizeEnabledSkills(activeSkillNames()),
++      codemode: startupSelection?.codemode ?? normalizeCodemodeTools(codemodeTools, tools),
++      skills: new Set(skillLoadoutExplicit ? enabledSkills : activeSkillNames()),
+     };
+   }
+ 
+@@ -499,11 +500,10 @@
+   }
+ 
+   function selectionFromProfile(profile: Profile): Selection {
+-    const tools = normalizeEnabledTools(profile.enabledTools);
+     return {
+-      tools,
+-      codemode: normalizeCodemodeTools(profile.codemodeTools ?? [], tools),
+-      skills: normalizeEnabledSkills(profile.enabledSkills),
++      tools: new Set(profile.enabledTools),
++      codemode: new Set(profile.codemodeTools ?? []),
++      skills: new Set(profile.enabledSkills),
+     };
+   }
+ 
+@@ -760,7 +760,9 @@
+   }
+ 
+   function applySelectionInMemory(next: Selection) {
+-    enabledSkills = normalizeEnabledSkills(next.skills);
++    // Reapply after Pi finishes startup without dropping late-discovered names.
++    startupSelection = next;
++    enabledSkills = new Set(next.skills);
      skillLoadoutExplicit = true;
-     pi.setActiveTools([...enabledTools]);
+     applyTools(next.tools, next.codemode);
    }
-@@ -450,8 +454,8 @@
-     commandSource: string,
-     nextProfileName?: string | null,
-   ): LoadoutDiff {
--    const targetTools = normalizeEnabledTools(nextTools);
--    const targetSkills = normalizeEnabledSkills(nextSkills);
-+    const targetTools = new Set(nextTools);
-+    const targetSkills = new Set(nextSkills);
-     const diff = computeDiff(previousTools, targetTools, previousSkills, targetSkills);
+@@ -777,7 +779,7 @@
+     return {
+       tools,
+       codemode: normalizeCodemodeTools(selection.codemode, tools),
+-      skills: normalizeEnabledSkills(selection.skills),
++      skills: new Set(selection.skills),
+     };
+   }
  
-     applyEnabledInMemory(targetTools, targetSkills);
-@@ -512,8 +516,8 @@
- 
-     const previousTools = normalizeEnabledTools(activeToolNames());
-     const previousSkills = normalizeEnabledSkills(activeSkillNames());
--    const targetTools = normalizeEnabledTools(state.enabledTools);
--    const targetSkills = state.enabledSkills ? normalizeEnabledSkills(state.enabledSkills) : new Set(allSkillNames());
-+    const targetTools = new Set(state.enabledTools);
-+    const targetSkills = state.enabledSkills ? new Set(state.enabledSkills) : new Set(allSkillNames());
-     const diff = commitLoadout(previousTools, previousSkills, targetTools, targetSkills, ctx, commandSource, state.profileName ?? null);
-     const suffix = hasDiff(diff) ? " Next response may miss prompt cache." : " Nothing changed.";
-     ctx.ui.notify(
-@@ -535,8 +539,8 @@
- 
-     const previousTools = normalizeEnabledTools(activeToolNames());
-     const previousSkills = normalizeEnabledSkills(activeSkillNames());
--    const targetTools = normalizeEnabledTools(profile.enabledTools);
--    const targetSkills = normalizeEnabledSkills(profile.enabledSkills);
-+    const targetTools = new Set(profile.enabledTools);
-+    const targetSkills = new Set(profile.enabledSkills);
-     const diff = commitLoadout(previousTools, previousSkills, targetTools, targetSkills, ctx, commandSource, name);
-     const suffix = hasDiff(diff) ? " Next response may miss prompt cache." : " Nothing changed.";
-     ctx.ui.notify(
-@@ -612,6 +616,8 @@
+@@ -959,6 +961,11 @@
  
    function restoreFromBranch(ctx: ExtensionContext) {
      const state = readBranchLoadout(ctx) ?? readGlobalLoadout();
-+    toolRestorePending = !!state;
-+    pendingToolNames.clear();
++    startupSelection = state ? {
++      tools: new Set(state.enabledTools),
++      codemode: new Set(state.codemodeTools ?? []),
++      skills: new Set(state.enabledSkills ?? allSkillNames()),
++    } : undefined;
      // Built-in presets are dynamic: re-expand them against the currently available
      // tools/skills instead of replaying a frozen list, so they self-heal when the
      // installed tool/skill set changes between sessions.
-@@ -623,9 +629,11 @@
-       pi.setActiveTools([...enabledTools]);
+@@ -971,7 +978,7 @@
        return;
      }
--    enabledTools = state ? normalizeEnabledTools(state.enabledTools) : new Set(allToolNames());
-+    // Resource discovery is incomplete at session_start. Keep saved names so
-+    // deferred MCP tools and built-in skills are not permanently discarded.
-+    enabledTools = state ? new Set(state.enabledTools) : new Set(allToolNames());
      skillLoadoutExplicit = !!state?.enabledSkills;
 -    enabledSkills = state?.enabledSkills ? normalizeEnabledSkills(state.enabledSkills) : new Set(allSkillNames());
 +    enabledSkills = state?.enabledSkills ? new Set(state.enabledSkills) : new Set(allSkillNames());
      currentProfileName = state?.profileName;
      if (!currentProfileName) {
        const file = readProfilesFile();
-@@ -675,11 +683,40 @@
-     };
+@@ -1033,6 +1040,18 @@
    });
  
--  pi.on("before_agent_start", async (event) => {
-+  pi.on("before_agent_start", async (event, ctx) => {
-+    const availableTools = new Set(allToolNames());
-+    if (toolRestorePending) {
+   pi.on("before_agent_start", async (event, ctx) => {
++    if (startupSelection) {
 +      // Startup can overwrite session_start's active tools. Restore once after
 +      // that setup, without undoing later tool_search or user selections.
 +      if (currentProfileName && isLoadoutPresetName(currentProfileName)) {
-+        enabledTools = presetTools(currentProfileName);
 +        enabledSkills = presetSkills(currentProfileName);
++        applyTools(presetTools(currentProfileName), new Set());
++      } else {
++        applyTools(startupSelection.tools, startupSelection.codemode);
 +      }
-+      pi.setActiveTools([...enabledTools]);
-+      pendingToolNames = new Set([...enabledTools].filter((name) => !availableTools.has(name)));
-+      toolRestorePending = false;
++      startupSelection = undefined;
 +      updateStatus(ctx);
-+    } else {
-+      // Some deferred servers may still connect after the first prompt.
-+      const ready = [...pendingToolNames].filter((name) => availableTools.has(name));
-+      if (ready.length > 0) {
-+        pi.setActiveTools([...new Set([...activeToolNames(), ...ready])]);
-+        for (const name of ready) pendingToolNames.delete(name);
-+        updateStatus(ctx);
-+      }
 +    }
-+
-     const skills = event.systemPromptOptions.skills ?? [];
+     // Apply loadout entries for tools that registered late (e.g. MCP servers that connected after
+     // session start), and keep the codemode-only helper after `codemode` in the active order.
+     if (resolvePendingTools()) updateStatus(ctx);
+@@ -1042,6 +1061,13 @@
      if (skills.length === 0) return;
  
      if (!skillLoadoutExplicit) return;
@@ -117,6 +109,6 @@
 +      const selectedSkills = skills.filter((skill) => enabledSkills.has(skill.name));
 +      return { systemPrompt: replaceSkillsBlock(event.systemPrompt, selectedSkills) };
 +    }
-
+ 
      const availableNames = new Set(skills.map((skill) => skill.name));
      const normalized = new Set([...enabledSkills].filter((name) => availableNames.has(name)));

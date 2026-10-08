@@ -162,7 +162,12 @@ class LoadoutRuntimeTest(unittest.TestCase):
         }))
         result = self.probe()
         self.assertIn("agent-network", result["skills"])
-        self.assertEqual(result["active"], result["all"])
+        indirect = {name for name, exposure in result["exposures"].items()
+                    if exposure in {"codemode", "deferred"}}
+        expected = set(result["all"]) - indirect - {"pi_loadout_codemode_only"}
+        self.assertEqual(result["active"], sorted(expected))
+        self.assertIn("mcp__context_mode__ctx_execute", result["all"])
+        self.assertNotIn("mcp__context_mode__ctx_execute", result["active"])
 
 
 if __name__ == "__main__":

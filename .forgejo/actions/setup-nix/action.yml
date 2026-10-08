@@ -1,5 +1,5 @@
 name: Set up non-sandboxed Nix
-description: Install or reuse single-user Nix in the persistent runner store.
+description: Install or reuse Nix with unprivileged builders in the persistent runner store.
 
 runs:
   using: composite
@@ -54,13 +54,28 @@ runs:
           min-free = 10737418240
           max-free = 21474836480
 
+    - name: Create unprivileged Nix build users
+      shell: bash
+      run: |
+        set -euo pipefail
+        getent group nixbld >/dev/null || groupadd --system nixbld
+        for index in {1..16}; do
+          user="nixbld${index}"
+          if ! id "$user" >/dev/null 2>&1; then
+            useradd --system --no-create-home --home-dir /var/empty \
+              --shell /usr/sbin/nologin --gid nixbld --groups nixbld "$user"
+          fi
+        done
+
     - name: Configure persistent Nix
       shell: bash
       run: |
         set -euo pipefail
         mkdir -p /etc/nix
+        # Builds still avoid namespaces, but must not run as root: Go telemetry
+        # can create /homeless-shelter and make the next Nix build reject it.
         cat > /etc/nix/nix.conf <<'EOF'
-        build-users-group =
+        build-users-group = nixbld
         experimental-features = nix-command flakes
         sandbox = false
         max-jobs = auto

@@ -16,7 +16,9 @@ def collect_catalog(resources, toolset, suite_roots):
         ]
         if not suites[suite]:
             raise ValueError(f"No loaded skills found for suite: {suite}")
-    result = {"tools": sorted(set(toolset["all"])), "skills": skills, "suites": suites}
+    # pi-loadout manages its codemode helper itself; it is not a user tool.
+    tools = set(toolset["all"]) - {"pi_loadout_codemode_only"}
+    result = {"tools": sorted(tools), "skills": skills, "suites": suites}
     if "manualSkills" in resources:
         result["manualSkills"] = sorted(set(resources["manualSkills"]))
     return result
