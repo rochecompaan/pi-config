@@ -76,14 +76,26 @@
       );
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
 
-      sherpaLoadExtension = pkgs.writeText "pi-listen-sherpa-load.ts" ''
+      voiceNativeLoadExtension = pkgs.writeText "rpiv-voice-native-load.ts" ''
+        import assert from "node:assert/strict";
         import { createRequire } from "node:module";
 
-        const require = createRequire(import.meta.url);
+        const require = createRequire(
+          "${piDeps.rpivVoice}/lib/node_modules/@juicesharp/rpiv-voice/package.json"
+        );
 
         export default function () {
-          require("${piDeps.piListen}/node_modules/sherpa-onnx-node/sherpa-onnx.js");
-          console.error("PI_LISTEN_SHERPA_LOADED");
+          const sherpa = require("sherpa-onnx-node");
+          assert.equal(typeof sherpa.OfflineRecognizer, "function");
+          assert.equal(typeof sherpa.readWave, "function");
+          assert.equal(typeof sherpa.version, "string");
+
+          const Decibri = require("decibri");
+          assert.equal(typeof Decibri, "function");
+          assert.equal(typeof Decibri.devices, "function");
+          assert.equal(typeof Decibri.version().decibri, "string");
+
+          console.error("RPIV_VOICE_NATIVE_LOADED");
         }
       '';
 
@@ -149,7 +161,7 @@
       checks = {
         "pi-config-build" = piConfig;
 
-        "pi-listen-sherpa-load" = pkgs.runCommand "pi-listen-sherpa-load" { } ''
+        "rpiv-voice-native-load" = pkgs.runCommand "rpiv-voice-native-load" { } ''
           export HOME="$TMPDIR/home"
           mkdir -p "$HOME"
 
@@ -158,12 +170,12 @@
             -p "Say ok" \
             --no-tools \
             --provider __invalid__ \
-            -e ${sherpaLoadExtension} \
+            -e ${voiceNativeLoadExtension} \
             > "$TMPDIR/pi.log" 2>&1
           pi_status=$?
           set -e
 
-          if ! ${pkgs.gnugrep}/bin/grep -q "PI_LISTEN_SHERPA_LOADED" "$TMPDIR/pi.log"; then
+          if ! ${pkgs.gnugrep}/bin/grep -q "RPIV_VOICE_NATIVE_LOADED" "$TMPDIR/pi.log"; then
             cat "$TMPDIR/pi.log"
             exit 1
           fi

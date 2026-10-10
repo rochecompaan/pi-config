@@ -50,29 +50,5 @@
   },
   "theme": "stylix",
   "tuiMode": "regular",
-  "outputPad": 0,
-  "voice": {
-    "version": 2,
-    "enabled": true,
-    "language": "en",
-    "scope": "global",
-    "backend": "local",
-    "localModel": "whisper-turbo",
-    "toggleShortcut": "ctrl+alt+p",
-    "ttsEnabled": false,
-    "ttsBackend": "local",
-    "ttsLocalModel": "kitten-nano-en-v0_2",
-    "ttsLocalVoiceId": 0,
-    "ttsDeepgramVoiceId": "aura-asteria-en",
-    "ttsSpeed": 1,
-    "ttsAutoSpeak": true,
-    "autoSubmitOnSpeak": false,
-    "holdThresholdMs": 700,
-    "ttsDeepgramStreaming": false,
-    "ttsOnboardingShown": false,
-    "onboarding": {
-      "completed": false,
-      "schemaVersion": 2
-    }
-  }
+  "outputPad": 0
 }

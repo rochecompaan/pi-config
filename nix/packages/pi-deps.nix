@@ -5,35 +5,16 @@ else
   let
     pins = builtins.fromJSON (builtins.readFile ../dependency-pins.json);
 
-    # dependency-source: pi-listen
-    piListenSrc = pkgs.fetchzip {
-      inherit (pins."pi-listen") url hash;
+    # dependency-source: rpiv-voice
+    rpivVoiceSrc = pkgs.fetchzip {
+      inherit (pins."rpiv-voice") url hash;
     };
 
-    # dependency-source: sherpa-onnx-node
-    sherpaOnnxNode = pkgs.fetchzip {
-      inherit (pins."sherpa-onnx-node") url hash;
+    rpivVoice = import ./rpiv-voice.nix {
+      inherit pkgs;
+      src = rpivVoiceSrc;
+      pin = pins."rpiv-voice";
     };
-
-    # dependency-source: sherpa-onnx-linux-x64
-    sherpaOnnxLinuxX64 = pkgs.fetchzip {
-      inherit (pins."sherpa-onnx-linux-x64") url hash;
-    };
-
-    piListen =
-      pkgs.runCommand "pi-listen-${pins."pi-listen".version}"
-        {
-          nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-          buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-        }
-        ''
-          mkdir -p $out/node_modules
-          cp -r ${piListenSrc}/. $out/
-          cp -r ${sherpaOnnxNode} $out/node_modules/sherpa-onnx-node
-          cp -r ${sherpaOnnxLinuxX64} $out/node_modules/sherpa-onnx-linux-x64
-          chmod -R u+w $out/node_modules/sherpa-onnx-linux-x64
-          autoPatchelf $out/node_modules/sherpa-onnx-linux-x64
-        '';
 
     # dependency-source: pi-loadout
     piLoadoutSrc = pkgs.fetchzip {
@@ -385,7 +366,7 @@ else
       piCodegraph
       piClaudeBridge
       piContextPaging
-      piListen
+      rpivVoice
       piLoadout
       piRemote
       piSubagents
@@ -403,7 +384,7 @@ else
       "${contextMode}/lib/node_modules/context-mode"
       "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"
-      "${piListen}"
+      "${rpivVoice}/lib/node_modules/@juicesharp/rpiv-voice"
       "${piLoadout}"
       "${mattPocockSkills}"
       "${superpowers}"

@@ -47,11 +47,6 @@
     "rev": "634170fc83c7400683eb509f6b56d1d9af8d37f7",
     "version": "0.1.0-634170f"
   },
-  "pi-listen": {
-    "hash": "sha256-MbYQiwQMvXkN0dRYdMTTX+4whLjey/yGcke5zq6BRO0=",
-    "url": "https://registry.npmjs.org/@codexstar/pi-listen/-/pi-listen-7.2.2.tgz",
-    "version": "7.2.2"
-  },
   "pi-loadout": {
     "hash": "sha256-PSSDRpDpzdhO5s7a7m0mSQ83dy817bvsZdUnuNt/JGQ=",
     "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.37.tgz",
@@ -82,15 +77,11 @@
     "url": "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz",
     "version": "0.7.0"
   },
-  "sherpa-onnx-linux-x64": {
-    "hash": "sha256-yWtsF6+H770ZiTFFJUsGvtE7r4Pr1t2dFMT2DP1aeV8=",
-    "url": "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.4.tgz",
-    "version": "1.13.4"
-  },
-  "sherpa-onnx-node": {
-    "hash": "sha256-cbdaglSWW0PFQALKrjKXbUQTQJ7ddFDW+7Nuhi0zmBg=",
-    "url": "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz",
-    "version": "1.13.4"
+  "rpiv-voice": {
+    "hash": "sha256-CKRubEjbad00/YlqE4ltXYgYOdVG2auo4ARor1LYvBg=",
+    "npmDepsHash": "sha256-anPa7TETkSQblBBXBe+WIsdMCft+vKbSNzEHGuzuGMk=",
+    "url": "https://registry.npmjs.org/@juicesharp/rpiv-voice/-/rpiv-voice-2.12.0.tgz",
+    "version": "2.12.0"
   },
   "simple-english": {
     "rev": "v2.1.1",

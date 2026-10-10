@@ -89,7 +89,7 @@ The runner must reach that origin and trust its TLS certificate.
 
 ## Update units
 
-The inventory defines **16 units** that cover **19 fixed source pins**, plus all flake inputs.
+The inventory defines **16 units** that cover **17 fixed source pins**, plus all flake inputs.
 Coupled sources share a PR.
 The catalog is `maintenance/dependency_updates/catalog.json`.
 The pins are `nix/dependency-pins.json`.
@@ -104,7 +104,7 @@ The pins are `nix/dependency-pins.json`.
 | `pi-claude-bridge` | Claude bridge extension |
 | `pi-context-paging` | Context paging extension |
 | `pi-intervals` | Intervals extension |
-| `pi-listen` | Listen extension, Sherpa package, Sherpa Linux binary |
+| `rpiv-voice` | Voice extension and its maintained npm lock |
 | `pi-loadout` | Loadout extension |
 | `pi-remote` | Pi remote package |
 | `pi-subagents` | Subagents extension |
@@ -119,6 +119,9 @@ Commit-based sources follow the upstream default branch and retain an exact comm
 Source hashes retain each Nix fetcher's unpacking and submodule policy.
 Affected npm locks and cache hashes change with their consuming source.
 Unchanged sources do not regenerate npm locks.
+The `rpiv-voice` unit owns its source pin and `nix/packages/rpiv-voice-package-lock.json`.
+That lock tracks Sherpa, Decibri, and their native platform packages together.
+Those packages have no separate source pins or update units.
 Local compatibility behavior remains intact.
 The bridge uses the upstream lock's exact versions and restores missing integrity from matching npm registry metadata.
 The repaired lock stays in the unit's owned files and supplies the Nix package build.

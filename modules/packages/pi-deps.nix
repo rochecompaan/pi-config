@@ -19,7 +19,7 @@
         "remote-pi-extension" = piDeps.remotePiExtension;
         "superpowers-source" = piDeps.superpowersSrc;
         "simple-english-source" = piDeps.simpleEnglishSrc;
-        "pi-listen" = piDeps.piListen;
+        "rpiv-voice" = piDeps.rpivVoice;
         "pi-loadout" = piDeps.piLoadout;
         "pi-subagents" = piDeps.piSubagents;
         "pi-vim" = piDeps.piVim;

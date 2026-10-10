@@ -29,6 +29,19 @@ Enable `using-superpowers` to receive the Superpowers reminder at session start,
 
 Authentication, sessions, extensions, models, and trust state stay in the same `~/.pi/agent` directory.
 
+### Voice dictation
+
+Use `/voice` for local dictation with `@juicesharp/rpiv-voice`.
+The preview updates about once per second.
+Press Enter to paste the transcript into the editor without submitting it.
+Press Esc to cancel and leave the editor unchanged.
+The package does not assign a keyboard shortcut.
+
+The first use downloads the multilingual Whisper base model, about 198 MB.
+The installed model uses about 157 MB.
+Speech recognition runs locally after the download.
+Nix supplies the extension and its dependencies, so Pi does not install npm packages at runtime.
+
 ### Project credentials
 
 The packaged Pi reads its credentials from `PI_CODING_AGENT_AUTH_FILE` when that variable is set. `/login`, `/logout` and `pi auth` then use that file instead of `~/.pi/agent/auth.json`. Settings, extensions, skills, sessions and MCP credentials (`mcp-auth.json`) stay in `~/.pi/agent`. A patch in this flake adds the variable; upstream Pi does not support it.

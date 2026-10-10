@@ -72,11 +72,15 @@
       "repo": "https://github.com/sixfeetup/pi-intervals.git",
       "version_style": "short-rev"
     },
-    "pi-listen": {
+    "rpiv-voice": {
       "channel": "npm-latest",
       "fetcher": "fetchzip",
       "hash_field": "hash",
-      "package": "@codexstar/pi-listen"
+      "lock": {
+        "kind": "maintained",
+        "path": "nix/packages/rpiv-voice-package-lock.json"
+      },
+      "package": "@juicesharp/rpiv-voice"
     },
     "pi-loadout": {
       "channel": "npm-latest",
@@ -125,23 +129,7 @@
       },
       "package": "remote-pi"
     },
-    "sherpa-onnx-linux-x64": {
-      "channel": "companion",
-      "fetcher": "fetchzip",
-      "hash_field": "hash",
-      "package": "sherpa-onnx-linux-x64",
-      "primary": "sherpa-onnx-node",
-      "rule": "same-version"
-    },
-    "sherpa-onnx-node": {
-      "channel": "companion",
-      "dependency": "sherpa-onnx-node",
-      "fetcher": "fetchzip",
-      "hash_field": "hash",
-      "package": "sherpa-onnx-node",
-      "primary": "pi-listen",
-      "rule": "manifest-range"
-    },
+
     "simple-english": {
       "channel": "git-stable-tag",
       "fetcher": "fetchgit",
@@ -247,17 +235,16 @@
         "pi-intervals"
       ]
     },
-    "pi-listen": {
+    "rpiv-voice": {
       "builds": [
-        "pi-listen"
+        "rpiv-voice"
       ],
       "paths": [
-        "nix/dependency-pins.json"
+        "nix/dependency-pins.json",
+        "nix/packages/rpiv-voice-package-lock.json"
       ],
       "sources": [
-        "pi-listen",
-        "sherpa-onnx-node",
-        "sherpa-onnx-linux-x64"
+        "rpiv-voice"
       ]
     },
     "pi-loadout": {
