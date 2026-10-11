@@ -72,15 +72,17 @@
       "repo": "https://github.com/sixfeetup/pi-intervals.git",
       "version_style": "short-rev"
     },
-    "rpiv-voice": {
-      "channel": "npm-latest",
-      "fetcher": "fetchzip",
+    "pi-voice": {
+      "channel": "git-default-head",
+      "fetcher": "github-archive",
       "hash_field": "hash",
       "lock": {
         "kind": "maintained",
-        "path": "nix/packages/rpiv-voice-package-lock.json"
+        "path": "nix/packages/pi-voice-package-lock.json"
       },
-      "package": "@juicesharp/rpiv-voice"
+      "package": "@earendil-works/pi-voice",
+      "repo": "https://github.com/earendil-works/pi-voice.git",
+      "version_style": "short-rev"
     },
     "pi-loadout": {
       "channel": "npm-latest",
@@ -235,16 +237,16 @@
         "pi-intervals"
       ]
     },
-    "rpiv-voice": {
+    "pi-voice": {
       "builds": [
-        "rpiv-voice"
+        "pi-voice"
       ],
       "paths": [
         "nix/dependency-pins.json",
-        "nix/packages/rpiv-voice-package-lock.json"
+        "nix/packages/pi-voice-package-lock.json"
       ],
       "sources": [
-        "rpiv-voice"
+        "pi-voice"
       ]
     },
     "pi-loadout": {

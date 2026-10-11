@@ -5,15 +5,17 @@ else
   let
     pins = builtins.fromJSON (builtins.readFile ../dependency-pins.json);
 
-    # dependency-source: rpiv-voice
-    rpivVoiceSrc = pkgs.fetchzip {
-      inherit (pins."rpiv-voice") url hash;
+    # dependency-source: pi-voice
+    piVoiceSrc = pkgs.fetchFromGitHub {
+      owner = "earendil-works";
+      repo = "pi-voice";
+      inherit (pins."pi-voice") rev hash;
     };
 
-    rpivVoice = import ./rpiv-voice.nix {
+    piVoice = import ./pi-voice.nix {
       inherit pkgs;
-      src = rpivVoiceSrc;
-      pin = pins."rpiv-voice";
+      src = piVoiceSrc;
+      pin = pins."pi-voice";
     };
 
     # dependency-source: pi-loadout
@@ -366,7 +368,7 @@ else
       piCodegraph
       piClaudeBridge
       piContextPaging
-      rpivVoice
+      piVoice
       piLoadout
       piRemote
       piSubagents
@@ -384,7 +386,7 @@ else
       "${contextMode}/lib/node_modules/context-mode"
       "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"
-      "${rpivVoice}/lib/node_modules/@juicesharp/rpiv-voice"
+      "${piVoice}/lib/node_modules/@earendil-works/pi-voice"
       "${piLoadout}"
       "${mattPocockSkills}"
       "${superpowers}"

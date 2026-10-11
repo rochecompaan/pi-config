@@ -31,16 +31,20 @@ Authentication, sessions, extensions, models, and trust state stay in the same `
 
 ### Voice dictation
 
-Use `/voice` for local dictation with `@juicesharp/rpiv-voice`.
-The preview updates about once per second.
-Press Enter to paste the transcript into the editor without submitting it.
-Press Esc to cancel and leave the editor unchanged.
-The package does not assign a keyboard shortcut.
+Use `/voice` for local dictation with [`@earendil-works/pi-voice`](https://github.com/earendil-works/pi-voice).
+Run `/voice-settings` first to choose and download a local model.
+Nix pins an exact commit from the upstream default branch, including fixes newer than the npm release.
 
-The first use downloads the multilingual Whisper base model, about 198 MB.
-The installed model uses about 157 MB.
-Speech recognition runs locally after the download.
-Nix supplies the extension and its dependencies, so Pi does not install npm packages at runtime.
+Press `Ctrl+Alt+Z` or use `/voice` to start and stop recording.
+While you record, press Space to stop and transcribe, or press Esc to discard the recording.
+The transcript goes into the editor without submitting it.
+Use `/voice-settings` to change the model, language, microphone, or shortcut.
+The extension shows recording state in its own widget.
+The existing footer's voice indicator is not connected to this extension.
+
+Speech recognition runs locally after the model download.
+Nix supplies the extension, its native dependencies, and FFmpeg for the `transcribe_file` tool.
+Pi does not install npm packages at runtime.
 
 ### Project credentials
 

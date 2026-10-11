@@ -76,26 +76,22 @@
       );
       stylixJson = pkgs.writeText "stylix.json" (builtins.toJSON stylixTheme);
 
-      voiceNativeLoadExtension = pkgs.writeText "rpiv-voice-native-load.ts" ''
+      voiceNativeLoadExtension = pkgs.writeText "pi-voice-native-load.ts" ''
         import assert from "node:assert/strict";
-        import { createRequire } from "node:module";
-
-        const require = createRequire(
-          "${piDeps.rpivVoice}/lib/node_modules/@juicesharp/rpiv-voice/package.json"
-        );
+        import { Recorder } from "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/node_modules/@handy-computer/recorder/index.js";
+        import { backendAvailable } from "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/node_modules/transcribe-cpp/dist/index.js";
+        // The entry point defers these first-use modules until a voice command.
+        import "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/src/runtime.ts";
+        import "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/src/audio.ts";
+        import "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/src/visualizer.ts";
+        import "${piDeps.piVoice}/lib/node_modules/@earendil-works/pi-voice/src/settings-menu.ts";
 
         export default function () {
-          const sherpa = require("sherpa-onnx-node");
-          assert.equal(typeof sherpa.OfflineRecognizer, "function");
-          assert.equal(typeof sherpa.readWave, "function");
-          assert.equal(typeof sherpa.version, "string");
+          assert.equal(typeof Recorder, "function");
+          // This loads the shared transcription library without a model download.
+          assert.equal(backendAvailable("cpu"), true);
 
-          const Decibri = require("decibri");
-          assert.equal(typeof Decibri, "function");
-          assert.equal(typeof Decibri.devices, "function");
-          assert.equal(typeof Decibri.version().decibri, "string");
-
-          console.error("RPIV_VOICE_NATIVE_LOADED");
+          console.error("PI_VOICE_NATIVE_LOADED");
         }
       '';
 
@@ -161,7 +157,7 @@
       checks = {
         "pi-config-build" = piConfig;
 
-        "rpiv-voice-native-load" = pkgs.runCommand "rpiv-voice-native-load" { } ''
+        "pi-voice-native-load" = pkgs.runCommand "pi-voice-native-load" { } ''
           export HOME="$TMPDIR/home"
           mkdir -p "$HOME"
 
@@ -175,7 +171,7 @@
           pi_status=$?
           set -e
 
-          if ! ${pkgs.gnugrep}/bin/grep -q "RPIV_VOICE_NATIVE_LOADED" "$TMPDIR/pi.log"; then
+          if ! ${pkgs.gnugrep}/bin/grep -q "PI_VOICE_NATIVE_LOADED" "$TMPDIR/pi.log"; then
             cat "$TMPDIR/pi.log"
             exit 1
           fi

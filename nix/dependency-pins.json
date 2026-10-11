@@ -77,11 +77,11 @@
     "url": "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz",
     "version": "0.7.0"
   },
-  "rpiv-voice": {
-    "hash": "sha256-CKRubEjbad00/YlqE4ltXYgYOdVG2auo4ARor1LYvBg=",
-    "npmDepsHash": "sha256-anPa7TETkSQblBBXBe+WIsdMCft+vKbSNzEHGuzuGMk=",
-    "url": "https://registry.npmjs.org/@juicesharp/rpiv-voice/-/rpiv-voice-2.12.0.tgz",
-    "version": "2.12.0"
+  "pi-voice": {
+    "hash": "sha256-zrA+QgCqoH7ZvcaZ/lDBdLZri0stdhhwUtHaNpQAwHU=",
+    "npmDepsHash": "sha256-SNTkHC+ylEfHOlTZlgaHlcpd56ZfgigDf8+AyWUKgd4=",
+    "rev": "df38132d8b698f24caa52c44501910cde60f6e85",
+    "version": "0.1.0-df38132"
   },
   "simple-english": {
     "rev": "v2.1.1",

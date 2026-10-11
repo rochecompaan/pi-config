@@ -104,7 +104,7 @@ The pins are `nix/dependency-pins.json`.
 | `pi-claude-bridge` | Claude bridge extension |
 | `pi-context-paging` | Context paging extension |
 | `pi-intervals` | Intervals extension |
-| `rpiv-voice` | Voice extension and its maintained npm lock |
+| `pi-voice` | Voice extension and its maintained npm lock |
 | `pi-loadout` | Loadout extension |
 | `pi-remote` | Pi remote package |
 | `pi-subagents` | Subagents extension |
@@ -119,8 +119,10 @@ Commit-based sources follow the upstream default branch and retain an exact comm
 Source hashes retain each Nix fetcher's unpacking and submodule policy.
 Affected npm locks and cache hashes change with their consuming source.
 Unchanged sources do not regenerate npm locks.
-The `rpiv-voice` unit owns its source pin and `nix/packages/rpiv-voice-package-lock.json`.
-That lock tracks Sherpa, Decibri, and their native platform packages together.
+The `pi-voice` unit follows the upstream default branch and owns `nix/packages/pi-voice-package-lock.json`.
+The initial lock preserves upstream dependency versions and fills missing npm download URLs and integrity hashes.
+The updater carries that maintained lock forward when the source changes.
+It tracks the recorder, transcribe.cpp, Koffi, and native platform packages together.
 Those packages have no separate source pins or update units.
 Local compatibility behavior remains intact.
 The bridge uses the upstream lock's exact versions and restores missing integrity from matching npm registry metadata.
