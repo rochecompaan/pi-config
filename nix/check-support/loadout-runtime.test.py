@@ -70,7 +70,9 @@ class LoadoutRuntimeTest(unittest.TestCase):
             set(selected["enabledSkills"]) - set(self.catalog["manualSkills"])
         )
         self.assertEqual(result["skills"], visible_skills)
-        self.assertEqual(result["active"], selected["enabledTools"])
+        # Child-only tools remain selected but are active only when registered.
+        child_only = {"contact_supervisor", "structured_output"} - set(result["all"])
+        self.assertEqual(result["active"], sorted(set(selected["enabledTools"]) - child_only))
         self.assertEqual(result["bootstrap"], profile == "superpowers")
 
     def test_default_superpowers_keeps_tools_and_skills_loaded_after_session_start(self):

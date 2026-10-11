@@ -18,6 +18,8 @@ def collect_catalog(resources, toolset, suite_roots):
             raise ValueError(f"No loaded skills found for suite: {suite}")
     # pi-loadout manages its codemode helper itself; it is not a user tool.
     tools = set(toolset["all"]) - {"pi_loadout_codemode_only"}
+    # pi-subagents registers these only inside children, not in the parent probe.
+    tools |= {"contact_supervisor", "structured_output"}
     result = {"tools": sorted(tools), "skills": skills, "suites": suites}
     if "manualSkills" in resources:
         result["manualSkills"] = sorted(set(resources["manualSkills"]))

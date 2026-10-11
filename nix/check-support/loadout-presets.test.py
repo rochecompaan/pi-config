@@ -128,7 +128,7 @@ class LoadoutPresetsTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {
-            "tools": ["alpha", "omega"],
+            "tools": ["alpha", "contact_supervisor", "omega", "structured_output"],
             "skills": ["core", "renamed-skill", "super-a"],
             "suites": {
                 "matt": ["renamed-skill"], "superpowers": ["super-a"],
