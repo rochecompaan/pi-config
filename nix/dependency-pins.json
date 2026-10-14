@@ -59,11 +59,11 @@
     "version": "0.3.1"
   },
   "pi-subagents": {
-    "npmDepsHash": "sha256-ImygHIZc9Xj1QfWBoyJiWFJVm+oJMNn5aZO2q4Sj9hA=",
-    "rev": "v0.77.0",
-    "sha256": "sha256-xymTm9uUvhYZRI7F3Sa7GA4UQLSrTFdIODP6uzmh6Qg=",
+    "npmDepsHash": "sha256-862hXsUJ7CSVSntkV1Iv4z5E2On8v5BJSbM9iIYe+GY=",
+    "rev": "v0.78.0",
+    "sha256": "sha256-kTzwkgt+ZVRc5LoPCsryQcmMB9XJ5k5Tptrw3HV+9a8=",
     "url": "https://github.com/nicobailon/pi-subagents.git",
-    "version": "0.77.0"
+    "version": "0.78.0"
   },
   "pi-vim": {
     "hash": "sha256-KiQYCdC6yr9PTZX2En53Eq4NT5rQ21aR+kGItRO7WbU=",
@@ -71,17 +71,17 @@
     "url": "https://registry.npmjs.org/pi-vim/-/pi-vim-0.14.2.tgz",
     "version": "0.14.2"
   },
-  "remote-pi-extension": {
-    "hash": "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=",
-    "npmDepsHash": "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=",
-    "url": "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz",
-    "version": "0.7.0"
-  },
   "pi-voice": {
     "hash": "sha256-zrA+QgCqoH7ZvcaZ/lDBdLZri0stdhhwUtHaNpQAwHU=",
     "npmDepsHash": "sha256-SNTkHC+ylEfHOlTZlgaHlcpd56ZfgigDf8+AyWUKgd4=",
     "rev": "df38132d8b698f24caa52c44501910cde60f6e85",
     "version": "0.1.0-df38132"
+  },
+  "remote-pi-extension": {
+    "hash": "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=",
+    "npmDepsHash": "sha256-Ain32MnVTRsUrUOM6clZ/7NjCFaGBBRhgVADX1XG+/g=",
+    "url": "https://registry.npmjs.org/remote-pi/-/remote-pi-0.7.0.tgz",
+    "version": "0.7.0"
   },
   "simple-english": {
     "rev": "v2.1.1",
