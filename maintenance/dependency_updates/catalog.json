@@ -56,10 +56,12 @@
       "package": "@vndv/pi-codegraph"
     },
     "pi-context-paging": {
-      "channel": "npm-latest",
-      "fetcher": "fetchzip",
+      "channel": "git-default-head",
+      "fetcher": "github-archive",
       "hash_field": "hash",
-      "package": "@rochecompaan/pi-context-paging"
+      "package": "@rochecompaan/pi-context-paging",
+      "repo": "https://github.com/rochecompaan/pi-context-paging.git",
+      "version_style": "short-rev"
     },
     "pi-intervals": {
       "channel": "git-default-head",

@@ -37,9 +37,9 @@
     "version": "0.1.11"
   },
   "pi-context-paging": {
-    "hash": "sha256-Ggng23Dqt8M41DW3TgjeuKYAbdr+kZtJHYxozKI5Rok=",
-    "url": "https://registry.npmjs.org/@rochecompaan/pi-context-paging/-/pi-context-paging-0.3.9.tgz",
-    "version": "0.3.9"
+    "hash": "sha256-L5g0hU/ELhsaHxgtso1wwTdKnuGIVq5aeWpPi12Dj2w=",
+    "rev": "c03f1f83def1cd67f29da7d5751dfeb727bed1c7",
+    "version": "0.3.9-c03f1f8"
   },
   "pi-intervals": {
     "hash": "sha256-w9hGXShosGPeco1UB2AvzPL85e0HmVN75NbUdPC6IXE=",

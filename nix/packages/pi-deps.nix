@@ -286,9 +286,11 @@ else
     };
 
     # dependency-source: pi-context-paging
-    piContextPaging = pkgs.fetchzip {
+    piContextPaging = pkgs.fetchFromGitHub {
       name = "pi-context-paging-${pins."pi-context-paging".version}";
-      inherit (pins."pi-context-paging") url hash;
+      owner = "rochecompaan";
+      repo = "pi-context-paging";
+      inherit (pins."pi-context-paging") rev hash;
     };
 
     # dependency-source: codegraph

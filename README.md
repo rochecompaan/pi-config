@@ -95,7 +95,7 @@ For Pi, the bundle adds this configuration's Pi packages. For Claude Code, it ad
 
 ## Context paging
 
-Context paging comes from the published [`@rochecompaan/pi-context-paging`](https://github.com/rochecompaan/pi-context-paging) package. `nix/dependency-pins.json` pins its npm release, and the dependency updates keep it current like the other packages.
+Context paging comes from the [`@rochecompaan/pi-context-paging`](https://github.com/rochecompaan/pi-context-paging) GitHub repository. `nix/dependency-pins.json` pins a commit from its `main` branch so we can test fixes before an npm release. Dependency updates follow the repository's default branch (`main`).
 
 The packaged settings turn paging off:
 
