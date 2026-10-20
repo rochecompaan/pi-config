@@ -25,6 +25,11 @@
     "sha256": "sha256-NljCSZNI3sZ+vbCw7pRdrwR7try4BxOFp4gdjuWYtzs=",
     "url": "https://github.com/mattpocock/skills.git"
   },
+  "pi-auto-reload": {
+    "hash": "sha256-sYXAv6HRx/yzBWkNvwooTwJJGt+OAwttgztVeJrSJ1o=",
+    "url": "https://registry.npmjs.org/pi-auto-reload/-/pi-auto-reload-0.2.2.tgz",
+    "version": "0.2.2"
+  },
   "pi-claude-bridge": {
     "hash": "sha256-ri1KD0H5Nbt8lAMHbMLVf7dwaoHNbTJfhEuF4Y8lFF8=",
     "npmDepsHash": "sha256-Rt/HSfhzC3Av1JRkRDar+QmaspswdUdRMDRvCSvbmls=",

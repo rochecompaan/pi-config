@@ -101,6 +101,7 @@ The pins are `nix/dependency-pins.json`.
 | `context-mode` | Context-mode package |
 | `diff-package` | Shared diff package |
 | `mattpocock-skills` | Matt Pocock skill bundle |
+| `pi-auto-reload` | Automatic session reload extension |
 | `pi-claude-bridge` | Claude bridge extension |
 | `pi-context-paging` | Context paging extension |
 | `pi-intervals` | Intervals extension |

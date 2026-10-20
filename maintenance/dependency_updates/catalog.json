@@ -37,6 +37,12 @@
       "repo": "https://github.com/mattpocock/skills.git",
       "submodules": true
     },
+    "pi-auto-reload": {
+      "channel": "npm-latest",
+      "fetcher": "fetchzip",
+      "hash_field": "hash",
+      "package": "pi-auto-reload"
+    },
     "pi-claude-bridge": {
       "channel": "git-default-head",
       "fetcher": "github-archive",
@@ -203,6 +209,17 @@
       ],
       "sources": [
         "mattpocock-skills"
+      ]
+    },
+    "pi-auto-reload": {
+      "builds": [
+        "pi-auto-reload"
+      ],
+      "paths": [
+        "nix/dependency-pins.json"
+      ],
+      "sources": [
+        "pi-auto-reload"
       ]
     },
     "pi-claude-bridge": {

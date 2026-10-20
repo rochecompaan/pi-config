@@ -279,6 +279,12 @@ else
       inherit (pins."context-mode") url hash;
     };
 
+    # dependency-source: pi-auto-reload
+    piAutoReload = pkgs.fetchzip {
+      name = "pi-auto-reload-${pins."pi-auto-reload".version}";
+      inherit (pins."pi-auto-reload") url hash;
+    };
+
     # dependency-source: pi-codegraph
     piCodegraph = pkgs.fetchzip {
       name = "pi-codegraph-${pins."pi-codegraph".version}";
@@ -367,6 +373,7 @@ else
       diffPackage
       mattPocockSkills
       mattPocockSkillsSrc
+      piAutoReload
       piCodegraph
       piClaudeBridge
       piContextPaging
@@ -385,6 +392,7 @@ else
     # context paging first so its context handler runs before other packages'.
     packagePaths = [
       "${piContextPaging}"
+      "${piAutoReload}"
       "${contextMode}/lib/node_modules/context-mode"
       "${piClaudeBridge}/lib/node_modules/pi-claude-bridge"
       "${piCodegraph}"

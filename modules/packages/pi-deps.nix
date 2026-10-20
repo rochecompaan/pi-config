@@ -13,6 +13,7 @@
         "codegraph" = piDeps.codegraphCli;
         "context-mode" = piDeps.contextMode;
         "diff-package" = piDeps.diffPackage;
+        "pi-auto-reload" = piDeps.piAutoReload;
         "pi-codegraph" = piDeps.piCodegraph;
         "pi-claude-bridge" = piDeps.piClaudeBridge;
         "pi-context-paging" = piDeps.piContextPaging;
