@@ -21,8 +21,8 @@
     "version": "9.0.0"
   },
   "mattpocock-skills": {
-    "rev": "49dd158d1076134a641b33efb035946536778336",
-    "sha256": "sha256-NljCSZNI3sZ+vbCw7pRdrwR7try4BxOFp4gdjuWYtzs=",
+    "rev": "5beb35b040e3de97e54fa9e386d7e42d15c295c2",
+    "sha256": "sha256-2FKfe3/Fwc4MmwBLa+d/oQW4/gtYIssdWapy2MPd39I=",
     "url": "https://github.com/mattpocock/skills.git"
   },
   "pi-auto-reload": {
