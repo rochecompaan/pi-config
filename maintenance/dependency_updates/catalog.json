@@ -44,7 +44,8 @@
       "package": "pi-auto-reload"
     },
     "pi-claude-bridge": {
-      "channel": "git-default-head",
+      "branch": "fix/active-history-rewrites",
+      "channel": "git-branch-head",
       "fetcher": "github-archive",
       "hash_field": "hash",
       "lock": {
@@ -52,7 +53,7 @@
         "path": "nix/packages/pi-claude-bridge-package-lock.json"
       },
       "package": "pi-claude-bridge",
-      "repo": "https://github.com/elidickinson/pi-claude-bridge.git",
+      "repo": "https://github.com/rochecompaan/pi-claude-bridge.git",
       "version_style": "commit-date"
     },
     "pi-codegraph": {

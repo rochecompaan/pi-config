@@ -74,7 +74,7 @@ def _command(command: list[str], run, stage: str, root: Path | None = None) -> s
 
 def remote_refs(url: str) -> str:
     _https(url, {"github.com"})
-    return _command(["git", "ls-remote", "--symref", url, "HEAD", "refs/tags/*"], subprocess.run, "lookup")
+    return _command(["git", "ls-remote", "--symref", url, "HEAD", "refs/tags/*", "refs/heads/*"], subprocess.run, "lookup")
 
 
 def select_stable_tag(refs: str) -> tuple[str, str]:
@@ -119,16 +119,17 @@ def resolve_source(policy: dict, current: dict, read_json=read_upstream_json, ls
         package = policy["package"]
         metadata = _npm_metadata(package, read_json)
         return _npm_version(package, metadata, metadata.get("dist-tags", {}).get("latest"))
-    if channel not in {"git-stable-tag", "git-default-head"}:
+    if channel not in {"git-stable-tag", "git-default-head", "git-branch-head"}:
         raise UpdateError("lookup", "Unsupported primary source channel")
     url, owner, repo = _repository(policy)
     refs = ls_remote(url)
     if channel == "git-stable-tag":
         tag, commit = select_stable_tag(refs)
         return {"rev": tag, "version": tag.removeprefix("v"), "commit_sha": commit}
-    heads = [line.partition("\t")[0] for line in refs.splitlines() if line.endswith("\tHEAD") and SHA.fullmatch(line.partition("\t")[0])]
+    target = "refs/heads/" + policy["branch"] if channel == "git-branch-head" else "HEAD"
+    heads = [line.partition("\t")[0] for line in refs.splitlines() if line.endswith("\t" + target) and SHA.fullmatch(line.partition("\t")[0])]
     if len(heads) != 1:
-        raise UpdateError("lookup", "Default Git branch did not resolve to one commit")
+        raise UpdateError("lookup", "Git branch did not resolve to one commit")
     result = {"rev": heads[0]}
     if policy.get("version_style") == "commit-date":
         metadata = read_json(f"https://api.github.com/repos/{owner}/{repo}/commits/{heads[0]}")

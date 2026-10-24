@@ -79,6 +79,26 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(policies["a"]["hash_field"], "hash")
         audit_sources(self.root, policies)
 
+    def test_named_branch_inventory_accepts_a_nested_branch(self):
+        self.catalog["sources"]["a"].update(channel="git-branch-head", branch="fix/history")
+        self.save()
+        units, policies = load_catalog(self.root)
+        self.assertEqual(units["one"].source_ids, ("a",))
+        self.assertEqual(policies["a"]["branch"], "fix/history")
+
+    def test_named_branch_inventory_rejects_missing_or_unsafe_branch_names(self):
+        for branch in [None, "", "-bad", "HEAD", "/bad", "bad/", "bad//name", "bad..name",
+                       "bad.lock", "fix/a.lock/name", "fix/.hidden", "fix/end.", "bad name", "bad\nname", "bad*name"]:
+            with self.subTest(branch=branch):
+                self.catalog["sources"]["a"].update(channel="git-branch-head")
+                if branch is None:
+                    self.catalog["sources"]["a"].pop("branch", None)
+                else:
+                    self.catalog["sources"]["a"]["branch"] = branch
+                self.save()
+                with self.assertRaises(UpdateError):
+                    load_catalog(self.root)
+
     def test_unmanaged_pin_is_not_silently_skipped(self):
         self.pins["unmanaged"] = {"hash": HASH}
         self.save()

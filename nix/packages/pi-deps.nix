@@ -57,31 +57,15 @@ else
       '';
     };
 
-    piClaudeBridgePatch = ./pi-claude-bridge-safe-history-reconstruction.patch;
-    # Applied after piClaudeBridgePatch. Resume Claude Code's session only while
-    # pi's history still starts with the messages it holds, so context paging
-    # (which drops older messages) forces a rebuild instead of a stale resume.
-    piClaudeBridgePagingHistorySyncPatch = ./pi-claude-bridge-paging-history-sync.patch;
-    piClaudeBridgeActivePagingPatch = ./pi-claude-bridge-active-paging.patch;
-    piClaudeBridgeActivePagingTest = ./pi-claude-bridge-active-paging.test.mjs;
-    piClaudeBridgeProviderHarness = ./pi-claude-bridge-provider-harness.mjs;
-    piClaudeBridgeHistoryModules = ./pi-claude-bridge-history;
-    piClaudeBridgeSessionHistoryPatch = ./pi-claude-bridge-session-history.patch;
-    piClaudeBridgeSessionIsolationTest = ./pi-claude-bridge-session-isolation.test.mjs;
-    # 0.9.1 replaces the anonymous mirror with per-Pi-session state.
-    piClaudeBridgeUsesSessionIds = pkgs.lib.versionAtLeast pins."pi-claude-bridge".version "0.9.1";
     # Preserve the upstream lock's versions and restore missing registry hashes.
     # The updater regenerates this lock from each selected source revision.
     piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
-    piClaudeBridgeHistoryReconstructionTest = ./pi-claude-bridge-history-reconstruction.test.mjs;
-    piClaudeBridgeDirectCompletionTest = ./pi-claude-bridge-direct-completion.test.mjs;
-    piClaudeBridgeHistoryIdentityTest = ./pi-claude-bridge-history-identity.test.mjs;
 
-    # GitHub main snapshot (unreleased): adds Pi 0.87 compatibility and
-    # claude-opus-5-5 with its measured 1M context window.
+    # Pin the tested fix/active-history-rewrites branch from our fork.
+    # History fixes and their regression tests now live in the bridge source.
     # dependency-source: pi-claude-bridge
     piClaudeBridgeSrc = pkgs.fetchFromGitHub {
-      owner = "elidickinson";
+      owner = "rochecompaan";
       repo = "pi-claude-bridge";
       inherit (pins."pi-claude-bridge") rev hash;
     };
@@ -105,17 +89,6 @@ else
 
       postPatch = ''
         cp ${piClaudeBridgePackageLock} package-lock.json
-        cp ${piClaudeBridgeHistoryModules}/*.ts src/
-        ${
-          if piClaudeBridgeUsesSessionIds then
-            "patch -p1 < ${piClaudeBridgeSessionHistoryPatch}"
-          else
-            ''
-              patch -p1 < ${piClaudeBridgePatch}
-              patch -p1 < ${piClaudeBridgePagingHistorySyncPatch}
-              patch -p1 < ${piClaudeBridgeActivePagingPatch}
-            ''
-        }
       '';
 
       doInstallCheck = true;
@@ -126,27 +99,6 @@ else
           echo "Unexpected Claude Code version output: $claudeVersion" >&2
           exit 1
         fi
-        bridgeHistoryModule="$TMPDIR/history-reconstruction.ts"
-        bridgeDirectCompletionModule="$TMPDIR/request-router.ts"
-        bridgeHistoryIdentityModule="$TMPDIR/history-identity.ts"
-        cp "$out/lib/node_modules/pi-claude-bridge/src/history-reconstruction.ts" "$bridgeHistoryModule"
-        cp "$out/lib/node_modules/pi-claude-bridge/src/request-router.ts" "$bridgeDirectCompletionModule"
-        cp "$out/lib/node_modules/pi-claude-bridge/src/history-identity.ts" "$bridgeHistoryIdentityModule"
-        BRIDGE_HISTORY_MODULE="$bridgeHistoryModule" \
-          BRIDGE_DIRECT_COMPLETION_MODULE="$bridgeDirectCompletionModule" \
-          BRIDGE_HISTORY_IDENTITY_MODULE="$bridgeHistoryIdentityModule" \
-          ${pkgs.nodejs}/bin/node --test --experimental-strip-types \
-          ${piClaudeBridgeHistoryReconstructionTest} \
-          ${piClaudeBridgeDirectCompletionTest} \
-          ${piClaudeBridgeHistoryIdentityTest}
-        mkdir -p "$TMPDIR/bridge-provider-tests"
-        cp ${piClaudeBridgeActivePagingTest} "$TMPDIR/bridge-provider-tests/pi-claude-bridge-active-paging.test.mjs"
-        cp ${piClaudeBridgeSessionIsolationTest} "$TMPDIR/bridge-provider-tests/pi-claude-bridge-session-isolation.test.mjs"
-        cp ${piClaudeBridgeProviderHarness} "$TMPDIR/bridge-provider-tests/pi-claude-bridge-provider-harness.mjs"
-        BRIDGE_PROVIDER_MODULE="$out/lib/node_modules/pi-claude-bridge/src/index.ts" \
-          ${pkgs.nodejs}/bin/node --test \
-          "$TMPDIR/bridge-provider-tests/pi-claude-bridge-active-paging.test.mjs" \
-          "$TMPDIR/bridge-provider-tests/pi-claude-bridge-session-isolation.test.mjs"
       '';
     };
 

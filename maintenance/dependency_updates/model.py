@@ -12,7 +12,7 @@ PIN_FILE = "nix/dependency-pins.json"
 CATALOG_FILE = "maintenance/dependency_updates/catalog.json"
 RECIPES = tuple(f"nix/packages/{name}.nix" for name in ("pi-deps", "pi-remote", "pi-intervals"))
 FETCHERS = {"fetchzip": "fetchzip", "fetchurl": "fetchurl", "fetchgit": "fetchgit", "github-archive": "fetchFromGitHub"}
-CHANNELS = {"npm-latest", "git-stable-tag", "git-default-head", "companion"}
+CHANNELS = {"npm-latest", "git-stable-tag", "git-default-head", "git-branch-head", "companion"}
 PIN_FIELDS = {"version", "rev", "url", "hash", "sha256", "npmDepsHash"}
 
 
@@ -107,6 +107,12 @@ def _check_policy(source_id: str, policy: dict, pins: dict) -> None:
     if policy["channel"].startswith("git-"):
         if not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git", policy.get("repo", "")):
             raise UpdateError("inventory", f"Unsupported Git repository: {source_id}")
+    if policy["channel"] == "git-branch-head":
+        branch = policy.get("branch")
+        if (not isinstance(branch, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+                or branch == "HEAD" or ".." in branch
+                or any(not part or part.startswith(".") or part.endswith((".lock", ".")) for part in branch.split("/"))):
+            raise UpdateError("inventory", f"Invalid Git branch: {source_id}")
     if policy["channel"] == "npm-latest" and not re.fullmatch(r"(?:@[a-z0-9._-]+/)?[a-z0-9._-]+", policy.get("package", "")):
         raise UpdateError("inventory", f"Invalid npm package: {source_id}")
     if policy["channel"] == "companion" and policy.get("rule") not in {"manifest-range", "same-version", "lock-version"}:

@@ -3,10 +3,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from maintenance.dependency_updates.model import UpdateError
 from maintenance.dependency_updates.sources import (
-    prefetch_source, resolve_companion, resolve_source, select_stable_tag,
+    prefetch_source, remote_refs, resolve_companion, resolve_source, select_stable_tag,
 )
 
 RAW_HASH = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE="
@@ -77,6 +78,43 @@ class SelectionTests(unittest.TestCase):
         }, lambda url: refs)
         self.assertEqual(result["rev"], SHA)
         self.assertEqual(result["commit_date"], "2026-09-23")
+
+    def test_named_branch_selects_exact_head_not_default_tag_or_similar_branch(self):
+        policy = {"channel": "git-branch-head", "branch": "fix/history",
+            "repo": "https://github.com/example/pkg.git", "version_style": "commit-date"}
+        refs = "\n".join([
+            "b" * 40 + "\tHEAD",
+            "b" * 40 + "\trefs/heads/main",
+            "c" * 40 + "\trefs/heads/fix/history-old",
+            "d" * 40 + "\trefs/tags/fix/history",
+            SHA + "\trefs/heads/fix/history",
+        ])
+        result = resolve_source(policy, {}, lambda url: {
+            "sha": SHA, "commit": {"committer": {"date": "2026-10-24T12:00:00Z"}}
+        }, lambda url: refs)
+        self.assertEqual(result, {"rev": SHA, "commit_date": "2026-10-24"})
+
+    def test_named_branch_requires_one_valid_matching_commit(self):
+        policy = {"channel": "git-branch-head", "branch": "fix/history",
+            "repo": "https://github.com/example/pkg.git"}
+        for refs in [
+            SHA + "\tHEAD",
+            SHA + "\trefs/heads/fix/history-old",
+            "not-a-sha\trefs/heads/fix/history",
+            (SHA + "\trefs/heads/fix/history\n") * 2,
+        ]:
+            with self.subTest(refs=refs), self.assertRaises(UpdateError) as raised:
+                resolve_source(policy, {}, ls_remote=lambda url: refs)
+            self.assertEqual(raised.exception.stage, "lookup")
+
+    def test_named_branch_lookup_requests_branch_refs_from_git(self):
+        policy = {"channel": "git-branch-head", "branch": "fix/history",
+            "repo": "https://github.com/example/pkg.git"}
+        with patch("maintenance.dependency_updates.sources.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, SHA + "\trefs/heads/fix/history\n", "")
+            result = resolve_source(policy, {}, ls_remote=remote_refs)
+        self.assertEqual(result["rev"], SHA)
+        self.assertIn("refs/heads/*", run.call_args.args[0])
 
     def test_git_commit_metadata_must_match_selected_sha(self):
         policy = {"channel": "git-default-head", "repo": "https://github.com/example/pkg.git", "version_style": "commit-date"}
