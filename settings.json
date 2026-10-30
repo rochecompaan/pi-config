@@ -6,7 +6,7 @@
   "contextPaging": {
     "enabled": true,
     "tokenBudget": 200000,
-    "trimToTokens": 80000
+    "trimToTokens": 140000
   },
   "handoff": {
     "autoThresholdTokens": 150000
