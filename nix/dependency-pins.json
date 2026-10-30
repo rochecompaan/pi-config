@@ -77,10 +77,10 @@
     "version": "0.14.2"
   },
   "pi-voice": {
-    "hash": "sha256-hazJN7bJFXpBb5U9DM3nHKuF49tXiES75kcoh7EGJhs=",
-    "npmDepsHash": "sha256-V6530d24zpeRLVj3RoWKzf/rRbyDjumdV2rWE1Gn7GE=",
-    "rev": "28fb41cfcc133e6a77c2e2f631190c952e29af6f",
-    "version": "0.2.0-28fb41c"
+    "hash": "sha256-/c/6TKbFWfkp3QAncSZd1CN+fDqO7dgaC2Gwq0fqHFg=",
+    "npmDepsHash": "sha256-5jiCL9rlO0BC/vz3Sm2R3BKf78SWg3rFwtQSoQ9gtPQ=",
+    "rev": "53c39303509455561f35bc8b012ee4334a810afc",
+    "version": "0.2.0-53c3930"
   },
   "remote-pi-extension": {
     "hash": "sha256-yiyvsINe5n17PD4dmbB7lfC0ZUyFK5ElZtmd1XHSXbU=",
