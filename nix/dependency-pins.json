@@ -64,11 +64,11 @@
     "version": "0.3.1"
   },
   "pi-subagents": {
-    "npmDepsHash": "sha256-0B6AKixkKpHYr/ncknxi35chpmOd9hcCM9vX4TTAqP0=",
-    "rev": "v0.79.1",
-    "sha256": "sha256-RbxkdXI0gIDBimMKzvLVuKHdTm7q6AZCcy3S1fApVG4=",
+    "npmDepsHash": "sha256-4iHfVe/7y5xTT3tu8hhbrjOMr8OpkvgpCiDdWqMGVoQ=",
+    "rev": "v0.84.0",
+    "sha256": "sha256-yJHclk8TqJX0OGDteZYAbcW9qGDY9a8BSVy0kxcRpEU=",
     "url": "https://github.com/nicobailon/pi-subagents.git",
-    "version": "0.79.1"
+    "version": "0.84.0"
   },
   "pi-vim": {
     "hash": "sha256-KiQYCdC6yr9PTZX2En53Eq4NT5rQ21aR+kGItRO7WbU=",
