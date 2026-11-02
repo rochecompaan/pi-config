@@ -3,12 +3,15 @@ pkgs.buildGoModule rec {
   pname = "notion-cli";
   version = "0.7.0";
 
-  src = pkgs.fetchFromGitHub {
-    owner = "4ier";
-    repo = "notion-cli";
-    rev = "v${version}";
-    hash = "sha256-Wy3Xi40dsmk0igxsGiX7fqvgMVnuIcdNkOefUBAgy/I=";
+  # The upstream GitHub repository is no longer available. The Go module proxy
+  # retains the published source, including the upstream tests.
+  src = pkgs.fetchurl {
+    url = "https://proxy.golang.org/github.com/4ier/notion-cli/@v/v${version}.zip";
+    hash = "sha256-tUKoGLj734Qv44IrluRHRj807I2vFiJ9mKaFu0wO5Us=";
   };
+
+  nativeBuildInputs = [ pkgs.unzip ];
+  sourceRoot = "github.com/4ier/notion-cli@v${version}";
 
   vendorHash = "sha256-l+js7rA49aDVu6sHcuNDSv8R8E/Fi1J7yE17uaKHhjQ=";
 
