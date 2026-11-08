@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.64.0",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6.1-sol",
-  "defaultThinkingLevel": "xhigh",
+  "defaultProvider": "claude-bridge",
+  "defaultModel": "claude-opus-5-5",
+  "defaultThinkingLevel": "medium",
   "contextPaging": {
     "enabled": true,
     "tokenBudget": 200000,
