@@ -31,10 +31,10 @@
     "version": "0.2.2"
   },
   "pi-claude-bridge": {
-    "hash": "sha256-W4EqMHFFTmEt/xLP2Ee9IebIKAvOqJ5QGoKMG1WyIyg=",
-    "npmDepsHash": "sha256-fZ0RdOSbxW9253urmt7g6USB/tv8Va8md/a/1mah43s=",
-    "rev": "63bb08c3f6a08ff0f16d8a9fec0c60cb421542e2",
-    "version": "0.9.3-unstable-2026-10-23"
+    "hash": "sha256-94VxD3FND+fHwTlYmZvUKyp5X3BqMKoJifCawGCIZFk=",
+    "npmDepsHash": "sha256-/SiJqLuzcrQukw5tEH/twB3fR8V0Mj/II54uLLPCo1w=",
+    "rev": "v0.11.0",
+    "version": "0.11.0"
   },
   "pi-codegraph": {
     "hash": "sha256-N0u1qLNG9101uDwJY7yIjcSH0XKGBSKwv89RvXULdLA=",

@@ -61,11 +61,11 @@ else
     # The updater regenerates this lock from each selected source revision.
     piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
 
-    # Pin the tested fix/active-history-rewrites branch from our fork.
-    # History fixes and their regression tests now live in the bridge source.
+    # Follow upstream release tags. Releases since v0.10.0 include our
+    # history-edit fixes and their regression tests.
     # dependency-source: pi-claude-bridge
     piClaudeBridgeSrc = pkgs.fetchFromGitHub {
-      owner = "rochecompaan";
+      owner = "elidickinson";
       repo = "pi-claude-bridge";
       inherit (pins."pi-claude-bridge") rev hash;
     };

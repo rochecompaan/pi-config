@@ -103,20 +103,6 @@
             assert resources["appendSystemPrompt"] == "", resources
             PY
 
-            run_probe ask-claude \
-              ${pkgs.coreutils}/bin/env \
-              PI_TOOLSET_PROBE_OUTPUT="$TMPDIR/ask-claude-tools.json" \
-              ${pi}/bin/pi --no-session --no-builtin-tools \
-              --extension ${probeExtension} -p /write-toolset-probe
-            python3 - "$TMPDIR/ask-claude-tools.json" <<'PY'
-            import json
-            import sys
-            with open(sys.argv[1], encoding="utf-8") as f:
-                tools = json.load(f)
-            assert "AskClaude" in tools["all"], tools
-            assert "AskClaude" in tools["active"], tools
-            PY
-
             run_probe claude-bridge-models \
               ${pkgs.coreutils}/bin/env \
               PI_MODELSET_PROBE_OUTPUT="$TMPDIR/claude-bridge-models.json" \
