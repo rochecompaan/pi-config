@@ -164,11 +164,15 @@ export function buildFindingVerificationPrompt(summaryText: string): {
 
 This is a verification-only turn. Inspect the current code and available read-only evidence as needed, but do not fix findings yet. Mutation-capable edit, write, and shell tools are disabled for this turn.
 
-For every finding, decide whether you agree or disagree and explain why with specific evidence from the current code. Use exactly one block per finding, in the same order, with this format:
+For every finding, decide whether you agree or disagree and explain why with specific evidence from the current code. Write the '## Finding Verification' heading once, then exactly one '### F<n>' block per finding, in the same order, with this format:
 
 ## Finding Verification
 ### F1
 - Decision: Agree
+- Reason: <why the finding is valid or invalid, citing concrete evidence>
+
+### F2
+- Decision: Disagree
 - Reason: <why the finding is valid or invalid, citing concrete evidence>
 
 Decision must be exactly Agree or Disagree. A reason is required for every decision. Do not omit a finding. End after the verification report; fixes will be handled in a separate turn.
@@ -193,6 +197,8 @@ export function parseFindingVerificationReport(
 	const verifications: FindingVerification[] = [];
 	for (const finding of findings) {
 		while (lines.length > 0 && !lines[0].trim()) lines.shift();
+		// Models often repeat the report heading above every finding block.
+		if (lines[0] === "## Finding Verification" && lines[1] === `### ${finding.id}`) lines.shift();
 		const expectedHeading = `### ${finding.id}`;
 		const actualHeading = lines.shift();
 		if (actualHeading !== expectedHeading) {
@@ -210,11 +216,15 @@ export function parseFindingVerificationReport(
 		if (!reasonMatch) {
 			return { ok: false, error: `Verification report has an invalid reason for ${finding.id}` };
 		}
+		const reasonLines = [reasonMatch[1]];
+		while (lines.length > 0 && (!lines[0].trim() || /^\s/.test(lines[0]))) {
+			reasonLines.push(lines.shift()!);
+		}
 
 		verifications.push({
 			findingId: finding.id,
 			decision: decisionMatch[1].toLowerCase() as FindingVerification["decision"],
-			reason: reasonMatch[1].trim(),
+			reason: reasonLines.join("\n").trim(),
 		});
 	}
 

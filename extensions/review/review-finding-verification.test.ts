@@ -204,6 +204,63 @@ test("parseFindingVerificationReport accepts complete agree and disagree decisio
 	});
 });
 
+test("parseFindingVerificationReport accepts the report heading repeated before each finding", () => {
+	const findings = extractReviewFindings(SUMMARY);
+	const result = parseFindingVerificationReport(
+		`## Finding Verification
+### F1
+- Decision: Agree
+- Reason: Confirmed in code.
+
+## Finding Verification
+### F2
+- Decision: Disagree
+- Reason: Not reproducible.
+`,
+		findings,
+	);
+
+	assert.deepEqual(result, {
+		ok: true,
+		verifications: [
+			{ findingId: "F1", decision: "agree", reason: "Confirmed in code." },
+			{ findingId: "F2", decision: "disagree", reason: "Not reproducible." },
+		],
+	});
+});
+
+test("parseFindingVerificationReport keeps indented reason continuation lines", () => {
+	const findings = extractReviewFindings(SUMMARY);
+	const result = parseFindingVerificationReport(
+		`## Finding Verification
+### F1
+- Decision: Agree
+- Reason: The notice is only rebuilt after an eviction.
+
+  Suppose the next call adds outgoing-only messages:
+  - The early check ignores the notice.
+
+### F2
+- Decision: Disagree
+- Reason: Not reproducible.
+`,
+		findings,
+	);
+
+	assert.deepEqual(result, {
+		ok: true,
+		verifications: [
+			{
+				findingId: "F1",
+				decision: "agree",
+				reason:
+					"The notice is only rebuilt after an eviction.\n\n  Suppose the next call adds outgoing-only messages:\n  - The early check ignores the notice.",
+			},
+			{ findingId: "F2", decision: "disagree", reason: "Not reproducible." },
+		],
+	});
+});
+
 test("parseFindingVerificationReport rejects omitted findings, decisions, and reasons", () => {
 	const findings = extractReviewFindings(SUMMARY);
 
