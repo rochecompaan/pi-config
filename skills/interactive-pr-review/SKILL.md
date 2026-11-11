@@ -11,8 +11,8 @@ Handle one finding at a time. Post nothing until the user approves that comment 
 
 ## Review loop
 
-1. Show one finding with its file, exact line range, and diff side (old or new). Include the proposed comment separately, ready to post.
-2. Write the comment in simple, informal English. Explain what goes wrong and when it happens. Suggest a specific change that fixes it. Include a short code suggestion or outline when it makes the feedback easier to understand. Prefer to include one for code-related findings. Use a snippet for a small change and an outline for a wider fix. Do not ask the user whether to include it. Vary requests to fit the finding instead of repeating "Can you..." or "Could you...". For example: "Please include...", "One option is...", or "How about...?". Omit priority labels, severity tags, and formal review headings.
+1. Show one finding with a context header above the proposed comment. The header gives the file, exact line range, diff side (old or new), and the finding's severity from `/review`. Below that, quote the code at that range from the PR diff in a fenced block so the user sees what the comment targets. Then show the proposed comment separately, ready to post. The header and code are for the user only; leave them out of the posted text.
+2. Write the comment in simple, informal English. Explain what goes wrong and when it happens. Suggest a specific change that fixes it. Include a short code suggestion or outline when it makes the feedback easier to understand. Prefer to include one for code-related findings. Use a snippet for a small change and an outline for a wider fix. Do not ask the user whether to include it. Vary requests to fit the finding instead of repeating "Can you..." or "Could you...". For example: "Please include...", "One option is...", or "How about...?". Keep priority labels, severity tags, and formal review headings out of the comment itself.
 3. Ask whether to post, revise, or skip. Stop and wait. Approval covers only the current wording and location. If the user asks for changes, show the revised draft and ask again. If they skip, move to the next finding without posting.
 4. Before posting, fetch the current PR head and diff. If either changed since the draft, recheck the finding and location. Show the updated draft and request approval again.
 5. Post the exact approved text as an inline review comment. Anchor it to the approved file, diff side, start and end lines, and current commit. Use the host API that supports line-range comments. If exact placement is unavailable, stop and ask the user. Do not substitute a nearby range or a general PR comment.
@@ -20,7 +20,16 @@ Handle one finding at a time. Post nothing until the user approves that comment 
 
 Example draft:
 
-`src/cache.ts:42-45 (new side)`
+`src/cache.ts:42-45 (new side)` · Severity: High
+
+```ts
+const key = `${userId}`;
+const cached = cache.get(key);
+if (cached) return cached;
+const result = await loadReport(userId, projectId);
+```
+
+Proposed comment:
 
 > This key only uses the user ID, so requests for different projects share a cached result.
 >
