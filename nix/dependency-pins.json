@@ -89,8 +89,8 @@
     "version": "0.7.0"
   },
   "simple-english": {
-    "rev": "v2.1.1",
-    "sha256": "sha256-mWs9n465FMiMcyxD9diTV6olXWuTy2wW+bZ475Vc3to=",
+    "rev": "v2.1.2",
+    "sha256": "sha256-/2IZGQg5RaXsbB2a+anFlD6lLFIOuBzJxXCZVDNhW8I=",
     "url": "https://github.com/AminBlg/SimpleEnglish.git"
   },
   "superpowers": {
