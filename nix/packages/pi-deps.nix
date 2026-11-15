@@ -61,8 +61,9 @@ else
     # The updater regenerates this lock from each selected source revision.
     piClaudeBridgePackageLock = ./pi-claude-bridge-package-lock.json;
 
-    # Follow upstream release tags. Releases since v0.10.0 include our
-    # history-edit fixes and their regression tests.
+    # Follow upstream main until a release includes upstream #262, which
+    # fixes forked pi-subagents children (upstream #249). Then return the
+    # updater catalog entry to git-stable-tag.
     # dependency-source: pi-claude-bridge
     piClaudeBridgeSrc = pkgs.fetchFromGitHub {
       owner = "elidickinson";
