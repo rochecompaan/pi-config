@@ -68,6 +68,15 @@ test("shows whether context paging is on beside relay and voice", () => {
 	}
 });
 
+test("shows a pin marker before the relay block only while a reply is pinned", () => {
+	const input = footerInput();
+	assert.ok(!buildFooterLines(input, 240, terminalWidth)[0].includes("📌"));
+
+	input.extensionStatuses.set("pin-reply", "\u001b[36m📌 pinned\u001b[0m");
+	const [line] = buildFooterLines(input, 240, terminalWidth);
+	assert.ok(line.includes("[Week 95% rem · 6d21h] [📌 pinned] [● relay"), line);
+});
+
 test("shows compact cache read and write counts between context and cost", () => {
 	const input = { ...footerInput(), cacheRead: 123_000, cacheWrite: 3_434_000 };
 	const [line] = buildFooterLines(input, 240, terminalWidth);

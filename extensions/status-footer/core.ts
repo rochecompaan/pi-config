@@ -292,6 +292,9 @@ export function buildFooterLines(
 			{ text: formatResetDistance(input.weeklyLimit.resetAt, input.nowMs), tone },
 		]));
 	}
+	if (stripAnsi(input.extensionStatuses.get("pin-reply"))) {
+		components.push(bracketed([{ text: "📌 pinned", tone: "account" }]));
+	}
 	components.push(
 		bracketed([
 			relayStatus(input.extensionStatuses),
