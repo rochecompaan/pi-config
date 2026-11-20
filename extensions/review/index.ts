@@ -43,6 +43,7 @@ import {
 	runVerifiedFixWorkflow,
 	type VerifiedFixWorkflowResult,
 } from "./review-verified-fix-workflow.ts";
+import { buildDirectFixPrompt } from "./review-finding-verification.ts";
 import {
 	DEFAULT_REVIEW_PROFILE_ID,
 	REVIEW_PROFILE_OPTIONS,
@@ -1882,7 +1883,12 @@ Preserve exact file paths, function names, and error messages where available.
 End the summary with this exact final line:
 <!-- END REVIEW SUMMARY -->`;
 
-	type EndReviewAction = "returnOnly" | "returnVerifyAndFix" | "returnAndSummarize" | "returnAndTodo";
+	type EndReviewAction =
+		| "returnOnly"
+		| "returnAndFix"
+		| "returnVerifyAndFix"
+		| "returnAndSummarize"
+		| "returnAndTodo";
 	type EndReviewActionResult = VerifiedFixWorkflowResult;
 	type EndReviewActionOptions = {
 		showSummaryLoader?: boolean;
@@ -2137,6 +2143,14 @@ End the summary with this exact final line:
 			return "ok";
 		}
 
+		if (action === "returnAndFix") {
+			pi.sendUserMessage(buildDirectFixPrompt(summaryText), { deliverAs: "followUp" });
+			if (notifySuccess) {
+				ctx.ui.notify("Review complete! Sent the findings to the agent to fix.", "info");
+			}
+			return "ok";
+		}
+
 		const verifiedFixResult = await runVerifiedFixWorkflow(summaryText, {
 			getActiveTools: () => pi.getActiveTools(),
 			setActiveTools: (toolNames) => pi.setActiveTools(toolNames),
@@ -2167,6 +2181,7 @@ End the summary with this exact final line:
 		try {
 			const choice = await ctx.ui.select("Finish review:", [
 				"Return only",
+				"Return and fix findings",
 				"Return, verify, and fix agreed findings",
 				"Return and summarize",
 				"Return and add findings to todo",
@@ -2178,7 +2193,9 @@ End the summary with this exact final line:
 			}
 
 			const action: EndReviewAction =
-				choice === "Return, verify, and fix agreed findings"
+				choice === "Return and fix findings"
+					? "returnAndFix"
+					: choice === "Return, verify, and fix agreed findings"
 					? "returnVerifyAndFix"
 					: choice === "Return and summarize"
 						? "returnAndSummarize"

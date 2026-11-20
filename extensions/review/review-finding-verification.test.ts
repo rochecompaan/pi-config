@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
 	buildAgreedFindingsFixPrompt,
+	buildDirectFixPrompt,
 	buildFindingVerificationPrompt,
 	extractReviewFindings,
 	parseFindingVerificationReport,
@@ -233,6 +234,15 @@ test("buildAgreedFindingsFixPrompt includes only agreed findings", () => {
 	assert.match(prompt, /Confirmed in the current fix action/);
 	assert.doesNotMatch(prompt, /F2 — \[P2\]/);
 	assert.doesNotMatch(prompt, /The rationale is already retained/);
+});
+
+test("buildDirectFixPrompt shares the whole summary even when findings cannot be parsed", () => {
+	const summary = "Reviewer notes:\n* ECR cleanup loop should be a lifecycle policy (infra/ecr.tf:12)";
+	assert.throws(() => buildFindingVerificationPrompt(summary));
+
+	const prompt = buildDirectFixPrompt(`\n${summary}\n\n`);
+	assert.ok(prompt.includes(`## Review Summary\n${summary}\n\nInstructions:`));
+	assert.match(prompt, /have not been verified/);
 });
 
 test("buildAgreedFindingsFixPrompt returns null when every finding is rejected", () => {

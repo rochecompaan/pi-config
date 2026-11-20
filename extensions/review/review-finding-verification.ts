@@ -227,14 +227,31 @@ The verification turn is complete. Do not implement findings marked Disagree, an
 ## Agreed Findings
 ${agreedFindings}
 
-Instructions:
-1. Treat the agreed findings as a checklist.
+${buildFixInstructions("agreed findings")}`;
+}
+
+function buildFixInstructions(findingsLabel: string): string {
+	return `Instructions:
+1. Treat the ${findingsLabel} as a checklist.
 2. Fix in priority order: P0, P1, then P2 (include P3 if quick and safe).
-3. If an agreed finding became already fixed or cannot be completed now, briefly explain why and continue.
-4. Treat human reviewer callouts as informational only unless an agreed finding explicitly requires a change.
+3. If one of the ${findingsLabel} is already fixed or cannot be completed now, briefly explain why and continue.
+4. Treat human reviewer callouts as informational only unless one of the ${findingsLabel} explicitly requires a change.
 5. Follow fail-fast error handling: do not add local catch/fallback recovery unless this scope is an explicit boundary that can safely translate the failure.
 6. If you add or keep a try/catch, explain the expected failure mode and either rethrow with context or return a boundary-safe error response.
 7. JSON parsing/decoding should fail loudly by default; avoid silent fallback parsing.
 8. Run relevant tests/checks for touched code where practical.
-9. End with: fixed items, deferred/skipped agreed items (with reasons), and verification results.`;
+9. End with: fixed items, deferred/skipped items (with reasons), and verification results.`;
+}
+
+/**
+ * Builds a fix prompt from the raw review summary without parsing or verifying it,
+ * so any summary format can be handed straight to the agent.
+ */
+export function buildDirectFixPrompt(summaryText: string): string {
+	return `Fix the review findings below. They have not been verified, so check each one against the current code first and skip any that are wrong, saying why.
+
+## Review Summary
+${summaryText.trim()}
+
+${buildFixInstructions("review findings")}`;
 }
