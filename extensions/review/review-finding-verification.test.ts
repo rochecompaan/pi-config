@@ -7,25 +7,6 @@ import {
 	parseFindingVerificationReport,
 } from "./review-finding-verification.ts";
 
-const COMPLETE_SUMMARY_PREFIX = `## Review Scope
-- review extension
-
-## Verdict
-- needs attention
-
-`;
-const COMPLETE_SUMMARY_SUFFIX = `
-## Fix Queue
-1. Fix findings.
-
-## Constraints & Preferences
-- (none)
-
-## Human Reviewer Callouts (Non-Blocking)
-- (none)
-
-<!-- END REVIEW SUMMARY -->`;
-
 const SUMMARY = `## Review Scope
 - review extension
 
@@ -44,8 +25,8 @@ const SUMMARY = `## Review Scope
   - What should change: record a decision and reason.
 
 ## Fix Queue
-1. Verify findings.
-2. Fix agreed findings.
+1. [P1] Verify findings.
+2. [P2] Fix agreed findings.
 
 ## Constraints & Preferences
 - (none)
@@ -54,6 +35,10 @@ const SUMMARY = `## Review Scope
 - (none)
 
 <!-- END REVIEW SUMMARY -->`;
+
+function summaryIds(summary: string) {
+	return extractReviewFindings(summary).map(({ id, priority, title }) => ({ id, priority, title }));
+}
 
 test("extractReviewFindings assigns stable ids and stops before the fix queue", () => {
 	const findings = extractReviewFindings(SUMMARY);
@@ -70,109 +55,72 @@ test("extractReviewFindings assigns stable ids and stops before the fix queue", 
 	assert.doesNotMatch(findings[1].markdown, /Fix Queue/);
 });
 
+test("extractReviewFindings accepts adjacent findings without a blank separator", () => {
+	assert.deepEqual(
+		summaryIds(`## Findings
+- [P0] First finding
+  - File location: demo.ts:1
+- [P1] Replace the ECR cleanup loop with repository lifecycle policy
+  - File location: demo.ts:2
+`),
+		[
+			{ id: "F1", priority: "P0", title: "First finding" },
+			{ id: "F2", priority: "P1", title: "Replace the ECR cleanup loop with repository lifecycle policy" },
+		],
+	);
+});
+
+test("extractReviewFindings tolerates common format drift", () => {
+	assert.deepEqual(
+		summaryIds(`Some preamble the model added.
+
+### **Findings**
+1. **[P1] Bold numbered finding**
+   Free-form explanation without the usual fields.
+* P2: Untagged-bracket finding
+  - File location: demo.ts:9
+
+#### Notes inside findings
+- untagged commentary stays with the previous finding
+
+- [p3] — Lowercase tag
+
+## Fix Queue
+1. [P0] Not a finding`),
+		[
+			{ id: "F1", priority: "P1", title: "Bold numbered finding" },
+			{ id: "F2", priority: "P2", title: "Untagged-bracket finding" },
+			{ id: "F3", priority: "P3", title: "Lowercase tag" },
+		],
+	);
+});
+
+test("extractReviewFindings returns no findings for an empty findings section", () => {
+	assert.deepEqual(extractReviewFindings("## Findings\n- (none)\n\n## Fix Queue\n- (none)"), []);
+});
+
+test("extractReviewFindings fails when the summary has no Findings section", () => {
+	assert.throws(() => extractReviewFindings("## Review Scope\n- [P1] Something"), /does not contain a Findings section/);
+});
+
 test("buildFindingVerificationPrompt creates a verification-only turn for every finding", () => {
 	const { prompt, findings } = buildFindingVerificationPrompt(SUMMARY);
 
 	assert.equal(findings.length, 2);
 	assert.match(prompt, /verification-only turn/i);
 	assert.match(prompt, /do not fix findings yet/i);
-	assert.match(prompt, /Decision must be exactly Agree or Disagree/);
-	assert.match(prompt, /A reason is required for every decision/);
 	assert.match(prompt, /### F1 — \[P1\]/);
 	assert.match(prompt, /### F2 — \[P2\]/);
 });
 
-test("buildFindingVerificationPrompt rejects summaries without structured findings", () => {
+test("buildFindingVerificationPrompt rejects summaries without tagged findings", () => {
 	assert.throws(
-		() =>
-			buildFindingVerificationPrompt(`${COMPLETE_SUMMARY_PREFIX}## Findings
-- (none)
-${COMPLETE_SUMMARY_SUFFIX}`),
-		/does not contain any structured findings/,
+		() => buildFindingVerificationPrompt("## Findings\n- (none)\n"),
+		/does not contain any \[P0\]-\[P3\] findings/,
 	);
 });
 
-test("extractReviewFindings fails closed when a priority tag does not start a finding", () => {
-	assert.throws(
-		() =>
-			extractReviewFindings(`${COMPLETE_SUMMARY_PREFIX}## Findings
-- Priority tag: [P1] Hidden finding
-  - File location: demo.ts:1
-
-- [P2] Parseable finding
-  - File location: demo.ts:2
-${COMPLETE_SUMMARY_SUFFIX}`),
-		/Malformed finding line/,
-	);
-});
-
-test("extractReviewFindings rejects nonblank content before the summary envelope", () => {
-	assert.throws(
-		() =>
-			extractReviewFindings(`- [P0] Finding outside the envelope
-  - File location: demo.ts:1
-  - Why it matters: It is omitted.
-  - What should change: Include it.
-
-${SUMMARY}`),
-		/must start with the exact '## Review Scope' heading/,
-	);
-});
-
-test("extractReviewFindings rejects nonexact section headings", () => {
-	assert.throws(
-		() => extractReviewFindings(SUMMARY.replace("## Verdict", "## Verdict   ")),
-		/malformed section heading/,
-	);
-});
-
-test("extractReviewFindings rejects truncated summaries without the required envelope", () => {
-	assert.throws(
-		() =>
-			extractReviewFindings(`## Review Scope
-- review extension
-
-## Verdict
-- needs attention
-
-## Findings
-- [P1] Complete finding in a truncated summary
-  - File location: demo.ts:1
-  - Why it matters: It can regress.
-  - What should change: Fix it.`),
-		/must end with <!-- END REVIEW SUMMARY -->/,
-	);
-});
-
-test("extractReviewFindings rejects untagged findings and missing required fields", () => {
-	assert.throws(
-		() =>
-			extractReviewFindings(`${COMPLETE_SUMMARY_PREFIX}## Findings
-- Untagged finding
-  - File location: demo.ts:1
-  - Why it matters: It can regress.
-  - What should change: Fix it.
-
-- [P2] Valid finding
-  - File location: demo.ts:2
-  - Why it matters: It can regress.
-  - What should change: Fix it.
-${COMPLETE_SUMMARY_SUFFIX}`),
-		/Malformed finding line/,
-	);
-
-	assert.throws(
-		() =>
-			extractReviewFindings(`${COMPLETE_SUMMARY_PREFIX}## Findings
-- [P1] Missing required field
-  - File location: demo.ts:1
-  - Why it matters: It can regress.
-${COMPLETE_SUMMARY_SUFFIX}`),
-		/missing or has a malformed What should change field/,
-	);
-});
-
-test("parseFindingVerificationReport accepts complete agree and disagree decisions", () => {
+test("parseFindingVerificationReport reads the requested format", () => {
 	const findings = extractReviewFindings(SUMMARY);
 	const result = parseFindingVerificationReport(
 		`## Finding Verification
@@ -183,12 +131,14 @@ test("parseFindingVerificationReport accepts complete agree and disagree decisio
 ### F2
 - Decision: Disagree
 - Reason: The summary remains visible in the session history.
+  It is also kept in the branch entry.
 `,
 		findings,
 	);
 
 	assert.deepEqual(result, {
 		ok: true,
+		undecided: [],
 		verifications: [
 			{
 				findingId: "F1",
@@ -198,218 +148,77 @@ test("parseFindingVerificationReport accepts complete agree and disagree decisio
 			{
 				findingId: "F2",
 				decision: "disagree",
-				reason: "The summary remains visible in the session history.",
+				reason: "The summary remains visible in the session history.\n  It is also kept in the branch entry.",
 			},
 		],
 	});
 });
 
-test("parseFindingVerificationReport accepts the report heading repeated before each finding", () => {
+test("parseFindingVerificationReport tolerates common format drift", () => {
 	const findings = extractReviewFindings(SUMMARY);
 	const result = parseFindingVerificationReport(
-		`## Finding Verification
-### F1
-- Decision: Agree
-- Reason: Confirmed in code.
+		`I checked both findings.
+
+**F2 — Verification rationale is not preserved**
+**Decision:** Disagree
+**Reason:** Not reproducible.
 
 ## Finding Verification
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
+### F1 — Agree
+The current action queues every finding.
+
+## Summary
+One finding to fix.
 `,
 		findings,
 	);
 
 	assert.deepEqual(result, {
 		ok: true,
+		undecided: [],
 		verifications: [
-			{ findingId: "F1", decision: "agree", reason: "Confirmed in code." },
+			{ findingId: "F1", decision: "agree", reason: "The current action queues every finding." },
 			{ findingId: "F2", decision: "disagree", reason: "Not reproducible." },
 		],
 	});
 });
 
-test("parseFindingVerificationReport keeps indented reason continuation lines", () => {
-	const findings = extractReviewFindings(SUMMARY);
+test("parseFindingVerificationReport leaves missing, unclear, and contradictory findings undecided", () => {
+	const findings = extractReviewFindings(`## Findings
+- [P1] One
+- [P1] Two
+- [P1] Three
+- [P1] Four
+`);
 	const result = parseFindingVerificationReport(
-		`## Finding Verification
-### F1
+		`### F1
 - Decision: Agree
-- Reason: The notice is only rebuilt after an eviction.
-
-  Suppose the next call adds outgoing-only messages:
-  - The early check ignores the notice.
+- Reason: Confirmed.
 
 ### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-		findings,
-	);
-
-	assert.deepEqual(result, {
-		ok: true,
-		verifications: [
-			{
-				findingId: "F1",
-				decision: "agree",
-				reason:
-					"The notice is only rebuilt after an eviction.\n\n  Suppose the next call adds outgoing-only messages:\n  - The early check ignores the notice.",
-			},
-			{ findingId: "F2", decision: "disagree", reason: "Not reproducible." },
-		],
-	});
-});
-
-test("parseFindingVerificationReport rejects omitted findings, decisions, and reasons", () => {
-	const findings = extractReviewFindings(SUMMARY);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
-- Decision: Agree
-- Reason: Confirmed in code.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report expected '### F2' next" },
-	);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
-- Reason: Confirmed in code.
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report has an invalid decision for F1" },
-	);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
-- Decision: Agree
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report has an invalid reason for F1" },
-	);
-});
-
-test("parseFindingVerificationReport rejects later headings and commentary", () => {
-	const findings = extractReviewFindings(SUMMARY);
-	const result = parseFindingVerificationReport(
-		`## Finding Verification
-### F1
-- Decision: Agree
-- Reason: Confirmed in code.
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-
-## Notes about F3
-No additional findings.
-`,
-		findings,
-	);
-
-	assert.deepEqual(result, {
-		ok: false,
-		error: "Verification report contains unexpected content: ## Notes about F3",
-	});
-});
-
-test("parseFindingVerificationReport rejects duplicate and invalid decision fields", () => {
-	const findings = extractReviewFindings(SUMMARY);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
-- Decision: Agree
-- Decision: Disagree
-- Reason: Contradictory.
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report has an invalid reason for F1" },
-	);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
 - Decision: Maybe
-- Reason: Unclear.
-### F2
+- Reason: I agree it looks odd, but cannot confirm.
+
+### F3
+- Decision: Agree
 - Decision: Disagree
-- Reason: Not reproducible.
 `,
-			findings,
-		),
-		{ ok: false, error: "Verification report has an invalid decision for F1" },
+		findings,
 	);
+
+	assert.deepEqual(result, {
+		ok: true,
+		undecided: ["F2", "F3", "F4"],
+		verifications: [{ findingId: "F1", decision: "agree", reason: "Confirmed." }],
+	});
 });
 
-test("parseFindingVerificationReport rejects reversed ids, extra heading text, and unbulleted fields", () => {
+test("parseFindingVerificationReport fails when no decision can be read", () => {
 	const findings = extractReviewFindings(SUMMARY);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-### F1
-- Decision: Agree
-- Reason: Confirmed.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report expected '### F1' next" },
-	);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1 extra
-- Decision: Agree
-- Reason: Confirmed.
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report expected '### F1' next" },
-	);
-
-	assert.deepEqual(
-		parseFindingVerificationReport(
-			`## Finding Verification
-### F1
-Decision: Agree
-- Reason: Confirmed.
-### F2
-- Decision: Disagree
-- Reason: Not reproducible.
-`,
-			findings,
-		),
-		{ ok: false, error: "Verification report has an invalid decision for F1" },
-	);
+	assert.deepEqual(parseFindingVerificationReport("I looked at the code and it seems fine.", findings), {
+		ok: false,
+		error: "Could not read an Agree or Disagree decision for any finding",
+	});
 });
 
 test("buildAgreedFindingsFixPrompt includes only agreed findings", () => {

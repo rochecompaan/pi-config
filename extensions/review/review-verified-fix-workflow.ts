@@ -115,10 +115,17 @@ export async function runVerifiedFixWorkflow(
 		restoreTools();
 		const agreedCount = verification.verifications.filter((item) => item.decision === "agree").length;
 		const disagreedCount = verification.verifications.length - agreedCount;
+		const undecided = verification.undecided;
 		dependencies.notify(
-			`Finding verification complete: ${agreedCount} agreed, ${disagreedCount} disagreed.`,
+			`Finding verification complete: ${agreedCount} agreed, ${disagreedCount} disagreed${undecided.length > 0 ? `, ${undecided.length} undecided` : ""}.`,
 			"info",
 		);
+		if (undecided.length > 0) {
+			dependencies.notify(
+				`No clear decision for ${undecided.join(", ")}; ${undecided.length === 1 ? "it" : "they"} will not be fixed.`,
+				"warning",
+			);
+		}
 
 		const fixPrompt = buildAgreedFindingsFixPrompt(findings, verification.verifications);
 		if (!fixPrompt) {

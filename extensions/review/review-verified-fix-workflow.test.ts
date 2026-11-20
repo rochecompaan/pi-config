@@ -130,23 +130,12 @@ test("verified workflow removes unknown tools during verification and restores t
 	assert.deepEqual(harness.activeTools, initialTools);
 });
 
-test("verified workflow rejects a truncated summary before sending verification", async () => {
-	const truncated = `## Review Scope
-- review extension
-
-## Verdict
-- needs attention
-
-## Findings
-- [P1] Complete finding in a truncated summary
-  - File location: demo.ts:1
-  - Why it matters: It can regress.
-  - What should change: Fix it.`;
+test("verified workflow sends nothing when the summary has no findings", async () => {
 	const harness = createWorkflowHarness([]);
 
-	assert.equal(await runVerifiedFixWorkflow(truncated, harness.dependencies), "error");
+	assert.equal(await runVerifiedFixWorkflow("## Findings\n- (none)\n", harness.dependencies), "error");
 	assert.equal(harness.sentPrompts.length, 0);
-	assert.ok(harness.notifications.some(({ message }) => message.includes("must end with")));
+	assert.ok(harness.notifications.some(({ message }) => message.includes("No fixes were queued")));
 });
 
 test("verified workflow queues no fix turn when every finding is rejected", async () => {
@@ -170,7 +159,7 @@ test("verified workflow queues no fix turn when every finding is rejected", asyn
 	assert.deepEqual(new Set(harness.activeTools), new Set(["read", "edit", "write", "bash"]));
 });
 
-test("verified workflow refuses to fix an incomplete verification report", async () => {
+test("verified workflow fixes only decided agreed findings and warns about undecided ones", async () => {
 	const harness = createWorkflowHarness([
 		{
 			id: "verification",
@@ -180,10 +169,17 @@ test("verified workflow refuses to fix an incomplete verification report", async
 - Reason: Confirmed.
 `,
 		},
+		{ id: "fix", text: "Fixed F1." },
 	]);
 
-	assert.equal(await runVerifiedFixWorkflow(SUMMARY, harness.dependencies), "error");
-	assert.equal(harness.sentPrompts.length, 1);
-	assert.ok(harness.notifications.some(({ message }) => message.includes("expected '### F2' next")));
+	assert.equal(await runVerifiedFixWorkflow(SUMMARY, harness.dependencies), "ok");
+	assert.equal(harness.sentPrompts.length, 2);
+	assert.match(harness.sentPrompts[1], /F1 — \[P1\]/);
+	assert.doesNotMatch(harness.sentPrompts[1], /F2 — \[P2\]/);
+	assert.ok(
+		harness.notifications.some(
+			({ message, level }) => level === "warning" && message.includes("No clear decision for F2"),
+		),
+	);
 	assert.deepEqual(new Set(harness.activeTools), new Set(["read", "edit", "write", "bash"]));
 });

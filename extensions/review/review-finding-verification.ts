@@ -12,134 +12,81 @@ export type FindingVerification = {
 };
 
 export type FindingVerificationParseResult =
-	| { ok: true; verifications: FindingVerification[] }
+	| { ok: true; verifications: FindingVerification[]; undecided: string[] }
 	| { ok: false; error: string };
 
-const FINDING_START_PATTERN = /^- \[(P[0-3])\] (\S.+)$/;
-const FINDING_LOCATION_PATTERN = /^  - File location: (\S.+)$/;
-const FINDING_WHY_PATTERN = /^  - Why it matters: (\S.+)$/;
-const FINDING_CHANGE_PATTERN = /^  - What should change: (\S.+)$/;
+const HEADING_PATTERN = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const LIST_ITEM_PATTERN = /^ {0,3}(?:[-*+]|\d+[.)])\s+(.*)$/;
+const PRIORITY_TAG_PATTERN = /\[\s*(P[0-3])\s*\]|^[*_`]*(P[0-3])\b[*_`]*/i;
+const SUMMARY_END_MARKER = "<!-- END REVIEW SUMMARY -->";
 
-function parseHeading(line: string): { level: number; title: string } | null {
-	const match = line.match(/^\s*(#{1,6})\s+(.+?)\s*$/);
-	if (!match) return null;
-	return { level: match[1].length, title: match[2].replace(/\s+#+\s*$/, "").trim() };
+function stripEmphasis(text: string): string {
+	return text.replace(/[*_`]/g, "").trim();
 }
-
-const REVIEW_SUMMARY_SECTION_ORDER = [
-	"Review Scope",
-	"Verdict",
-	"Findings",
-	"Fix Queue",
-	"Constraints & Preferences",
-	"Human Reviewer Callouts (Non-Blocking)",
-] as const;
-const REVIEW_SUMMARY_SENTINEL = "<!-- END REVIEW SUMMARY -->";
 
 function getFindingsSectionLines(summaryText: string): string[] {
 	const lines = summaryText.split(/\r?\n/);
-	while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
-	if (lines.pop() !== REVIEW_SUMMARY_SENTINEL) {
-		throw new Error(`Review summary must end with ${REVIEW_SUMMARY_SENTINEL}`);
+	const start = lines.findIndex((line) => {
+		const heading = line.match(HEADING_PATTERN);
+		return heading ? /^findings\b/i.test(stripEmphasis(heading[2])) : false;
+	});
+	if (start < 0) {
+		throw new Error("The review summary does not contain a Findings section");
 	}
 
-	const firstContentIndex = lines.findIndex((line) => line.trim());
-	if (firstContentIndex < 0 || lines[firstContentIndex] !== "## Review Scope") {
-		throw new Error("Review summary must start with the exact '## Review Scope' heading");
+	const level = lines[start].match(HEADING_PATTERN)![1].length;
+	const section: string[] = [];
+	for (const line of lines.slice(start + 1)) {
+		const heading = line.match(HEADING_PATTERN);
+		if (heading && heading[1].length <= level) break;
+		// Pi appends file metadata after the end marker; never read it as findings.
+		if (line.includes(SUMMARY_END_MARKER)) break;
+		section.push(line);
 	}
-
-	const sections = new Map<string, string[]>();
-	let currentSection: string | undefined;
-	for (let index = firstContentIndex; index < lines.length; index++) {
-		const heading = parseHeading(lines[index]);
-		if (heading?.level === 2) {
-			if (lines[index] !== `## ${heading.title}`) {
-				throw new Error(`Review summary contains malformed section heading: ${lines[index].trim()}`);
-			}
-			currentSection = heading.title;
-			if (!REVIEW_SUMMARY_SECTION_ORDER.includes(currentSection as (typeof REVIEW_SUMMARY_SECTION_ORDER)[number])) {
-				throw new Error(`Review summary contains unexpected section: ${currentSection}`);
-			}
-			if (sections.has(currentSection)) {
-				throw new Error(`Review summary contains duplicate section: ${currentSection}`);
-			}
-			sections.set(currentSection, []);
-			continue;
-		}
-		if (currentSection) sections.get(currentSection)!.push(lines[index]);
-	}
-
-	const actualSections = [...sections.keys()];
-	if (
-		actualSections.length !== REVIEW_SUMMARY_SECTION_ORDER.length ||
-		REVIEW_SUMMARY_SECTION_ORDER.some((section, index) => actualSections[index] !== section)
-	) {
-		throw new Error(`Review summary must contain the exact ordered sections: ${REVIEW_SUMMARY_SECTION_ORDER.join(", ")}`);
-	}
-
-	for (const section of REVIEW_SUMMARY_SECTION_ORDER) {
-		if (!sections.get(section)!.some((line) => line.trim())) {
-			throw new Error(`Review summary section is empty: ${section}`);
-		}
-	}
-
-	const verdictLines = sections.get("Verdict")!.filter((line) => line.trim());
-	if (verdictLines.length !== 1 || !/^(?:- )?(?:correct|needs attention)$/.test(verdictLines[0])) {
-		throw new Error("Review summary has a malformed Verdict section");
-	}
-
-	return sections.get("Findings")!;
+	return section;
 }
 
+function parseFindingStart(line: string): { priority: ReviewFinding["priority"]; title: string } | null {
+	const item = line.match(LIST_ITEM_PATTERN);
+	if (!item) return null;
+	const tag = item[1].match(PRIORITY_TAG_PATTERN);
+	if (!tag) return null;
+
+	const priority = (tag[1] ?? tag[2]).toUpperCase() as ReviewFinding["priority"];
+	const title = stripEmphasis(item[1].replace(tag[0], "")).replace(/^[\s:—–-]+/, "").trim();
+	return { priority, title: title || "(untitled finding)" };
+}
+
+/**
+ * Reads findings from a review summary. Any list item tagged [P0]..[P3] under the
+ * Findings heading starts a finding; every following line belongs to it until the
+ * next tagged item. Formatting details are intentionally not validated.
+ */
 export function extractReviewFindings(summaryText: string): ReviewFinding[] {
-	const lines = getFindingsSectionLines(summaryText);
-	const nonemptyLines = lines.filter((line) => line.trim());
-	if (nonemptyLines.length === 1 && nonemptyLines[0] === "- (none)") return [];
-	if (lines.length === 0) return [];
-
 	const findings: ReviewFinding[] = [];
-	let index = 0;
-	while (index < lines.length) {
-		if (!lines[index].trim()) {
-			index++;
-			continue;
-		}
+	let current: { priority: ReviewFinding["priority"]; title: string; lines: string[] } | null = null;
 
-		const start = lines[index].match(FINDING_START_PATTERN);
-		if (!start) {
-			throw new Error(`Malformed finding line: ${lines[index].trim()}`);
-		}
-		const block = [lines[index]];
-		const requiredFields = [
-			{ pattern: FINDING_LOCATION_PATTERN, label: "File location" },
-			{ pattern: FINDING_WHY_PATTERN, label: "Why it matters" },
-			{ pattern: FINDING_CHANGE_PATTERN, label: "What should change" },
-		];
-
-		for (const field of requiredFields) {
-			index++;
-			const fieldLine = lines[index] ?? "";
-			if (!field.pattern.test(fieldLine)) {
-				throw new Error(`Finding ${findings.length + 1} is missing or has a malformed ${field.label} field`);
-			}
-			block.push(fieldLine);
-		}
-
-		index++;
-		if (index < lines.length && lines[index].trim()) {
-			if (FINDING_START_PATTERN.test(lines[index])) {
-				throw new Error(`Findings must be separated by a blank line before: ${lines[index].trim()}`);
-			}
-			throw new Error(`Unexpected content after finding ${findings.length + 1}: ${lines[index].trim()}`);
-		}
-
+	const flush = () => {
+		if (!current) return;
+		while (current.lines.length > 1 && !current.lines[current.lines.length - 1].trim()) current.lines.pop();
 		findings.push({
 			id: `F${findings.length + 1}`,
-			priority: start[1] as ReviewFinding["priority"],
-			title: start[2].trim(),
-			markdown: block.join("\n"),
+			priority: current.priority,
+			title: current.title,
+			markdown: current.lines.join("\n"),
 		});
+	};
+
+	for (const line of getFindingsSectionLines(summaryText)) {
+		const start = parseFindingStart(line);
+		if (start) {
+			flush();
+			current = { ...start, lines: [line] };
+		} else if (current) {
+			current.lines.push(line);
+		}
 	}
+	flush();
 
 	return findings;
 }
@@ -154,7 +101,7 @@ export function buildFindingVerificationPrompt(summaryText: string): {
 } {
 	const findings = extractReviewFindings(summaryText);
 	if (findings.length === 0) {
-		throw new Error("The review summary does not contain any structured findings to verify");
+		throw new Error("The review summary does not contain any [P0]-[P3] findings to verify");
 	}
 
 	const findingList = findings.map(formatFinding).join("\n\n");
@@ -164,7 +111,7 @@ export function buildFindingVerificationPrompt(summaryText: string): {
 
 This is a verification-only turn. Inspect the current code and available read-only evidence as needed, but do not fix findings yet. Mutation-capable edit, write, and shell tools are disabled for this turn.
 
-For every finding, decide whether you agree or disagree and explain why with specific evidence from the current code. Write the '## Finding Verification' heading once, then exactly one '### F<n>' block per finding, in the same order, with this format:
+For every finding, decide whether you agree or disagree and explain why with specific evidence from the current code. Use one block per finding, labelled with its id:
 
 ## Finding Verification
 ### F1
@@ -175,65 +122,87 @@ For every finding, decide whether you agree or disagree and explain why with spe
 - Decision: Disagree
 - Reason: <why the finding is valid or invalid, citing concrete evidence>
 
-Decision must be exactly Agree or Disagree. A reason is required for every decision. Do not omit a finding. End after the verification report; fixes will be handled in a separate turn.
+Decision must be Agree or Disagree. Findings without a clear decision will not be fixed. End after the verification report; fixes will be handled in a separate turn.
 
 ## Findings to Verify
 ${findingList}`,
 	};
 }
 
+const FINDING_ID_LINE_PATTERN = /^\s*(?:#{1,6}\s*|(?:[-*+]|\d+[.)])\s+)?[*_`]*F(\d+)\b/i;
+const DECISION_PATTERN = /\bdecision\b[^A-Za-z]*(disagree|agree)/i;
+const HEADING_DECISION_PATTERN = /\b(disagree|agree)/i;
+const REASON_PATTERN = /^[\s>*_`-]*reason\b[*_`]*\s*[:—–-]?[*_`]*\s*(.*)$/i;
+
+function readDecision(block: string[]): FindingVerification["decision"] | null {
+	const decisions = new Set<string>();
+	for (const line of block) {
+		const match = line.match(DECISION_PATTERN);
+		if (match) decisions.add(match[1].toLowerCase());
+	}
+	// Fall back to a decision written on the id line, such as "### F1 — Agree".
+	if (decisions.size === 0) {
+		const match = block[0].match(HEADING_DECISION_PATTERN);
+		if (match) decisions.add(match[1].toLowerCase());
+	}
+	// Contradictory decisions are treated as undecided so the finding is not fixed.
+	return decisions.size === 1 ? ([...decisions][0] as FindingVerification["decision"]) : null;
+}
+
+function readReason(block: string[]): string {
+	const reasonIndex = block.findIndex((line) => REASON_PATTERN.test(line));
+	const reasonLines =
+		reasonIndex >= 0
+			? [block[reasonIndex].match(REASON_PATTERN)![1], ...block.slice(reasonIndex + 1)]
+			: block.slice(1).filter((line) => !DECISION_PATTERN.test(line));
+	return reasonLines.join("\n").trim() || "(no reason given)";
+}
+
+/**
+ * Reads Agree/Disagree decisions from a verification report. Blocks are found by
+ * finding id in any order; findings without a single clear decision are returned
+ * as undecided so they are never fixed by accident.
+ */
 export function parseFindingVerificationReport(
 	reportText: string,
 	findings: readonly ReviewFinding[],
 ): FindingVerificationParseResult {
-	const lines = reportText.split(/\r?\n/);
-	while (lines.length > 0 && !lines[0].trim()) lines.shift();
-	while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
+	const knownIds = new Set(findings.map((finding) => finding.id));
+	const blocks = new Map<string, string[][]>();
+	let current: string[] | null = null;
 
-	if (lines.shift() !== "## Finding Verification") {
-		return { ok: false, error: "Verification report must start with the exact '## Finding Verification' heading" };
+	for (const line of reportText.split(/\r?\n/)) {
+		const idMatch = line.match(FINDING_ID_LINE_PATTERN);
+		const id = idMatch ? `F${Number(idMatch[1])}` : null;
+		if (id && knownIds.has(id)) {
+			current = [line];
+			blocks.set(id, [...(blocks.get(id) ?? []), current]);
+			continue;
+		}
+		// Other headings end the current block so trailing notes are not read as reasons.
+		if (HEADING_PATTERN.test(line)) {
+			current = null;
+			continue;
+		}
+		current?.push(line);
 	}
 
 	const verifications: FindingVerification[] = [];
+	const undecided: string[] = [];
 	for (const finding of findings) {
-		while (lines.length > 0 && !lines[0].trim()) lines.shift();
-		// Models often repeat the report heading above every finding block.
-		if (lines[0] === "## Finding Verification" && lines[1] === `### ${finding.id}`) lines.shift();
-		const expectedHeading = `### ${finding.id}`;
-		const actualHeading = lines.shift();
-		if (actualHeading !== expectedHeading) {
-			return { ok: false, error: `Verification report expected '${expectedHeading}' next` };
+		const candidates = blocks.get(finding.id) ?? [];
+		const block = candidates.find((candidate) => readDecision(candidate) !== null);
+		if (!block) {
+			undecided.push(finding.id);
+			continue;
 		}
-
-		const decisionLine = lines.shift() ?? "";
-		const decisionMatch = decisionLine.match(/^- Decision: (Agree|Disagree)$/);
-		if (!decisionMatch) {
-			return { ok: false, error: `Verification report has an invalid decision for ${finding.id}` };
-		}
-
-		const reasonLine = lines.shift() ?? "";
-		const reasonMatch = reasonLine.match(/^- Reason: (\S.+)$/);
-		if (!reasonMatch) {
-			return { ok: false, error: `Verification report has an invalid reason for ${finding.id}` };
-		}
-		const reasonLines = [reasonMatch[1]];
-		while (lines.length > 0 && (!lines[0].trim() || /^\s/.test(lines[0]))) {
-			reasonLines.push(lines.shift()!);
-		}
-
-		verifications.push({
-			findingId: finding.id,
-			decision: decisionMatch[1].toLowerCase() as FindingVerification["decision"],
-			reason: reasonLines.join("\n").trim(),
-		});
+		verifications.push({ findingId: finding.id, decision: readDecision(block)!, reason: readReason(block) });
 	}
 
-	while (lines.length > 0 && !lines[0].trim()) lines.shift();
-	if (lines.length > 0) {
-		return { ok: false, error: `Verification report contains unexpected content: ${lines[0].trim()}` };
+	if (verifications.length === 0) {
+		return { ok: false, error: "Could not read an Agree or Disagree decision for any finding" };
 	}
-
-	return { ok: true, verifications };
+	return { ok: true, verifications, undecided };
 }
 
 export function buildAgreedFindingsFixPrompt(

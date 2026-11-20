@@ -233,7 +233,7 @@ ${MODIFIED_FILES_METADATA}`;
 	);
 });
 
-test("finding verification rejects malformed Pi branch-summary metadata combinations", () => {
+test("finding verification never reads malformed Pi branch-summary metadata as findings", () => {
 	const malformedSummaries = [
 		{
 			name: "metadata without the Pi preamble",
@@ -330,11 +330,22 @@ test("finding verification rejects malformed Pi branch-summary metadata combinat
 			summaryEntry: { summary: fixture.summary, details: ALL_FILES_DETAILS },
 		});
 		assert.ok(summary, fixture.name);
-		assert.throws(
-			() => buildFindingVerificationPrompt(summary),
-			Error,
+		const { findings } = buildFindingVerificationPrompt(summary);
+		assert.deepEqual(
+			findings.map(({ id, priority }) => ({ id, priority })),
+			[
+				{ id: "F1", priority: "P1" },
+				{ id: "F2", priority: "P2" },
+			],
 			fixture.name,
 		);
+		for (const finding of findings) {
+			assert.doesNotMatch(
+				finding.markdown,
+				/read-files|modified-files|future-metadata|OUTSIDESEMANTICMARKER|Ignore/,
+				fixture.name,
+			);
+		}
 	}
 });
 
