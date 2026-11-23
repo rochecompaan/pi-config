@@ -42,9 +42,9 @@
     "version": "0.1.11"
   },
   "pi-context-paging": {
-    "hash": "sha256-1H9e+OS9VS4xuJnETkRDVBllly9huihwPGm1vSMriUY=",
-    "rev": "c7c8c429dcb5d91197a3ce99f2511c900e4297a4",
-    "version": "0.3.11-c7c8c42"
+    "hash": "sha256-y5o2d6iULN3Kl6urLhLA7SJ8PUyxXSDFXSrI8KN3R0E=",
+    "rev": "dc09dc478496d702a0677d14494c6f67cab52955",
+    "version": "0.3.11-dc09dc4"
   },
   "pi-intervals": {
     "hash": "sha256-w9hGXShosGPeco1UB2AvzPL85e0HmVN75NbUdPC6IXE=",
