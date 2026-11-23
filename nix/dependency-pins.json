@@ -1,13 +1,13 @@
 {
   "codegraph": {
-    "hash": "sha256-O16z3guMKVgT5gte3z8XQ/tW4l+GHOhgArg0+fZ0h2U=",
-    "url": "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.6.2.tgz",
-    "version": "1.6.2"
+    "hash": "sha256-ruTWAjh3P6ZIaB92iqvGXse9S5tjoTRueN4P86XiHqY=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph/-/codegraph-1.6.4.tgz",
+    "version": "1.6.4"
   },
   "codegraph-linux-x64": {
-    "hash": "sha256-a032dRSZ93aZH3F1iQutcKp822nEdJIrw9dnfzC7FyQ=",
-    "url": "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.6.2.tgz",
-    "version": "1.6.2"
+    "hash": "sha256-6SnBHu3YLtEW5ivf0YfGRby+Fy3dBxq98Np2iHzn0oU=",
+    "url": "https://registry.npmjs.org/@colbymchenry/codegraph-linux-x64/-/codegraph-linux-x64-1.6.4.tgz",
+    "version": "1.6.4"
   },
   "context-mode": {
     "hash": "sha256-CcQeTPd7IVZsdrjqL9vX89gjBV/uLwLCFm/Vu1ddryw=",
