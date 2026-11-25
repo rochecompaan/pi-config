@@ -99,16 +99,6 @@
       "hash_field": "hash",
       "package": "pi-loadout"
     },
-    "pi-remote": {
-      "channel": "npm-latest",
-      "fetcher": "fetchzip",
-      "hash_field": "hash",
-      "lock": {
-        "kind": "maintained",
-        "path": "pi-remote-package-lock.json"
-      },
-      "package": "@noahsaso/pi-remote"
-    },
     "pi-subagents": {
       "channel": "git-stable-tag",
       "fetcher": "fetchgit",
@@ -140,7 +130,6 @@
       },
       "package": "remote-pi"
     },
-
     "simple-english": {
       "channel": "git-stable-tag",
       "fetcher": "fetchgit",
@@ -278,18 +267,6 @@
       ],
       "sources": [
         "pi-loadout"
-      ]
-    },
-    "pi-remote": {
-      "builds": [
-        "pi-remote"
-      ],
-      "paths": [
-        "nix/dependency-pins.json",
-        "pi-remote-package-lock.json"
-      ],
-      "sources": [
-        "pi-remote"
       ]
     },
     "pi-subagents": {

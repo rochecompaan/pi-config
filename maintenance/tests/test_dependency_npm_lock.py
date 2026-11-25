@@ -22,16 +22,6 @@ def lock_for(manifest):
 
 
 class ManifestPolicyTests(unittest.TestCase):
-    def test_pi_remote_strips_build_dependencies_without_mutating_source(self):
-        original = {"name": "@noahsaso/pi-remote", "version": "0.3.1",
-            "dependencies": {"ws": "^8.0.0"}, "devDependencies": {"typescript": "^5.0.0"},
-            "scripts": {"install": "exit 99"}}
-        result = effective_manifest("pi-remote", original)
-        self.assertNotIn("devDependencies", result)
-        self.assertEqual(result["scripts"], {})
-        self.assertEqual(result["dependencies"], {"ws": "^8.0.0"})
-        self.assertIn("devDependencies", original)
-
     def test_remote_extension_keeps_host_dependencies_until_post_install(self):
         original = {"name": "remote-pi", "version": "1.0.0",
             "dependencies": {"@earendil-works/pi-coding-agent": "^0.87.0"}}

@@ -59,7 +59,7 @@ class InventoryTests(unittest.TestCase):
             },
         }
         self.pins = {"a": {"rev": "v1.0.0", "hash": HASH}}
-        for name in ("pi-deps.nix", "pi-remote.nix", "pi-intervals.nix"):
+        for name in ("pi-deps.nix", "pi-intervals.nix"):
             (self.root / "nix/packages" / name).write_text("")
         (self.root / "nix/packages/pi-deps.nix").write_text(
             '# dependency-source: a\n  src = pkgs.fetchgit { inherit (pins.a) rev hash; };\n'

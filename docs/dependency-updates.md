@@ -107,7 +107,6 @@ The pins are `nix/dependency-pins.json`.
 | `pi-intervals` | Intervals extension |
 | `pi-voice` | Voice extension and its maintained npm lock |
 | `pi-loadout` | Loadout extension |
-| `pi-remote` | Pi remote package |
 | `pi-subagents` | Subagents extension |
 | `pi-vim` | Vim extension |
 | `remote-pi-extension` | Remote Pi extension |

@@ -8,7 +8,6 @@
       ...
     }:
     let
-      piRemote = self'.packages."pi-remote";
       upstreamPi = inputs.llm-agents.packages.${system}.pi;
       piPackage = import ../../nix/packages/pi-patched.nix {
         inherit pkgs upstreamPi;
@@ -20,9 +19,7 @@
       # without waiting for another bridge dependency release.
       claudeCode = inputs.llm-agents.packages.${system}.claude-code;
 
-      piDeps = import ../../nix/packages/pi-deps.nix {
-        inherit pkgs piRemote;
-      };
+      piDeps = import ../../nix/packages/pi-deps.nix { inherit pkgs; };
 
       piSettings = import ../../nix/lib/pi-settings.nix {
         inherit (pkgs) lib;

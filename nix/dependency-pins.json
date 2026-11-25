@@ -57,12 +57,6 @@
     "url": "https://registry.npmjs.org/pi-loadout/-/pi-loadout-0.0.37.tgz",
     "version": "0.0.37"
   },
-  "pi-remote": {
-    "hash": "sha256-d8tSk12rnZqHr2HDVnXclZBRPbqRPVft9CKYSdBJHr8=",
-    "npmDepsHash": "sha256-DucFlnKAAd8sFUptf5zapAXqYrf7OZn3/xNFHySAApc=",
-    "url": "https://registry.npmjs.org/@noahsaso/pi-remote/-/pi-remote-0.3.1.tgz",
-    "version": "0.3.1"
-  },
   "pi-subagents": {
     "npmDepsHash": "sha256-qtYTJJ+BN715N9tzLOOPyAM5wymO0jfbVPi0HtRNkZo=",
     "rev": "v0.90.0",

@@ -40,7 +40,7 @@ class CandidateTests(unittest.TestCase):
         (self.root / ".gitignore").write_text('__pycache__/\n')
         (self.root / "nix/packages/pi-deps.nix").write_text(
             '# dependency-source: a\n srcA = pkgs.fetchgit {};\n# dependency-source: b\n srcB = pkgs.fetchgit {};\n')
-        for name in ("pi-remote", "pi-intervals"):
+        for name in ("pi-intervals",):
             (self.root / f"nix/packages/{name}.nix").write_text("")
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "fixture@example.invalid")

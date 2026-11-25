@@ -61,9 +61,6 @@ def effective_manifest(source_id: str, manifest: dict) -> dict:
     for field in DEPENDENCY_FIELDS:
         if field in result and not isinstance(result[field], dict):
             raise UpdateError("lockfile", f"Invalid manifest declaration: {field}")
-    if source_id == "pi-remote":
-        result.pop("devDependencies", None)
-        result["scripts"] = {}
     return result
 
 

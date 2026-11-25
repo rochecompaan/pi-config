@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 PIN_FILE = "nix/dependency-pins.json"
 CATALOG_FILE = "maintenance/dependency_updates/catalog.json"
-RECIPES = tuple(f"nix/packages/{name}.nix" for name in ("pi-deps", "pi-remote", "pi-intervals"))
+RECIPES = tuple(f"nix/packages/{name}.nix" for name in ("pi-deps", "pi-intervals"))
 FETCHERS = {"fetchzip": "fetchzip", "fetchurl": "fetchurl", "fetchgit": "fetchgit", "github-archive": "fetchFromGitHub"}
 CHANNELS = {"npm-latest", "git-stable-tag", "git-default-head", "git-branch-head", "companion"}
 PIN_FIELDS = {"version", "rev", "url", "hash", "sha256", "npmDepsHash"}

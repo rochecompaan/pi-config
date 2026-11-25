@@ -3,10 +3,7 @@
   perSystem =
     { config, pkgs, ... }:
     let
-      piDeps = import ../../nix/packages/pi-deps.nix {
-        inherit pkgs;
-        piRemote = config.packages."pi-remote";
-      };
+      piDeps = import ../../nix/packages/pi-deps.nix { inherit pkgs; };
     in
     {
       packages = {

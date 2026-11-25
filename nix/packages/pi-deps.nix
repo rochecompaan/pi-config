@@ -1,4 +1,4 @@
-{ pkgs, piRemote }:
+{ pkgs }:
 if pkgs.stdenv.hostPlatform.system != "x86_64-linux" then
   throw "pi-deps only supports x86_64-linux because bundled native artifacts are linux-x64"
 else
@@ -332,7 +332,6 @@ else
       piContextPaging
       piVoice
       piLoadout
-      piRemote
       piSubagents
       piVim
       remotePiExtension
@@ -353,7 +352,6 @@ else
       "${piLoadout}"
       "${mattPocockSkills}"
       "${superpowers}"
-      "${piRemote}/lib/node_modules/@noahsaso/pi-remote"
       "${piSubagents}/lib/node_modules/pi-subagents"
       "${piVim}/lib/node_modules/pi-vim"
       "${remotePiExtension}/lib/node_modules/remote-pi"

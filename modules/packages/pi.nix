@@ -12,10 +12,7 @@
       piPackage = import ../../nix/packages/pi-patched.nix {
         inherit pkgs upstreamPi;
       };
-      piDeps = import ../../nix/packages/pi-deps.nix {
-        inherit pkgs;
-        piRemote = self'.packages.pi-remote;
-      };
+      piDeps = import ../../nix/packages/pi-deps.nix { inherit pkgs; };
     in
     {
       packages = {
