@@ -22,11 +22,11 @@
         "thinking": "low"
       },
       "oracle": {
-        "model": "openai-codex/gpt-6.1-sol",
+        "model": "openai-codex/gpt-6.2-sol",
         "thinking": "xhigh"
       },
       "planner": {
-        "model": "openai-codex/gpt-6.1-sol",
+        "model": "openai-codex/gpt-6.2-sol",
         "thinking": "xhigh"
       },
       "researcher": {
@@ -34,7 +34,7 @@
         "thinking": "medium"
       },
       "reviewer": {
-        "model": "openai-codex/gpt-6.1-sol",
+        "model": "openai-codex/gpt-6.2-sol",
         "thinking": "xhigh"
       },
       "scout": {
@@ -42,7 +42,7 @@
         "thinking": "low"
       },
       "worker": {
-        "model": "openai-codex/gpt-6.1-sol",
+        "model": "openai-codex/gpt-6.2-sol",
         "thinking": "medium",
         "defaultContext": "fresh"
       }
